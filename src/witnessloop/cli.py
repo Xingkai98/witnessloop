@@ -81,9 +81,9 @@ def main(argv: list[str] | None = None) -> int:
 
         return initcmd.run(args)
     if args.command == "uninit":
-        from witnessloop.not_implemented import run_uninit
+        from witnessloop import uninitcmd
 
-        return run_uninit(args)
+        return uninitcmd.run(args)
     if args.command == "check":
         from witnessloop.not_implemented import run_check
 
