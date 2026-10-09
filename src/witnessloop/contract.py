@@ -61,8 +61,22 @@ def validate_change_dir(root: Path, policy: Policy, change_id: str) -> list[Find
     return findings
 
 
+@dataclass(frozen=True)
+class SpanScope:
+    """核对审阅跨度（D3 的 revision 绑定）所需的上下文。
+
+    ``pr_paths`` 是**本次 PR 自身的变更集**（``base...head`` 的文件路径）。
+    判定 stale 时必须与它求交——否则被检 head 是一个 merge commit 时
+    （``pull_request`` 事件下 ``actions/checkout`` 的默认检出对象），
+    顺着 merge 进来的 **base 侧**改动会被误判成「审阅后又改了代码」。
+    """
+
+    checked_head: str
+    pr_paths: frozenset[str]
+
+
 def validate_review_manifests(
-    root: Path, policy: Policy, change_id: str, *, checked_head: str
+    root: Path, policy: Policy, change_id: str, *, scope: SpanScope
 ) -> list[Finding]:
     """D3 + D4：review manifest 存在、hash 绑定、base/head 真绑；reviewer ≠ author。"""
     directory = change_dir(root, policy, change_id)
@@ -79,7 +93,7 @@ def validate_review_manifests(
 
     findings: list[Finding] = []
     for manifest_path in manifests:
-        findings.extend(_validate_one(root, directory, rel, manifest_path, checked_head))
+        findings.extend(_validate_one(root, directory, rel, manifest_path, scope))
     return findings
 
 
@@ -88,7 +102,7 @@ def _validate_one(
     directory: Path,
     rel_change: str,
     manifest_path: Path,
-    checked_head: str,
+    scope: SpanScope,
 ) -> list[Finding]:
     manifest_rel = f"{rel_change}/{manifest_path.relative_to(directory).as_posix()}"
     try:
@@ -126,12 +140,12 @@ def _validate_one(
 
     # D3：hash 绑定真实 artifact 字节；base/head 绑定真实 git revision。
     findings.extend(_check_hashes(directory, manifest_rel, doc))
-    findings.extend(_check_git_span(root, manifest_rel, doc, checked_head))
+    findings.extend(_check_git_span(root, manifest_rel, doc, scope))
     return findings
 
 
 def _check_git_span(
-    root: Path, manifest_rel: str, doc: dict, checked_head: str
+    root: Path, manifest_rel: str, doc: dict, scope: SpanScope
 ) -> list[Finding]:
     """D3 的 revision 绑定（tasks.md：「base/head sha + ...」）。
 
@@ -163,26 +177,30 @@ def _check_git_span(
         )
         return findings
 
-    if not gitutil.is_ancestor(root, head_sha, checked_head):
+    if not gitutil.is_ancestor(root, head_sha, scope.checked_head):
         findings.append(
             Finding(
                 manifest_rel,
-                f"head_sha={head_sha} 不是本次被检 revision {checked_head} 的祖先"
+                f"head_sha={head_sha} 不是本次被检 revision {scope.checked_head} 的祖先"
                 "——审阅的是别的 revision",
             )
         )
         return findings
 
     try:
-        delta = gitutil.diff_names(root, head_sha, checked_head)
+        delta = gitutil.diff_names(root, head_sha, scope.checked_head)
     except gitutil.GitError as exc:
         findings.append(Finding(manifest_rel, f"无法核对审阅跨度：{exc}"))
         return findings
 
+    # 只关心**本次 PR 自己**改过的文件：checked_head 可能是 merge commit
+    # （pull_request 事件下 actions/checkout 的默认检出对象），两点 diff 会把
+    # 顺着 merge 进来的 base 侧改动也算进 delta——那是别人改的，不是本 PR 漂移。
     stray = sorted(
         path
         for path in delta
-        if not pathutil.matches_any(path, C.EVIDENCE_PATH_PATTERNS)
+        if pathutil.normalize(path) in scope.pr_paths
+        and not pathutil.matches_any(path, C.EVIDENCE_PATH_PATTERNS)
     )
     if stray:
         shown = ", ".join(stray[:5]) + ("…" if len(stray) > 5 else "")

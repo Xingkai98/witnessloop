@@ -54,14 +54,24 @@ def run(args: argparse.Namespace) -> int:
         return C.EXIT_FAIL
 
     # 被检 revision 的 sha：D3 用它核对 manifest 的 head_sha 是不是审对了 revision。
-    checked_head = gitutil.rev_parse(root, head) or head
+    # pr_paths 是本次 PR 自身的变更集——被检 head 可能是 merge commit，判定 stale
+    # 时必须把 base 侧顺带进来的改动排除掉。
+    scope = contract.SpanScope(
+        checked_head=gitutil.rev_parse(root, head) or head,
+        pr_paths=frozenset(
+            pathutil.normalize(path)
+            for change in changes
+            for path in (change.path, change.old_path)
+            if path
+        ),
+    )
 
     change_ids = contract.changed_change_ids(changes, pol.changes_root)
     findings: list[contract.Finding] = []
     for change_id in change_ids:
         findings += contract.validate_change_dir(root, pol, change_id)
         findings += contract.validate_review_manifests(
-            root, pol, change_id, checked_head=checked_head
+            root, pol, change_id, scope=scope
         )
     findings += _protected_writes(root, pol, changes)
 

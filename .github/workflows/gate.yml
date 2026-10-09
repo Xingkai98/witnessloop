@@ -31,8 +31,15 @@ jobs:
     steps:
       # fetch-depth: 0 是必需的：浅克隆会让 merge-base 求不出来，
       # 而 check 对「求不出 base」是 fail-closed（报错，不静默跳过）。
+      #
+      # ref 显式钉在 PR 的 head：`pull_request` 事件默认检出 test-merge commit，
+      # 那会把 base 侧顺带进来的改动混进 diff 视野。check 自身已经能正确处理
+      # merge commit（stray 与 PR 变更集求交），这里再钉一层是纵深防御——
+      # 让「被检 revision」就是 PR 自己的 head，语义也更直白。
+      # 非 PR 事件没有 pull_request 字段，回落到 github.sha。
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5

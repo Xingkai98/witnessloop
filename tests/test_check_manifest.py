@@ -221,6 +221,60 @@ def test_head_sha_must_be_an_ancestor_of_the_checked_head(gated: Path, cli):
     assert "祖先" in err
 
 
+def _advance_base_and_merge(repo: Path) -> None:
+    """模拟活跃仓的常态：分支开出后 base 前进了，PR 再 merge 回主干。
+
+    这正是 `pull_request` 事件下 `actions/checkout` 检出的 test-merge commit 形态。
+    """
+    git(repo, "checkout", "-q", "main")
+    write_artifact(repo, "src/other.py", "y = 2\n")  # 只在 base 侧改，与 PR 无关
+    commit_all(repo, "base 前进")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "merge", "--no-ff", "--no-edit", "-m", "merge main", "main")
+
+
+def test_base_advanced_then_merged_does_not_false_positive(gated: Path, cli):
+    """回归 R2 3-1：被检 head 是 merge commit 时，**base 侧**的文件不能被判 stale。
+
+    原先 `head_sha..checked_head`（两点）会把 merge 进来的 base 侧改动算进 delta，
+    于是活跃仓里每个「跟上主干」的 PR 都被误拦——门禁在主部署形态下直接失效。
+    """
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    _advance_base_and_merge(gated)
+
+    code, out, err = check(gated, cli)
+    assert code == C.EXIT_PASS, f"base 侧前进被误判成 stale：{err}"
+    assert "旧 revision" not in err
+
+
+def test_base_advanced_without_merge_does_not_false_positive(gated: Path, cli):
+    """对照组：base 前进但 PR head 不是 merge commit（未 merge）→ 也应通过。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    git(gated, "checkout", "-q", "main")
+    write_artifact(gated, "src/other.py", "y = 2\n")
+    commit_all(gated, "base 前进")
+    git(gated, "checkout", "-q", "feature")
+
+    code, out, err = check(gated, cli)
+    assert code == C.EXIT_PASS, err
+
+
+def test_real_stale_change_survives_the_merge_commit_fix(gated: Path, cli):
+    """真阳性不能被修没：merge 之后再改自己 PR 的源码 → 仍报 stale。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    _advance_base_and_merge(gated)
+    write_artifact(gated, "src/app.py", "z = 3\n")  # PR 自己的实现代码
+    commit_all(gated, "审阅后又改实现")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+    assert "src/app.py" in err
+
+
 def test_evidence_committed_after_content_passes(gated: Path, cli):
     """正确约定：内容一个提交，证据紧接着一个提交 → 绿。"""
     commit_content(gated, "add-x")
