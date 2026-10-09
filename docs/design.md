@@ -1,8 +1,8 @@
 # witnessloop 设计 v0.2
 
 > 状态：**设计已定**（经 grill + 独立对抗验证 + 用户逐项确认）。
-> v0.1：2026-10-09 起草；v0.2：2026-10-09 收敛。
-> 证据见 [`docs/reviews/grill-design.md`](reviews/grill-design.md) 与 [`docs/reviews/grill-adversarial.md`](reviews/grill-adversarial.md)。
+> v0.1：2026-10-09 起草；v0.2：2026-10-09 收敛；其后增补 §4.1（分发与可见性，acid test 实测）。
+> 证据见 [`docs/reviews/grill-design.md`](reviews/grill-design.md)、[`docs/reviews/grill-adversarial.md`](reviews/grill-adversarial.md)、[`docs/reviews/m1-acid-test.md`](reviews/m1-acid-test.md)。
 
 ## 1. 问题
 
@@ -41,10 +41,19 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 | 语言/工具链 | Python + uv，单二进制 `witnessloop` |
 | 仓库边界 | 独立新仓（witnessloop），零 asterwynd import |
 | 交互层 host | CC-first；模板与适配器**物理分离**，v1 只交付 CC |
-| 分发 | 门禁层=独立 CLI（跑 CI）；交互层=CC plugin。**git/私有分发起步，marketplace 不上路线图** |
+| 分发 | 门禁层=独立 CLI（跑 CI）；交互层=CC plugin。**git 公开分发起步，marketplace 不上路线图**（可见性约束见 §4.1） |
 | spec 依赖 | **硬编码 OpenSpec 形状的 change 契约**；只参数化 repo-agnostic 的轴（路径/策略）。不造 spec 适配器 |
 | 状态真相源 | **manifest = 每 change 每阶段的权威证据**；事件日志降为可选历史，不重建 projection/replay 状态机 |
 | 信任锚 | 靠**远端 branch protection + required check**（人手动开一次）+ 诚实话术。**v1 不造签名** |
+
+### 4.1 分发与可见性（2026-10-09 真实仓 acid test 实测）
+
+**v1 假设 witnessloop 公开。** 在私有仓下会发生两处摩擦，已用一次性仓 `Xingkai98/wl-test` 实测：
+
+1. **reusable workflow 访问级别**：私有仓的 reusable workflow 默认 `none`，且**最多只能开放到「同 owner」**——外部接入方根本调不到。表现为 caller run **0 个 job**、报「workflow file issue」。
+2. **CI 安装私有包需要凭据**：reusable workflow 里 `uvx --from git+https://github.com/<owner>/witnessloop@v1` 在私有仓下报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。
+
+改为**公开**后两处摩擦全消、零配置。**私有接入需要额外配置 token，不在 v1 范围。**（这也把最初「私有起步」的判断修正为「公开起步」。）
 
 ## 5. 架构
 
@@ -52,13 +61,13 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 单二进制 `witnessloop`（Python + uv 分发），跑在**终端 / CI required check**。
 
-**v1 只交付 2 个动词**：
+**v1 只交付 3 个动词**：
 
 - `init`：把 witnessloop 接入目标仓。**幂等、只增不改、不 auto-commit、支持 `--dry-run`**。写入：
-  - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式）
+  - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式 + `require_change_for`）
   - `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
   - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
-- `check`：CI 入口，**fail-closed**。校验 change 目录契约、review manifest 存在且 hash 绑定、受保护路径写入有结构化解释事件。
+- `check`：CI 入口，**fail-closed**。校验 change 目录契约、review manifest 存在且 hash 绑定、`reviewer ≠ author`、受保护路径写入有结构化解释事件、**命中 `require_change_for` 的改动必须挂 change 目录**。无 policy 时报「未接入」并以非零退出。
 - `uninit`：依 `init-manifest.json` 精确回滚（被改过的文件拒绝删并报 diff）。
 
 **不变集**：witnessloop 自身的输入（policy 文件、manifest）**恒受保护、不可由 repo policy 移除**，封顶 ~5 条常量。
@@ -75,18 +84,16 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 ### 5.3 数据契约
 
 - change 目录契约：OpenSpec 形状（`proposal / design / tasks / specs delta`）+ `reviews/` + `workflow-events.jsonl`。
-- 审阅证据 = **报告 + manifest 成对**。
+- 审阅证据 = **报告 + manifest 成对**。manifest 的 `head_sha` = **最后一个非证据 revision**，其到被检 head 之间只允许证据文件改动（由此推出**提交约定：先内容、后证据**；单提交 PR 不被支持）。
 - manifest 字段：`reviewer_run_id` / `author_run_id`（**强制 `reviewer ≠ author`**）/ `base_sha` / `head_sha` / `tasks_hash` / `spec_hash` / `diff_hash`（informational）/ `report_hash`。
 - **能力边界**：hash 绑定真实 artifact 字节，证明「证据之间没漂移」；`reviewer_run_id` 等身份字段是自由文本，v1 不做语义绑定。
 
 ## 6. 从 asterwynd 抽取的资产（探索 + 实测核对）
 
-- **可抽内核 ≈ 5.3k LOC**：engine（`event_log` / `models` / `routing` / `review_manifest`）+ `guard` + `checker` + `policy` + `platform_gate`；配套测试 ≈ 3.6k LOC。
+- **可抽内核 ≈ 5.3k LOC**：engine + `guard` + `checker` + `policy` + `platform_gate`；配套测试 ≈ 3.6k LOC。
 - **主工作量 = 参数化，不是搬运**：`check_openspec_artifacts.py` 实测 **1802 行 / 72KB**，重度 asterwynd 专用（硬编码 change 类型枚举、`DESIGN_SECTIONS`、`BENCHMARK_SMOKE_CAPABILITIES`、backlog 路径）。把常量搬进 policy 才是主要成本。
-- **两个缺口**：
-  1. 流程的「行为」不在版本控制（见 §5.2）→ 重写。
-  2. checker 惰性 `import agent.workflow.*`，绑死产品包 → 内联或抽接口。
-- **状态机仪式残留 ≈ 1000 LOC**（`event_log` 540 + `state_machine` 255 + `models` 196）：v1 不搬。
+- **两个缺口**：① 流程的「行为」不在版本控制 → 重写；② checker 惰性 `import agent.workflow.*`，绑死产品包 → 内联或抽接口。
+- **状态机仪式残留 ≈ 1000 LOC**：v1 不搬。
 
 ## 7. 验收（acid test）
 
@@ -99,6 +106,8 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 - (c) 目标仓不跑 `init` 时，`check` 应报「未接入」而非静默通过；
 - (d) `init` → `uninit` 回滚往返。
 
+**已实测（M1 级，2026-10-09）**：在 `Xingkai98/wl-test` 上，一个「只改 `src/`、无 change 目录」的 PR 被**真 GitHub Actions 门禁拦下**，报错精确到 `policy.require_change_for` 与 `src/app.py`。**「有证据 → 通过」与完整流程待 M2**（CC plugin 产出证据）。详见 [`docs/reviews/m1-acid-test.md`](reviews/m1-acid-test.md)。
+
 ## 8. Open Questions（已收敛）
 
 原 7 项 + 补充 5 项，全部经 grill + 对抗验证 + 用户确认。决策记录见 [`docs/reviews/grill-design.md`](reviews/grill-design.md) 的 `## User Confirmation`。
@@ -106,17 +115,17 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 ## 9. 风险
 
 1. **证据可自证／可伪造（最高危）**：门禁输入都是 agent 可写的本地文本 → 默认只防漂移。→ 话术降级 + 文档写清；防伪造列为 v2 候选。
-2. **越抽越耦合，且成本被低估**：`check_openspec_artifacts.py` 的常量参数化是主成本，不是轻风险。
+2. **越抽越耦合，且成本被低估**：`check_openspec_artifacts.py` 的常量参数化是主成本。
 3. **required-check 鸡生蛋**：注册 required check 需 admin，fork/新仓不跑 init 就**静默为零**。→ `check` 无 policy 时报「未接入」。
-4. **强制只在 CI 一层**：guard hook 是 PreToolUse、需手动装，CI 只跑 `check`。「双层兜底」只在交互式会话成立。
-5. **「独立审阅」剧场化**：`reviewer_run_id` 不校验 ⇒ 同一 run 既写又审也能过。→ 强制 `reviewer ≠ author`（挡「忘了另开 run」，不挡蓄意）。
-6. **host 中立名义化**：模板与适配器不物理分离则日后拆不开。
+4. **强制只在 CI 一层**：guard hook 是 PreToolUse、需手动装，CI 只跑 `check`。
+5. **「独立审阅」剧场化**：`reviewer_run_id` 不校验 ⇒ 同一 run 既写又审也能过。→ 强制 `reviewer ≠ author`。
+6. **可见性错配**：私有 witnessloop 会让接入方 CI 全面失败（见 §4.1）→ v1 明确要求公开。
 7. **路径语义**：Windows 反斜杠/大小写/`~` 是已知坑，通用化须显式处理。
 
 ## 10. MVP 范围（一句话）
 
 **在第二个真实仓库里，用机械门禁把「设计与实现的证据」绑进 CI required check。**
 
-**做**：单二进制 + 2 动词（`init` / `check`）· `uninit` 回滚 · policy（受保护路径 + 必需 artifact + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
+**做**：单二进制 + 3 动词（`init` / `check` / `uninit`）· policy（受保护路径 + 必需 artifact + `require_change_for` + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
 
-**不做**：签名/密钥 · marketplace · spec 适配器抽象 · 状态机/projection/replay · platform-gate 自动注册 · `policy upgrade` · 证据分档机制 · 多 host · 7 动词 · schema 冻结。
+**不做**：签名/密钥 · marketplace · spec 适配器抽象 · 状态机/projection/replay · platform-gate 自动注册 · `policy upgrade` · 证据分档机制 · 多 host · 7 动词 · schema 冻结 · 私有仓接入。

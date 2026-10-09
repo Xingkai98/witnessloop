@@ -44,6 +44,11 @@ witnessloop uninit
 `.github/workflows/gate.yml@v1`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。
 
+> **前置条件：本仓必须公开。** caller 引用的是本仓的 reusable workflow、CI 里用
+> `uvx --from git+…@v1` 安装本包——两者在**私有**仓下都会失败（reusable workflow
+> 访问级别默认 `none`；私有包安装报 `could not read Username`）。已实测，见
+> [docs/design.md §4.1](docs/design.md)。私有接入需额外配 token，不在 v1 范围。
+
 ### 能力边界（别被「机械可验证」误导）
 
 默认**只防漂移，不防蓄意伪造**：hash 绑定能证明证据之间没漂移，
