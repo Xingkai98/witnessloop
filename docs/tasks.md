@@ -30,6 +30,10 @@
 - [x] D4 校验 `reviewer_run_id != author_run_id`
 - [x] D5 校验受保护路径写入有结构化解释事件（`reason`/`approved_by` 非空）
 - [x] D6 不变集：policy / manifest 恒受保护、不可由 repo policy 移除（~5 条常量封顶）
+- [x] D7 `require_change_for`：命中该 glob 组的改动**必须**挂 change 目录
+      （堵「什么都不建就绕过」——此前只改 `src/` 的 PR 会直接放行）
+- [x] D8 归档豁免：`<changes_root>/archive/**` 上的**纯改名**（R100）免解释事件，
+      删改证据文件仍要（豁免面刻意收窄）
 
 ## E. 交互层（CC plugin）
 
