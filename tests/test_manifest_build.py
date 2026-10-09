@@ -33,11 +33,11 @@ def _build(cli, repo: Path, *extra: str, **kwargs):
         "--root",
         str(repo),
         "--change",
-        CHANGE,
+        kwargs.get("change", CHANGE),
         "--stage",
-        "building",
+        kwargs.get("stage", "building"),
         "--report",
-        REPORT,
+        kwargs.get("report", REPORT),
         "--reviewer-run-id",
         kwargs.get("reviewer", "run-reviewer-1"),
         "--author-run-id",
@@ -167,6 +167,52 @@ def test_reviewer_equal_to_author_is_rejected(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "reviewer" in err and "author" in err
     # 不合格就不许写出去——否则 check 才拦，反馈太晚
+    assert not (directory / "reviews" / "building.manifest.json").exists()
+
+
+def test_change_id_escaping_the_changes_root_is_rejected(repo: Path, cli):
+    """回归 M2 §4-1：`--change` 与 `--report` 是同一类 agent 输入，必须同款守卫。
+
+    没有这道守卫时 `--change "../../../evil"` 会把 manifest **写到仓外**（实测 exit 0）。
+    """
+    _ready_to_build(repo, cli)
+    outside = repo.parent / "evilwl_changes"  # 仓外
+    (outside / "reviews").mkdir(parents=True, exist_ok=True)
+
+    code, _, err = _build(cli, repo, change="../../../evilwl_changes")
+
+    assert code == C.EXIT_FAIL
+    assert "逃逸" in err  # 因越界被拒，而不是因其它校验碰巧失败
+    assert not (outside / "reviews" / "building.manifest.json").exists()
+
+
+def test_absolute_change_id_is_rejected(repo: Path, cli):
+    """绝对路径也不行（pathlib 会让它直接顶掉前面的相对段）。"""
+    _ready_to_build(repo, cli)
+    outside = repo.parent / "evilwl_abs"
+    (outside / "reviews").mkdir(parents=True, exist_ok=True)
+
+    code, _, err = _build(cli, repo, change=str(outside))
+
+    assert code == C.EXIT_FAIL
+    assert "逃逸" in err  # 因为越界被拒，而不是因为「报告不存在」之类的巧合
+    assert not (outside / "reviews" / "building.manifest.json").exists()
+
+
+def test_missing_required_artifacts_is_rejected(repo: Path, cli):
+    """回归 M2 §4-2：build 绿灯 / check 红灯的自相矛盾。
+
+    build 只校验 HASHED_ARTIFACTS（tasks/specs），不校验 required_artifacts，
+    于是缺 proposal/design 时也能「报成功」，紧接着被 check 拒。
+    """
+    directory = _ready_to_build(repo, cli)
+    (directory / "proposal.md").unlink()
+    (directory / "design.md").unlink()
+
+    code, _, err = _build(cli, repo)
+
+    assert code == C.EXIT_FAIL
+    assert "proposal.md" in err
     assert not (directory / "reviews" / "building.manifest.json").exists()
 
 

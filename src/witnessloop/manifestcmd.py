@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from witnessloop import constants as C
+from witnessloop import contract
 from witnessloop import gitutil, policy as policy_mod
 from witnessloop import paths as pathutil
 from witnessloop.hashing import sha256_bytes, sha256_tree
@@ -45,11 +46,22 @@ def run_build(args: argparse.Namespace) -> int:
         )
 
     change_id = args.change
-    directory = root / pol.changes_root / change_id
-    if not directory.is_dir():
+    changes_root = root / pol.changes_root
+    directory = changes_root / change_id
+    # 与 --report 同款守卫：change id 与 report path 是同一类 agent 输入，
+    # 一个守一个不守就会留下「写到仓外」的口子（回归 M2 §4-1）。
+    if not pathutil.is_within(directory, changes_root):
         return _fail(
-            f"change 目录不存在：{pol.changes_root.rstrip('/')}/{change_id}/"
+            f"change={change_id!r} 逃逸出 {pol.changes_root.rstrip('/')}/"
+            "——change id 必须落在 changes root 之内"
         )
+
+    # 与 check 同一套契约判定：否则会出现「build 报成功、check 立刻拒」的自相矛盾
+    # （回归 M2 §4-2）。
+    contract_findings = contract.validate_change_dir(root, pol, change_id)
+    if contract_findings:
+        detail = "\n  ".join(f"{f.path}：{f.message}" for f in contract_findings)
+        return _fail(f"change 目录不合契约（与 check 同一套判定）：\n  {detail}")
 
     report_rel = pathutil.normalize(args.report)
     report_file = directory / report_rel
