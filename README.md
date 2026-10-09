@@ -25,6 +25,17 @@ witnessloop check --base origin/main --head HEAD
 witnessloop uninit
 ```
 
+### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
+
+`init` 写一份默认 policy，目标仓按需改：
+
+- `protected_paths`：写入需结构化解释事件（默认 `openspec/specs/**`、`.witnessloop/**`）。
+- `require_change_for`：命中这些 glob 的改动**必须**挂一个 change 目录。默认覆盖常见
+  源码目录（`src/**`、`lib/**`、`app/**`、`apps/**`、`packages/**`、`server/**`、
+  `cmd/**`、`internal/**`），**不含** `docs/**`、`tests/**`。没有它，绕过门禁最省事的
+  办法是什么都不建——只改 `src/` 的 PR 会直接放行。写 `[]` 可显式关掉。
+- `required_artifacts` / `evidence`：change 目录必须齐备的件、证据文件名与事件格式。
+
 `init` 写的 caller workflow 引用本仓的 reusable workflow
 `.github/workflows/gate.yml@v1`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。

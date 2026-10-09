@@ -74,10 +74,14 @@ def test_touched_but_absent_change_dir_is_reported(repo: Path, cli):
 
 
 def test_change_outside_changes_root_is_ignored(gated: Path, cli):
-    """非 change 目录的文件不参与契约校验。"""
-    (gated / "src").mkdir(exist_ok=True)
-    (gated / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
-    commit_all(gated, "普通代码改动")
+    """非 change 目录的文件不参与**契约**校验。
+
+    用 `docs/` 而不是 `src/`：后者命中 `require_change_for`，会被另一条规则
+    （改了代码必须挂 change）拦下，掩盖本条要验证的「契约校验与它无关」。
+    """
+    (gated / "docs").mkdir(exist_ok=True)
+    (gated / "docs" / "notes.md").write_text("# 笔记\n", encoding="utf-8")
+    commit_all(gated, "普通文档改动")
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err

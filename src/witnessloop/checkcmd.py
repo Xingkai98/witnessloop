@@ -74,6 +74,7 @@ def run(args: argparse.Namespace) -> int:
         findings += contract.validate_review_manifests(
             root, pol, change_id, scope=scope
         )
+    findings += _require_change(pol, changes, change_ids)
     findings += _protected_writes(root, pol, changes)
 
     _report(base, head, changes, change_ids, findings)
@@ -94,6 +95,37 @@ def _resolve_base(root: Path, explicit: str | None) -> str:
         if gitutil.rev_parse(root, candidate):
             return candidate
     return "main"
+
+
+def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contract.Finding]:
+    """改了代码就必须挂一个 change 目录。
+
+    没有这条时，`check` 只保证「**如果你**动了 change 目录/受保护路径，它要齐备」，
+    于是最省事的绕过方式是什么都不建——只改 `src/` 的 PR 直接放行。
+    """
+    if change_ids or not pol.require_change_for:
+        return []
+
+    hits = sorted(
+        {
+            pathutil.normalize(path)
+            for change in changes
+            for path in (change.path, change.old_path)
+            if path and pathutil.matches_any(pathutil.normalize(path), pol.require_change_for)
+        }
+    )
+    if not hits:
+        return []
+
+    shown = ", ".join(hits[:5]) + ("…" if len(hits) > 5 else "")
+    return [
+        contract.Finding(
+            hits[0],
+            f"{shown} 属于必须挂 change 的路径（policy.require_change_for），"
+            f"但本次 diff 里没有任何 change 目录（{pol.changes_root}/<id>/）。"
+            "补一个 change 目录，或把该路径从 policy.require_change_for 里移除。",
+        )
+    ]
 
 
 def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contract.Finding]:

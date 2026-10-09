@@ -36,6 +36,7 @@ def default_policy_doc() -> dict:
             "openspec/specs/**",
             ".witnessloop/**",
         ],
+        "require_change_for": list(C.DEFAULT_REQUIRE_CHANGE_FOR),
         "required_artifacts": list(C.DEFAULT_REQUIRED_ARTIFACTS),
         "evidence": {
             "review_manifest_glob": C.DEFAULT_REVIEW_MANIFEST_GLOB,
@@ -49,6 +50,7 @@ def default_policy_doc() -> dict:
 class Policy:
     changes_root: str
     protected_paths: tuple[str, ...]
+    require_change_for: tuple[str, ...]
     required_artifacts: tuple[str, ...]
     review_manifest_glob: str
     events_file: str
@@ -76,9 +78,17 @@ class Policy:
         evidence = doc.get("evidence") or {}
         if not isinstance(evidence, dict):
             raise PolicyError("policy.evidence 必须是 JSON 对象")
+        # 语义：字段**缺省** → 用出厂默认（保护性默认，别让老 policy 静默失去这条规则）；
+        # 显式写 `[]` → 关掉这条规则。
+        raw_require_change = doc.get("require_change_for")
         return cls(
             changes_root=str(doc.get("changes_root") or C.DEFAULT_CHANGES_ROOT),
             protected_paths=tuple(doc.get("protected_paths") or ()),
+            require_change_for=tuple(
+                C.DEFAULT_REQUIRE_CHANGE_FOR
+                if raw_require_change is None
+                else raw_require_change
+            ),
             required_artifacts=tuple(
                 doc.get("required_artifacts") or C.DEFAULT_REQUIRED_ARTIFACTS
             ),

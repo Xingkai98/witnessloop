@@ -37,6 +37,7 @@ openspec/changes/<change-id>/
   "schema": "witnessloop/policy@v1",
   "changes_root": "openspec/changes",
   "protected_paths": ["openspec/specs/**", ".witnessloop/**"],
+  "require_change_for": ["src/**", "lib/**", "app/**", "apps/**", "packages/**", "server/**", "cmd/**", "internal/**"],
   "required_artifacts": ["proposal.md", "design.md", "tasks.md", "specs", "reviews"],
   "evidence": {
     "review_manifest_glob": "reviews/*.manifest.json",
@@ -46,8 +47,18 @@ openspec/changes/<change-id>/
 }
 ```
 
-`protected_paths` 是**repo-agnostic 的参数化轴**——目标仓加自己的路径（如 `infra/**`）。
-所有字段缺省时回落到上面的默认值。
+`protected_paths` / `require_change_for` 是**repo-agnostic 的参数化轴**——
+目标仓换成自己的路径（如 `infra/**`）。其余字段缺省时回落到上面的默认值。
+
+`require_change_for`：命中这些 glob 的改动**必须**挂一个 change 目录，否则 `check`
+fail 并点名命中的文件。没有它时，`check` 只保证「**如果你**动了 change 目录/受保护
+路径，它要齐备」——于是最省事的绕过方式是什么都不建（只改 `src/` 的 PR 直接放行）。
+语义细节：
+
+- **缺省**（字段不存在）→ 用出厂默认，老 policy 不会静默失去这条规则；
+- 显式写 `[]` → **关掉**这条规则（逃生口）；
+- 默认刻意**不含** `docs/**` / `tests/**`：纯文档、纯测试改动不该被拦。
+- 判定看整个 diff（含删除与改名的旧路径），所以「删掉源码」同样算改了代码。
 
 glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`）。
 不用 `fnmatch`——它的 `*` 跨 `/`，会让「前缀约束」失效。
