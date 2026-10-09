@@ -144,8 +144,17 @@ def test_adapters_pass_the_run_id_strategy_through(command: str):
     assert "--reviewer-run-id" in text or "--author-run-id" in text
 
 
-def test_readme_documents_the_run_id_variables():
+@pytest.mark.parametrize("command", COMMANDS)
+def test_adapters_let_the_templates_dir_be_overridden(command: str):
+    """plugin/ 被单独拷走时，靠这个环境变量把模板位置指回去。"""
+    text = (PLUGIN / "commands" / f"{command}.md").read_text(encoding="utf-8")
+    assert "WITNESSLOOP_TEMPLATES_DIR" in text
+    assert "${CLAUDE_PLUGIN_ROOT}/../templates" in text  # 未设时的回落
+
+
+def test_readme_documents_both_environment_variables():
     text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+    assert "WITNESSLOOP_TEMPLATES_DIR" in text
     assert "WITNESSLOOP_RUN_ID" in text
 
 

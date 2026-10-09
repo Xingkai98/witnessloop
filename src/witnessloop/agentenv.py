@@ -1,13 +1,16 @@
-"""交互层侧的取值策略：run id。
+"""交互层侧的取值策略：run id 与模板目录。
 
-Claude Code 没有稳定的「当前 run id」注入点，所以适配器与工具必须按**同一套规则**
-取值。这里把规则写成**可执行的规范**而不是只散落在模板散文里——规范能写错，
-代码+测试不能。
+Claude Code 既没有稳定的「当前 run id」注入点，插件也没有固定的安装位置，
+所以适配器与工具必须按**同一套规则**取值。这里把规则写成**可执行的规范**而不是
+只散落在模板散文里——规范能写错，代码+测试不能。
 
-规则：角色专用环境变量 → ``WITNESSLOOP_RUN_ID``（当前 run）→ 生成。
-生成的形态是 ``<stage>-<role>-<UTC 时间戳>-<短随机>``，**role 编进 id**，
-所以生成路径下 `reviewer_run_id` 与 `author_run_id` 必然不同——
-门禁会对两者相等直接拒（那是「忘了另开 run」的症状）。
+规则：
+
+* **run id**：角色专用环境变量 → ``WITNESSLOOP_RUN_ID``（当前 run）→ 生成。
+  生成的形态是 ``<stage>-<role>-<UTC 时间戳>-<短随机>``，**role 编进 id**，
+  所以生成路径下 `reviewer_run_id` 与 `author_run_id` 必然不同——
+  门禁会对两者相等直接拒（那是「忘了另开 run」的症状）。
+* **模板目录**：``WITNESSLOOP_TEMPLATES_DIR`` 优先，未设回落仓库的 ``templates/``。
 """
 
 from __future__ import annotations
@@ -15,9 +18,16 @@ from __future__ import annotations
 import os
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 #: 当前 run 的 id。**一个 run 一个值**——所以审阅者与作者各自的环境里应当不同。
 RUN_ID_ENV = "WITNESSLOOP_RUN_ID"
+
+#: 覆盖模板目录。`plugin/` 被单独拷走、脱离本仓时靠它把模板位置指回去。
+TEMPLATES_DIR_ENV = "WITNESSLOOP_TEMPLATES_DIR"
+
+#: 未覆盖时的模板目录 = 本仓根的 `templates/`（适配器默认也用 `${CLAUDE_PLUGIN_ROOT}/../templates`）。
+DEFAULT_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 
 def role_env_name(role: str) -> str:
@@ -50,3 +60,16 @@ def resolve_run_id(stage: str, role: str, *, env=None) -> str:
         if value:
             return value
     return generate_run_id(stage, role)
+
+
+def resolve_templates_dir(*, env=None, default: Path | None = None) -> Path:
+    """模板目录：``WITNESSLOOP_TEMPLATES_DIR`` 优先，未设回落仓库的 ``templates/``。
+
+    展开 ``~``——这是**人手工设**的变量，不是 git 输出的路径，不像门禁侧那样
+    刻意不展开。
+    """
+    env = os.environ if env is None else env
+    override = (env.get(TEMPLATES_DIR_ENV) or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (default or DEFAULT_TEMPLATES_DIR).resolve()

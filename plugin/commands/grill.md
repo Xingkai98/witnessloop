@@ -29,13 +29,16 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
 
    然后把报告 + manifest **单独一个提交**（`docs/gate.md §3.1`）。
 
-## 环境（CC 侧怎么取 run id）
+## 环境（CC 侧怎么取 run id / 模板）
 
-- `WITNESSLOOP_RUN_ID`：**当前 run** 的 id。审阅者与作者是**不同的 run**，各自环境里
-  这个值本就应当不同。同一进程要同时给两个角色时，用
+- `WITNESSLOOP_RUN_ID`：**当前 run** 的 id。把它设成你这个会话的 id；审阅者是另起的
+  run，它自己环境里该有**不同**的值。同一进程要同时给两个角色时，用
   `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`（优先级更高）。
-- **不设也行**：`manifest build` 会按模板里那套规则生成一个唯一 id
-  （`<stage>-<role>-<utc>-<随机>`），两个角色必然不同。设了才幂等。
+- **不设也行**：`manifest build` 会按 `templates/grill.md` 里那套规则生成一个唯一
+  id，两个角色必然不同。设了才幂等（同一个 id 重建出同一份 manifest）。
+- `WITNESSLOOP_TEMPLATES_DIR`：覆盖模板目录。默认
+  `${CLAUDE_PLUGIN_ROOT}/../templates`——把 `plugin/` 单独拷走、脱离本仓时，
+  用它把模板位置指回去。
 
 ## 约束
 

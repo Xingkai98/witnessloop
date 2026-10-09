@@ -87,12 +87,14 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 - CC 适配器 = plugin（slash command + subagent + skill）：`grill`、`review-loop`。
 - **重写，不回收**：asterwynd 的 `/grill`、`/review-loop`、`grilling` 不在版本控制、含私有约定，与「证据可信」自相矛盾。做法 = **重打包**：算法与 prompt 文本照收，去掉私有路径/issue 号，抽象成 host 中立模板。
 - **硬约束**：交互层对 change 状态**只读**，**不得持有自己的状态文件**；一切以 `manifest` 为准。
-- **run id 怎么取**：host 没有稳定的「当前 run id」注入点，所以适配器与工具按同一套
-  规则取值（可执行实现见 `src/witnessloop/agentenv.py`）：`WITNESSLOOP_RUN_ID`
-  （当前 run）**环境优先、生成兜底**——取不到就生成
-  `<stage>-<role>-<UTC 时间戳>-<短随机>`，`role` 编进 id 所以两个角色必然不同
-  （`reviewer_run_id != author_run_id` 是门禁的硬校验）。角色专用变量
-  `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` 优先级更高。
+- **两个取值覆盖点**（host 没有稳定的 run id 注入点，插件也没有固定安装位置，
+  所以适配器与工具必须按同一套规则取值；可执行实现见 `src/witnessloop/agentenv.py`）：
+  - `WITNESSLOOP_RUN_ID`：当前 run 的 id。**环境优先、生成兜底**——取不到就生成
+    `<stage>-<role>-<UTC 时间戳>-<短随机>`，`role` 编进 id 所以两个角色必然不同
+    （`reviewer_run_id != author_run_id` 是门禁的硬校验）。角色专用变量
+    `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` 优先级更高。
+  - `WITNESSLOOP_TEMPLATES_DIR`：覆盖模板目录；未设时适配器回落
+    `${CLAUDE_PLUGIN_ROOT}/../templates`（`plugin/` 被单独拷走时靠它指回模板）。
 
 ### 5.3 数据契约
 

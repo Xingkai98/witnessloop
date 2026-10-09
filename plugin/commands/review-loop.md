@@ -30,13 +30,16 @@ description: 独立审阅闭环——零记忆审阅者审实现，不通过就�
    然后把报告 + manifest（以及需要的解释事件）**单独一个提交**（`docs/gate.md §3.1`）。
    审阅之后再落任何非证据文件，`witnessloop check` 会判「审阅的是旧 revision」。
 
-## 环境（CC 侧怎么取 run id）
+## 环境（CC 侧怎么取 run id / 模板）
 
 - `WITNESSLOOP_RUN_ID`：**当前 run** 的 id。审阅者与作者是**不同的 run**，各自环境里
   这个值本就应当不同。同一进程要同时给两个角色时，用
   `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`（优先级更高）。
-- **不设也行**：`manifest build` 会按模板里那套规则生成一个唯一 id
-  （`<stage>-<role>-<utc>-<随机>`），两个角色必然不同。设了才幂等。
+- **不设也行**：`manifest build` 会按 `templates/review-loop.md` 里那套规则生成一个
+  唯一 id（`<stage>-<role>-<utc>-<随机>`），两个角色必然不同。
+- `WITNESSLOOP_TEMPLATES_DIR`：覆盖模板目录。默认
+  `${CLAUDE_PLUGIN_ROOT}/../templates`——把 `plugin/` 单独拷走、脱离本仓时，
+  用它把模板位置指回去。
 
 ## 约束
 
