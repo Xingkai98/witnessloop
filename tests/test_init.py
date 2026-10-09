@@ -12,7 +12,7 @@ from witnessloop import constants as C
 from witnessloop.hashing import sha256_file
 from witnessloop.policy import INVARIANT_PROTECTED_PATHS
 
-from conftest import commit_all, git
+from conftest import git
 
 
 def test_init_creates_three_files(repo: Path, cli):

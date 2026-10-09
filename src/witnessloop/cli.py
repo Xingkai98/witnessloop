@@ -85,9 +85,9 @@ def main(argv: list[str] | None = None) -> int:
 
         return uninitcmd.run(args)
     if args.command == "check":
-        from witnessloop.not_implemented import run_check
+        from witnessloop import checkcmd
 
-        return run_check(args)
+        return checkcmd.run(args)
 
     parser.error(f"未知命令：{args.command}")  # pragma: no cover
     return EXIT_USAGE

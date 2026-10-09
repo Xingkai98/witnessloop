@@ -10,8 +10,15 @@ import re
 
 
 def normalize(path: str) -> str:
-    """统一成正斜杠、去掉前导 ``./``（Windows 反斜杠也是已知坑，见 design §9）。"""
-    return path.replace("\\", "/").lstrip("./")
+    """统一成正斜杠、去掉前导 ``./``（Windows 反斜杠也是已知坑，见 design §9）。
+
+    注意别用 ``str.lstrip("./")``：它按**字符集**剥离，会把 ``.witnessloop/x``
+    削成 ``witnessloop/x``，让不变集静默失效。
+    """
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
 
 
 def glob_to_regex(pattern: str) -> re.Pattern[str]:

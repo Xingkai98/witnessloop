@@ -57,6 +57,21 @@ def cli(capsys):
 
 
 @pytest.fixture
+def gated(repo: Path, cli) -> Path:
+    """已接入 witnessloop（init 已提交到 main）的仓，且切到 feature 分支。
+
+    门禁生效的最小基线：check 拿它当 base 才有意义。
+    """
+    from witnessloop.constants import EXIT_PASS
+
+    code, _, err = cli("init", "--root", str(repo))
+    assert code == EXIT_PASS, err
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+    return repo
+
+
+@pytest.fixture
 def read_json():
     def _read(path: str | Path) -> dict:
         return json.loads(Path(path).read_text(encoding="utf-8"))
