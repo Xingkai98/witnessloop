@@ -32,15 +32,6 @@ SCHEMA_INIT_MANIFEST = "witnessloop/init-manifest@v1"
 SCHEMA_REVIEW_MANIFEST = "witnessloop/review-manifest@v1"
 SCHEMA_EVENT = "witnessloop/event@v1"
 
-# 证据类路径：审阅报告 / manifest / 解释事件 / 门禁自身配置。
-# 用于 D3 的 base/head 绑定——被审阅 revision 之后允许出现的**只有**这些，
-# 出现别的（源码、spec……）即「审阅的是旧 revision」。
-EVIDENCE_PATH_PATTERNS = (
-    ".witnessloop/**",
-    "**/reviews/**",
-    "**/workflow-events.jsonl",
-)
-
 # review manifest 必填字段（design §5.3）。`diff_hash` 是 informational，不在此列。
 REVIEW_MANIFEST_REQUIRED_FIELDS = (
     "reviewer_run_id",

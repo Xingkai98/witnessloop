@@ -84,9 +84,14 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
 - **revision 绑定**（`base_sha` / `head_sha`，tasks.md D3）：
   1. `base_sha` 与 `head_sha` 都必须**能解析成本仓的一个提交**（乱填 `"0"*40` 会被拒）；
   2. `head_sha` 必须是本次被检 head 的**祖先**（含相等）；
-  3. 从 `head_sha` 到本次被检 head 之间，只允许出现**证据文件**
-     （`.witnessloop/**`、`**/reviews/**`、`**/workflow-events.jsonl`）——
-     出现源码/spec 等非证据文件即判「**审阅的是旧 revision**」。
+  3. 从 `head_sha` 到本次被检 head 之间，只允许出现**证据文件**与**本 PR 自己的
+     变更**，出现别的即判「**审阅的是旧 revision**」。两个过滤条件缺一不可：
+     - **只算本 PR 改过的文件**（`base...head` 的变更集）。被检 head 可能是
+       merge commit（`pull_request` 事件下 `actions/checkout` 默认检出 test-merge），
+       base 侧顺带进来的改动不算本 PR 漂移。
+     - **证据路径 = `.witnessloop/**`、`<changes_root>/*/reviews/**`、
+       `<changes_root>/*/workflow-events.jsonl`**（收窄到 change 目录内——
+       任意深度的 `reviews/` 目录都算证据会让 `src/reviews/x.py` 变成规避面）。
 - **强制 `reviewer_run_id != author_run_id`**：挡「忘了另开 run」，**不挡蓄意**。
 - `report_path` 解析后必须落在 change 目录内（禁 `../` 逃逸）。
 

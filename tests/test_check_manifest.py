@@ -284,6 +284,30 @@ def test_evidence_committed_after_content_passes(gated: Path, cli):
     assert code == C.EXIT_PASS, err
 
 
+def test_reviews_dir_outside_the_change_is_not_evidence(gated: Path, cli):
+    """回归 R2 3-3：`**/reviews/**` 太宽——审阅后往任意 reviews 目录塞内容即可绕开 stale。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    write_artifact(gated, "src/reviews/sneaky.py", "x = 1\n")
+    commit_all(gated, "审阅后把非证据塞进 reviews 目录")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+    assert "src/reviews/sneaky.py" in err
+
+
+def test_events_file_outside_the_change_is_not_evidence(gated: Path, cli):
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    write_artifact(gated, "src/workflow-events.jsonl", '{"a":1}\n')
+    commit_all(gated, "审阅后塞一个同名事件文件")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+
+
 def test_evidence_only_delta_does_not_count_as_stale(gated: Path, cli):
     """审阅后再补一条解释事件（属证据）→ 不算 stale。"""
     commit_content(gated, "add-x")

@@ -73,6 +73,7 @@ class SpanScope:
 
     checked_head: str
     pr_paths: frozenset[str]
+    evidence_patterns: tuple[str, ...]
 
 
 def validate_review_manifests(
@@ -200,7 +201,7 @@ def _check_git_span(
         path
         for path in delta
         if pathutil.normalize(path) in scope.pr_paths
-        and not pathutil.matches_any(path, C.EVIDENCE_PATH_PATTERNS)
+        and not pathutil.matches_any(path, scope.evidence_patterns)
     )
     if stray:
         shown = ", ".join(stray[:5]) + ("…" if len(stray) > 5 else "")

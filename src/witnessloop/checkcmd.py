@@ -64,6 +64,7 @@ def run(args: argparse.Namespace) -> int:
             for path in (change.path, change.old_path)
             if path
         ),
+        evidence_patterns=pol.evidence_path_patterns,
     )
 
     change_ids = contract.changed_change_ids(changes, pol.changes_root)
