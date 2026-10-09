@@ -1,0 +1,5 @@
+{
+  "name": "witnessloop",
+  "description": "交互层适配器：grill（设计对抗式追问）与 review-loop（独立审阅闭环）。只做接线，算法在仓库的 templates/ 下，host 中立。",
+  "version": "0.1.0"
+}
