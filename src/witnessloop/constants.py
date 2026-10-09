@@ -49,6 +49,14 @@ SCHEMA_INIT_MANIFEST = "witnessloop/init-manifest@v1"
 SCHEMA_REVIEW_MANIFEST = "witnessloop/review-manifest@v1"
 SCHEMA_EVENT = "witnessloop/event@v1"
 
+# review manifest 里「内容哈希」字段 → 它绑定的 artifact（相对 change 目录）。
+# `check` 校验与 `manifest build` 产出**共用这一张表 + 同一个 sha256_tree**，
+# 杜绝两边漂移（manifest 的 report_hash 因为路径是动态的，单独处理）。
+HASHED_ARTIFACTS = (
+    ("tasks_hash", "tasks.md"),
+    ("spec_hash", "specs"),
+)
+
 # review manifest 必填字段（design §5.3）。`diff_hash` 是 informational，不在此列。
 REVIEW_MANIFEST_REQUIRED_FIELDS = (
     "reviewer_run_id",

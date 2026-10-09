@@ -37,7 +37,7 @@ def test_unknown_subcommand_is_a_loud_error(capsys):
     assert "gate" in err
 
 
-@pytest.mark.parametrize("command", ["init", "uninit", "check"])
+@pytest.mark.parametrize("command", ["init", "uninit", "check", "manifest"])
 def test_each_verb_is_routed_with_help(command, capsys):
     with pytest.raises(SystemExit) as exc:
         main([command, "--help"])
@@ -45,10 +45,23 @@ def test_each_verb_is_routed_with_help(command, capsys):
     assert command in capsys.readouterr().out
 
 
-def test_only_the_three_verbs_exist():
+def test_the_verb_surface_stays_small():
+    """动词面刻意很小：3 个门禁动词 + manifest build（证据产出）。"""
     parser = build_parser()
     sub = next(a for a in parser._actions if a.dest == "command")
-    assert set(sub.choices) == {"init", "uninit", "check"}
+    assert set(sub.choices) == {"init", "uninit", "check", "manifest"}
+
+
+def test_manifest_requires_a_subcommand(capsys):
+    assert main(["manifest"]) == 2
+    assert "manifest build" in capsys.readouterr().err
+
+
+def test_manifest_unknown_subcommand_is_loud(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["manifest", "frobnicate"])
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_console_script_is_installed():

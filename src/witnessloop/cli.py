@@ -1,7 +1,8 @@
 """`witnessloop` 单二进制的子命令路由。
 
-v1 只暴露 3 个动词：``init`` / ``uninit`` / ``check``（design §5.1）。
-其余动词（gate/event/status/policy/manifest/upgrade）刻意不存在——
+动词面刻意很小：``init`` / ``uninit`` / ``check``（design §5.1）+
+``manifest build``（证据产出，design §5.2 的交互层收尾调它）。
+其余动词（gate/event/status/policy upgrade）刻意不存在——
 argparse 会对未知子命令给出明确的 invalid choice 报错，不会静默吞掉。
 """
 
@@ -64,6 +65,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--head", default=None, help="diff 的 head ref（默认 HEAD）"
     )
 
+    p_manifest = sub.add_parser("manifest", help="review manifest 操作（证据产出）")
+    manifest_sub = p_manifest.add_subparsers(
+        dest="manifest_command", metavar="<子命令>"
+    )
+    p_build = manifest_sub.add_parser(
+        "build", help="产出 check 认的 review manifest（幂等、不 auto-commit）"
+    )
+    p_build.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
+    p_build.add_argument("--change", required=True, help="change id")
+    p_build.add_argument("--stage", required=True, help="审阅阶段名（如 grill / building）")
+    p_build.add_argument(
+        "--report",
+        required=True,
+        help="change 目录内的报告路径，如 reviews/building-review.md（必须在 reviews/ 下）",
+    )
+    p_build.add_argument("--reviewer-run-id", required=True, help="审阅者的 run id")
+    p_build.add_argument("--author-run-id", required=True, help="作者的 run id")
+    p_build.add_argument(
+        "--base",
+        default=None,
+        help="base ref；缺省时与 check 用同一套解析（WITNESSLOOP_BASE_REF / "
+        "GITHUB_BASE_REF / 主干）",
+    )
+
     return parser
 
 
@@ -88,6 +113,16 @@ def main(argv: list[str] | None = None) -> int:
         from witnessloop import checkcmd
 
         return checkcmd.run(args)
+    if args.command == "manifest":
+        if args.manifest_command == "build":
+            from witnessloop import manifestcmd
+
+            return manifestcmd.run_build(args)
+        print(
+            "witnessloop manifest：需要子命令。目前只有 `manifest build`。",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
 
     parser.error(f"未知命令：{args.command}")  # pragma: no cover
     return EXIT_USAGE

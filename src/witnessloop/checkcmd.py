@@ -41,7 +41,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return C.EXIT_NOT_ONBOARDED
 
-    base = _resolve_base(root, args.base)
+    base = gitutil.resolve_base(root, args.base)
     head = args.head or os.environ.get("WITNESSLOOP_HEAD_REF") or "HEAD"
 
     if gitutil.rev_parse(root, base) is None:
@@ -79,22 +79,6 @@ def run(args: argparse.Namespace) -> int:
 
     _report(base, head, changes, change_ids, findings)
     return C.EXIT_FAIL if findings else C.EXIT_PASS
-
-
-def _resolve_base(root: Path, explicit: str | None) -> str:
-    """base ref 解析：显式参数 → WITNESSLOOP_BASE_REF → GITHUB_BASE_REF → 主干。"""
-    if explicit:
-        return explicit
-    env = os.environ.get("WITNESSLOOP_BASE_REF")
-    if env:
-        return env
-    gh_base = os.environ.get("GITHUB_BASE_REF")
-    if gh_base:
-        return f"origin/{gh_base}"
-    for candidate in ("origin/main", "main", "origin/master", "master"):
-        if gitutil.rev_parse(root, candidate):
-            return candidate
-    return "main"
 
 
 def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contract.Finding]:

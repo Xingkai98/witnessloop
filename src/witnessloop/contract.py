@@ -295,7 +295,7 @@ def _check_hashes(directory: Path, manifest_rel: str, doc: dict) -> list[Finding
             )
         )
 
-    for field, artifact in (("tasks_hash", "tasks.md"), ("spec_hash", "specs")):
+    for field, artifact in C.HASHED_ARTIFACTS:
         target = directory / artifact
         if not target.exists():
             findings.append(Finding(manifest_rel, f"{artifact} 不存在，无法校验 {field}"))
