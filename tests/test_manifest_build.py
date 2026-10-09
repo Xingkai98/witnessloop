@@ -20,6 +20,7 @@ from helpers import (
     commit_evidence,
     head_sha,
     write_artifact,
+    write_change,
 )
 
 CHANGE = "add-retry"
@@ -136,6 +137,40 @@ def test_hashes_use_the_same_implementation_as_check(repo: Path, cli):
     for field, artifact in C.HASHED_ARTIFACTS:
         assert doc[field] == sha256_tree(directory / artifact), field
     assert doc["report_hash"] == sha256_tree(directory / REPORT)
+
+
+def test_hashes_anchor_the_real_artifacts(repo: Path, cli):
+    """**独立锚定**：硬编码每个字段该覆盖哪个 artifact，不经过 `HASHED_ARTIFACTS`。
+
+    为什么必须独立：`check` 与 `build` 共用那张表，所以有人把表改错（例如把
+    `spec_hash` 指向 `tasks.md`）时，两边会**一起错**、round-trip 仍绿——共享常量
+    把「两边一致」这件事变成了自证。这条测试是唯一能抓住那种共享 bug 的锚。
+    """
+    directory = _ready_to_build(repo, cli)
+    # specs/ 放**两棵**能力子树：确保 hash 真的是「整棵树」，而不是某一篇叶子
+    write_artifact(repo, f"openspec/changes/{CHANGE}/specs/retry/spec.md", "# retry\n")
+    write_artifact(
+        repo, f"openspec/changes/{CHANGE}/specs/timeout/spec.md", "# timeout\n"
+    )
+
+    assert _build(cli, repo)[0] == C.EXIT_PASS
+    doc = json.loads(
+        (directory / "reviews" / "building.manifest.json").read_text("utf-8")
+    )
+
+    tasks_md = directory / "tasks.md"
+    specs_tree = directory / "specs"
+
+    # 字段 → 它**必须**覆盖的 artifact（路径写死，不查表）
+    assert doc["tasks_hash"] == sha256_tree(tasks_md)
+    assert doc["spec_hash"] == sha256_tree(specs_tree)
+    assert doc["report_path"] == REPORT
+    assert doc["report_hash"] == sha256_tree(directory / REPORT)
+
+    # 三个 hash 互不相同——否则「指错了」也看不出来
+    assert len({doc["tasks_hash"], doc["spec_hash"], doc["report_hash"]}) == 3
+    # spec_hash 覆盖的是**整棵树**，不是其中一篇
+    assert doc["spec_hash"] != sha256_tree(specs_tree / "retry" / "spec.md")
 
 
 def test_head_sha_is_the_current_head(repo: Path, cli):
@@ -266,6 +301,26 @@ def test_unknown_change_is_rejected(repo: Path, cli):
     )
     assert code == C.EXIT_FAIL
     assert "no-such-change" in err
+
+
+def test_repo_without_any_commit_is_rejected(tmp_path: Path, cli):
+    """gate.md §3.2 把这个负例列进了清单，但一直没测过。"""
+    root = tmp_path / "fresh"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "user.email", "test@example.com")
+    git(root, "config", "user.name", "witnessloop test")
+    assert cli("init", "--root", str(root))[0] == C.EXIT_PASS
+
+    write_change(root, CHANGE)
+    directory = change_dir(root, CHANGE)
+    (directory / REPORT).write_text("PASS\n", encoding="utf-8")
+
+    code, _, err = _build(cli, root)
+
+    assert code == C.EXIT_FAIL
+    assert "提交" in err
+    assert not (directory / "reviews" / "building.manifest.json").exists()
 
 
 def test_unonboarded_repo_is_rejected(repo: Path, cli):
