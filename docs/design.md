@@ -1,100 +1,122 @@
-# witnessloop 设计（草案 v0.1）
+# witnessloop 设计 v0.2
 
-> 状态：**草案，待 grill + 对抗闭环**。
-> 决策日期：2026-10-09。本文档由主 session 起草，尚未经独立审阅者逐项追问。
+> 状态：**设计已定**（经 grill + 独立对抗验证 + 用户逐项确认）。
+> v0.1：2026-10-09 起草；v0.2：2026-10-09 收敛。
+> 证据见 [`docs/reviews/grill-design.md`](reviews/grill-design.md) 与 [`docs/reviews/grill-adversarial.md`](reviews/grill-adversarial.md)。
 
 ## 1. 问题
 
 Agent 写代码的核心风险不是「不会写」，而是「**不可信**」：
 
 - 跳过设计直接写代码；
-- 自评通过（「我做的对啊」），没有独立第三方；
+- 自评通过，没有独立第三方；
 - 审阅走过场，或审阅者与作者共享上下文、盲区一致；
 - 证据只存在于对话 transcript 里——不可提交、不可审计、不可复现。
 
-代价是多轮返工、以及「看起来做完了其实没有」的假完成。
-
 ## 2. 目标
 
-把一套已在真实仓库跑过 300+ change 的流程，抽成**独立、可复用于任意代码仓**的工具，把「可信」变成机械可验证的东西：
+把一套已在真实仓库跑过 300+ change 的流程，抽成**独立、可复用于任意代码仓**的工具，让「证据」变成机械可检查的东西：
 
 1. **设计先行**：非平凡改动先有 design 文档。
-2. **设计对抗（grill）**：独立零记忆审阅者对 design 逐轮追问，产出结构化决策记录；**缺证据禁止写代码**（机械门禁）。
+2. **设计对抗（grill）**：独立零记忆审阅者对 design 逐轮追问，产出可提交的决策记录。
 3. **实现**：测试先行（TDD）。
 4. **独立审阅闭环**：实现完成后由独立零记忆审阅者审，PASS 或 N 轮封顶。
-5. **证据绑定**：每次门禁通过绑定可审计证据（审阅者 run id、base/head sha、各 artifact hash）。
-6. **机械门禁**：受保护 artifact 的写入需要结构化解释事件；CI required check 强制执行。
+5. **证据绑定**：审阅结论与 manifest（审阅者身份 + base/head sha + 各 artifact hash）成对提交。
+6. **门禁落 CI**：受保护 artifact 的写入需结构化解释事件；**强制落在 merge boundary（CI required check）**，agent hooks 只作提醒。
+
+> **能力边界的诚实表述**：witnessloop **默认只提供「防漂移」**（防止证据文件事后被悄悄改动、防止流程被遗忘），**不提供「防蓄意伪造」**。防伪造需要外部锚（见 §5.3）——v1 不做，文档明写。
 
 ## 3. 非目标
 
-- **不重造 spec/需求层**：复用上游 OpenSpec（成熟商品层），只在其上叠门禁。
-- **不做 LLM 本身，也不做 agent 运行时**：witnessloop 是流程工具，寄生在已有 coding agent 上。
-- **不锁定单一 agent host**：交互层 host 中立 + 适配器。
-- **不追求零配置**：目标仓必须显式接入（`init` 会改目标仓）。
+- **不重造 spec/需求层**（用上游 OpenSpec 的目录契约）。
+- **不做 LLM，也不做 agent 运行时**：witnessloop 寄生在已有 coding agent 上。
+- **不锁定单一 agent host**（v1 只交付 Claude Code 适配器，但模板与适配器物理分离）。
+- **不追求零配置**：目标仓必须显式 `init` 接入。
 
 ## 4. 已定架构轴（2026-10-09 拍板）
 
-| 轴 | 决策 | 理由 |
-|---|---|---|
-| 抽取范围 | **门禁层 + 交互层** | 差异层全集；只抽机械门禁只给半套流程 |
-| 语言/工具链 | **Python + uv** | 复用 asterwynd 现有 ~5.3k LOC 内核，改动最小；uv 分发成熟 |
-| 仓库边界 | **独立新仓**（witnessloop） | 强制零 asterwynd 依赖；acid test 要跑第二仓 |
-| 交互层 host | **CC-first，结构可扩展** | 先 CC 跑通，交互层按「host 中立模板 + 薄适配器」写，加 host 只加适配器 |
-| 分发 | **门禁层独立 CLI + 交互层 CC plugin** | 强制落 CI（host-agnostic）；体验放在 host 内 |
+| 轴 | 决策 |
+|---|---|
+| 范围 | 门禁层 + 交互层（都抽） |
+| 语言/工具链 | Python + uv，单二进制 `witnessloop` |
+| 仓库边界 | 独立新仓（witnessloop），零 asterwynd import |
+| 交互层 host | CC-first；模板与适配器**物理分离**，v1 只交付 CC |
+| 分发 | 门禁层=独立 CLI（跑 CI）；交互层=CC plugin。**git/私有分发起步，marketplace 不上路线图** |
+| spec 依赖 | **硬编码 OpenSpec 形状的 change 契约**；只参数化 repo-agnostic 的轴（路径/策略）。不造 spec 适配器 |
+| 状态真相源 | **manifest = 每 change 每阶段的权威证据**；事件日志降为可选历史，不重建 projection/replay 状态机 |
+| 信任锚 | 靠**远端 branch protection + required check**（人手动开一次）+ 诚实话术。**v1 不造签名** |
 
-## 5. 架构（两层）
+## 5. 架构
 
 ### 5.1 门禁层（enforcement，host-agnostic）
 
-一个独立 CLI（`witnessloop`，Python + uv 分发），跑在**终端 / CI required check**，与 agent 是谁无关。
+单二进制 `witnessloop`（Python + uv 分发），跑在**终端 / CI required check**。
 
-- 命令面（草案）：`init` / `validate` / `gate` / `manifest`。
-- **单一策略源**：一份声明式策略文件（受保护路径规则、必需 artifact、证据强度、gate 定义）。
-- 职责：校验 artifact 齐备、校验证据存在且绑定正确、校验受保护路径的写入有结构化解释事件。
+**v1 只交付 2 个动词**：
+
+- `init`：把 witnessloop 接入目标仓。**幂等、只增不改、不 auto-commit、支持 `--dry-run`**。写入：
+  - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式）
+  - `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
+  - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
+- `check`：CI 入口，**fail-closed**。校验 change 目录契约、review manifest 存在且 hash 绑定、受保护路径写入有结构化解释事件。
+- `uninit`：依 `init-manifest.json` 精确回滚（被改过的文件拒绝删并报 diff）。
+
+**不变集**：witnessloop 自身的输入（policy 文件、manifest）**恒受保护、不可由 repo policy 移除**，封顶 ~5 条常量。
+
+**明确不做**（延后）：`gate`/`event`/`status`/`policy upgrade` 等其余动词、policy schema 冻结、platform-gate 自动注册。
 
 ### 5.2 交互层（interaction，CC-first）
 
-- **host 中立模板 + 每 host 一个薄适配器**；第一版只交付 Claude Code 适配器。
+- **host 中立模板 + 每 host 一个薄适配器**，物理分离；v1 只交付 CC 适配器。
 - CC 适配器 = plugin（slash command + subagent + skill）：`grill`、`review-loop`。
-- 关键：交互层**只负责体验与驱动**，真正的强制在门禁层（CI），不靠 hooks。
+- **重写，不回收**：asterwynd 的 `/grill`、`/review-loop`、`grilling` 不在版本控制、含私有约定，与「证据可信」自相矛盾。做法 = **重打包**：算法与 prompt 文本照收，去掉私有路径/issue 号，抽象成 host 中立模板。
+- **硬约束**：交互层对 change 状态**只读**，**不得持有自己的状态文件**；一切以 `manifest` 为准。
 
 ### 5.3 数据契约
 
-- change 目录约定（proposal / design / tasks / spec delta）。
-- 证据文件命名与格式（grill 决策记录、审阅报告 + manifest）。
-- manifest 字段：审阅者 run id、base/head sha、tasks/spec/diff/report 的 hash。
+- change 目录契约：OpenSpec 形状（`proposal / design / tasks / specs delta`）+ `reviews/` + `workflow-events.jsonl`。
+- 审阅证据 = **报告 + manifest 成对**。
+- manifest 字段：`reviewer_run_id` / `author_run_id`（**强制 `reviewer ≠ author`**）/ `base_sha` / `head_sha` / `tasks_hash` / `spec_hash` / `diff_hash`（informational）/ `report_hash`。
+- **能力边界**：hash 绑定真实 artifact 字节，证明「证据之间没漂移」；`reviewer_run_id` 等身份字段是自由文本，v1 不做语义绑定。
 
-## 6. 从 asterwynd 抽取的资产（探索结论）
+## 6. 从 asterwynd 抽取的资产（探索 + 实测核对）
 
-**机械内核可抽，约 5.3k LOC**：engine（`event_log` / `models` / `routing` / `review_manifest`）+ `guard` + `checker` + `policy` + `platform_gate`，配套测试约 3.6k LOC。
-
-**两个缺口**：
-
-1. **流程的「行为」不在版本控制里**——`/grill`、`/review-loop` 只在 gitignored 的 `.claude/`，`grilling` skill 只在 `~/.claude/`。抽取必须先决定回收还是重写。
-2. **checker 非独立**——惰性 `import agent.workflow.*`，被绑死在 asterwynd 产品包上，需内联或抽接口。
-
-**硬耦合待参数化**：repo 名、benchmark 领域常量、受保护路径表、platform-gate checks、CI 步骤。
+- **可抽内核 ≈ 5.3k LOC**：engine（`event_log` / `models` / `routing` / `review_manifest`）+ `guard` + `checker` + `policy` + `platform_gate`；配套测试 ≈ 3.6k LOC。
+- **主工作量 = 参数化，不是搬运**：`check_openspec_artifacts.py` 实测 **1802 行 / 72KB**，重度 asterwynd 专用（硬编码 change 类型枚举、`DESIGN_SECTIONS`、`BENCHMARK_SMOKE_CAPABILITIES`、backlog 路径）。把常量搬进 policy 才是主要成本。
+- **两个缺口**：
+  1. 流程的「行为」不在版本控制（见 §5.2）→ 重写。
+  2. checker 惰性 `import agent.workflow.*`，绑死产品包 → 内联或抽接口。
+- **状态机仪式残留 ≈ 1000 LOC**（`event_log` 540 + `state_machine` 255 + `models` 196）：v1 不搬。
 
 ## 7. 验收（acid test）
 
-对**第二个、非 asterwynd 的仓库**端到端跑通：
+对**第二个、非 asterwynd 的仓库**端到端跑通：`init` → 写一个 change → grill → 实现 → review-loop 通过 → `check` 绿。
 
-`init` → 写一个 change → grill（含缺证据禁写验证）→ 实现 → review-loop 通过 → gate 绿。
+**必须含负例**：
 
-这是「可复用于任意代码仓」唯一可信的证明。
+- (a) 手写一行放行事件提交，`check` 的行为写清预期（默认：不拦，但文档注明不防伪造）；
+- (b) 交互层状态与 manifest 故意漂移，系统应报错而非双绿；
+- (c) 目标仓不跑 `init` 时，`check` 应报「未接入」而非静默通过；
+- (d) `init` → `uninit` 回滚往返。
 
-## 8. Open Questions（待 grill 逐项确认）
+## 8. Open Questions（已收敛）
 
-- **Q1**：`awaiting` 停轮态是否保留？（asterwynd 的四阶段状态机已退役，此差异点需重新论证）
-- **Q2**：OpenSpec 依赖强度——强依赖上游，还是 spec-agnostic（自定义目录）？
-- **Q3**：受保护路径 / 文档布局如何通用化？
-- **Q4**：命令/skill 从本机 `.claude/`、`~/.claude/` **回收**还是**重写**？
-- **Q5**：证据强度——manifest hash 机制作为默认，还是可选增强？
-- **Q6**：分发细节——CC plugin 是否上架 marketplace（供应链信任），还是私有 / git 分发？
-- **Q7**：门禁 CLI 的命令面与配置 schema 具体形态。
+原 7 项 + 补充 5 项，全部经 grill + 对抗验证 + 用户确认。决策记录见 [`docs/reviews/grill-design.md`](reviews/grill-design.md) 的 `## User Confirmation`。
 
 ## 9. 风险
 
-- **越抽越耦合**：asterwynd 特有规则悄悄混进内核 → 用「第二仓 acid test」防。
-- **强制不可靠**：靠 agent hooks 强制会漏 → 强制必须落 CI。
-- **同质化**：变成「又一个 spec 工具」——探索发现已有十几个「agent 开发流程 + 门禁」的低星尝试。差异点必须钉死在**证据绑定 + 机械门禁**，不是概念新。
+1. **证据可自证／可伪造（最高危）**：门禁输入都是 agent 可写的本地文本 → 默认只防漂移。→ 话术降级 + 文档写清；防伪造列为 v2 候选。
+2. **越抽越耦合，且成本被低估**：`check_openspec_artifacts.py` 的常量参数化是主成本，不是轻风险。
+3. **required-check 鸡生蛋**：注册 required check 需 admin，fork/新仓不跑 init 就**静默为零**。→ `check` 无 policy 时报「未接入」。
+4. **强制只在 CI 一层**：guard hook 是 PreToolUse、需手动装，CI 只跑 `check`。「双层兜底」只在交互式会话成立。
+5. **「独立审阅」剧场化**：`reviewer_run_id` 不校验 ⇒ 同一 run 既写又审也能过。→ 强制 `reviewer ≠ author`（挡「忘了另开 run」，不挡蓄意）。
+6. **host 中立名义化**：模板与适配器不物理分离则日后拆不开。
+7. **路径语义**：Windows 反斜杠/大小写/`~` 是已知坑，通用化须显式处理。
+
+## 10. MVP 范围（一句话）
+
+**在第二个真实仓库里，用机械门禁把「设计与实现的证据」绑进 CI required check。**
+
+**做**：单二进制 + 2 动词（`init` / `check`）· `uninit` 回滚 · policy（受保护路径 + 必需 artifact + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
+
+**不做**：签名/密钥 · marketplace · spec 适配器抽象 · 状态机/projection/replay · platform-gate 自动注册 · `policy upgrade` · 证据分档机制 · 多 host · 7 动词 · schema 冻结。
