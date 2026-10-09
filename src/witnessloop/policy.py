@@ -78,15 +78,6 @@ class Policy:
             ),
         )
 
-    @property
-    def effective_protected_paths(self) -> tuple[str, ...]:
-        """repo policy ∪ 不变集。不变集永远在，policy 只能**增加**保护。"""
-        seen: dict[str, None] = {}
-        for pat in (*self.protected_paths, *INVARIANT_PROTECTED_PATHS):
-            seen.setdefault(pat, None)
-        return tuple(seen)
-
-
 def policy_path(root: str | Path) -> Path:
     return Path(root) / C.POLICY_PATH
 

@@ -1,0 +1,33 @@
+name: CI
+
+# 本仓自己的自测。`gate.yml` 是纯 workflow_call（给目标仓调用的门禁），
+# 不会在 push/PR 自触发——没有这条，测试就没有任何自动执行点。
+#
+# 顺带消掉 reviewer §1.1 的可维护性坑：从别处复制仓库跑测试时，
+# `.venv` 里的 editable .pth 指向绝对路径 `/home/happy/witnessloop/src`，
+# 会让人以为在测副本、其实在测原件。CI 里每个 job 都是干净环境，不存在该问题。
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: uv run pytest
+        run: uv run pytest -q
+
+      - name: 打包冒烟（uv build 出的 wheel 能被装起来并跑起来）
+        run: |
+          uv build
+          WHEEL=$(ls dist/*.whl | head -1)
+          uvx --from "$WHEEL" witnessloop --version

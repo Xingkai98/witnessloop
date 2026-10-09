@@ -22,4 +22,6 @@ dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# 不在 addopts 里预置 -q：`uv run pytest -q` 再叠一层会把汇总也静默掉，
+# 让人看不到 "N passed"（reviewer §1.0 踩过）。
+addopts = ""
