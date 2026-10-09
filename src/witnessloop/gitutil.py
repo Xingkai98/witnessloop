@@ -1,0 +1,79 @@
+"""git 读取封装。只读——witnessloop 从不写 git（init 不 auto-commit）。"""
+
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+
+class GitError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Change:
+    """一条 diff 记录。``status`` 是 A/M/D/R/C/T 之一。"""
+
+    status: str
+    path: str
+    old_path: str | None = None
+
+
+def _run(root: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def is_repo(root: str | Path) -> bool:
+    return _run(root, "rev-parse", "--git-dir").returncode == 0
+
+
+def rev_parse(root: str | Path, ref: str) -> str | None:
+    proc = _run(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def current_branch(root: str | Path) -> str | None:
+    """当前分支名；detached HEAD 或无提交时返回 None。"""
+    proc = _run(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def changed_files(root: str | Path, base: str, head: str) -> list[Change]:
+    """``base...head``（三点，merge-base）之间的变更文件。
+
+    merge-base 求不出来（如互不相关的历史）时抛 GitError——check 侧 fail-closed。
+    """
+    proc = _run(
+        root, "diff", "--name-status", "-z", "--find-renames", f"{base}...{head}"
+    )
+    if proc.returncode != 0:
+        raise GitError(
+            f"无法对 {base}...{head} 求 diff：{proc.stderr.strip() or '未知错误'}"
+        )
+    return _parse_name_status(proc.stdout)
+
+
+def _parse_name_status(out: str) -> list[Change]:
+    fields = out.split("\0")
+    changes: list[Change] = []
+    i = 0
+    while i < len(fields):
+        raw = fields[i]
+        if not raw:
+            i += 1
+            continue
+        status = raw[0]
+        if status in ("R", "C"):
+            changes.append(Change(status, fields[i + 2], fields[i + 1]))
+            i += 3
+        else:
+            changes.append(Change(status, fields[i + 1]))
+            i += 2
+    return changes

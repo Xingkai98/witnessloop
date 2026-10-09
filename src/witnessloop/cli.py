@@ -77,9 +77,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # 惰性 import：让骨架（提交 A）无需命令实现即可独立成立。
     if args.command == "init":
-        from witnessloop.not_implemented import run_init
+        from witnessloop import initcmd
 
-        return run_init(args)
+        return initcmd.run(args)
     if args.command == "uninit":
         from witnessloop.not_implemented import run_uninit
 
