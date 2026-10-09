@@ -25,6 +25,9 @@ FORBIDDEN_TOKENS = (
     "plugin.json",
     "allowed-tools",
     "frontmatter",
+    # host 侧的适配器目录名——模板自述「不含任何 host 专有语法」，
+    # 就不该点名某个 host 的目录（回归 M2 §4-4）。
+    "plugin/",
 )
 
 #: 以 `/` 开头的行 = slash command 语法（`/grill`、`/review-loop`…）。

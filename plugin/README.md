@@ -41,8 +41,9 @@ claude --plugin-dir /path/to/witnessloop/plugin
 
 交互层对 change 状态**只读**，**不得持有自己的状态文件**——状态一律以
 `reviews/*.manifest.json`（门禁的权威证据）为准。这两个命令不会写 `.cache`、
-`state.json` 之类的东西；`plugin/` 目录里除了 manifest 和两条命令没有别的文件
-（`tests/test_plugin.py::test_plugin_file_inventory_is_exactly_expected` 盯着）。
+`state.json` 之类的东西；`plugin/` 目录里只有四个文件——plugin manifest、
+两条命令、以及**本 README**（`tests/test_plugin.py::test_plugin_file_inventory_is_exactly_expected`
+把这份清单钉死了：多出任何文件都会变红）。
 
 ## 能力边界
 

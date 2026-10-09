@@ -141,3 +141,9 @@ def test_docs_say_git_or_local_distribution():
     text = (PLUGIN / "README.md").read_text(encoding="utf-8").lower()
     assert "--plugin-dir" in text
     assert "marketplace" in text  # 说明「不上」
+
+
+def test_readme_accounts_for_itself_in_the_inventory():
+    """回归 M2 §4-7：自述说「只有 manifest 和两条命令」，漏了自己这个 README。"""
+    text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+    assert "README" in text
