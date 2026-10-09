@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from witnessloop import constants as C
+from witnessloop import paths as pathutil
 from witnessloop.hashing import sha256_tree
 from witnessloop.policy import Policy
 
@@ -125,7 +126,7 @@ def _check_hashes(directory: Path, manifest_rel: str, doc: dict) -> list[Finding
     findings: list[Finding] = []
 
     report_path = (directory / str(doc["report_path"])).resolve()
-    if not _is_within(report_path, directory.resolve()):
+    if not pathutil.is_within(report_path, directory):
         findings.append(
             Finding(
                 manifest_rel,
@@ -160,11 +161,3 @@ def _check_hashes(directory: Path, manifest_rel: str, doc: dict) -> list[Finding
 
     # diff_hash 是 informational（design §5.3）：在位即可，不校验内容。
     return findings
-
-
-def _is_within(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True

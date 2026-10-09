@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 def normalize(path: str) -> str:
@@ -54,3 +55,17 @@ def matches(path: str, pattern: str) -> bool:
 
 def matches_any(path: str, patterns) -> bool:
     return any(matches(path, p) for p in patterns)
+
+
+def is_within(path: str | Path, parent: str | Path) -> bool:
+    """``path`` 解析后是否落在 ``parent`` 之内。
+
+    用于拒绝「台账/report_path 指向仓根之外」——manifest 是提交进仓的，
+    agent 可写，所以任何随后会被 unlink/读取的路径都必须先过这道闸。
+    ``resolve()`` 会展开 ``..`` 与符号链接，两条越界路径都拦得住。
+    """
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+    except (ValueError, OSError):
+        return False
+    return True
