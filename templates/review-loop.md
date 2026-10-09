@@ -50,6 +50,19 @@
      报告 + manifest + 解释事件单独一个提交。审阅之后再落任何非证据文件，
      `check` 会判「审阅的是旧 revision」。
 
+## 怎么取 run id
+
+`reviewer_run_id` 与 `author_run_id` 是身份字段（自由文本，**防漂移不防伪造**）。
+各 host 的适配器按**同一套**规则取值，别各自发明：
+
+1. **环境优先**：读 `WITNESSLOOP_RUN_ID`（当前 run 的 id）。审阅者与作者是**不同的
+   run**，各自的环境里这个值本就应当不同。同一进程里要同时给两个角色时，用角色
+   专用变量（优先级更高）：`WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`。
+2. **取不到就生成**一个唯一 id，形态 `<stage>-<role>-<UTC 时间戳>-<短随机>`。
+   把 `role` 编进 id，是为了让生成路径下两个角色**必然不同**。
+3. **两者必须不同**：`manifest build` 对相等直接拒——那正是「忘了另开 run」的症状。
+   只设共享的 `WITNESSLOOP_RUN_ID` 会让两个角色拿到同一个值、被门禁拦下，这不是 bug。
+
 ## 产物
 
 - `<change-dir>/reviews/<stage>-review.md`（报告）

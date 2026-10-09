@@ -96,6 +96,15 @@ def test_review_loop_template_covers_the_algorithm():
     assert "轮" in text and "封顶" in text
 
 
+@pytest.mark.parametrize("template", [GRILL, REVIEW_LOOP], ids=["grill", "review-loop"])
+def test_templates_explain_how_to_get_run_ids(template: Path):
+    """「怎么取 run id」是 host 无关的策略，必须写在模板里而不是各适配器各编一套。"""
+    text = template.read_text(encoding="utf-8")
+    assert "WITNESSLOOP_RUN_ID" in text  # 环境优先
+    assert "兜底" in text or "取不到" in text  # 生成兜底
+    assert "reviewer_run_id" in text and "author_run_id" in text
+
+
 def test_review_loop_template_ties_reviewer_identity_and_manifest():
     text = REVIEW_LOOP.read_text(encoding="utf-8")
     # reviewer ≠ author

@@ -173,6 +173,38 @@ def test_hashes_anchor_the_real_artifacts(repo: Path, cli):
     assert doc["spec_hash"] != sha256_tree(specs_tree / "retry" / "spec.md")
 
 
+def test_run_ids_default_to_distinct_generated_ids(repo: Path, cli):
+    """不给 run id 时按 agentenv 的策略兜底生成，且两个角色必然不同。"""
+    directory = _ready_to_build(repo, cli)
+
+    code, _, err = cli(
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT,
+    )
+
+    assert code == C.EXIT_PASS, err
+    doc = json.loads((directory / "reviews" / "building.manifest.json").read_text("utf-8"))
+    assert doc["reviewer_run_id"] != doc["author_run_id"]
+    assert doc["reviewer_run_id"].startswith("building-reviewer-")
+    assert doc["author_run_id"].startswith("building-author-")
+
+
+def test_run_ids_come_from_the_environment_when_set(repo: Path, cli, monkeypatch):
+    directory = _ready_to_build(repo, cli)
+    monkeypatch.setenv("WITNESSLOOP_REVIEWER_RUN_ID", "rev-from-env")
+    monkeypatch.setenv("WITNESSLOOP_AUTHOR_RUN_ID", "auth-from-env")
+
+    code, _, err = cli(
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT,
+    )
+
+    assert code == C.EXIT_PASS, err
+    doc = json.loads((directory / "reviews" / "building.manifest.json").read_text("utf-8"))
+    assert doc["reviewer_run_id"] == "rev-from-env"
+    assert doc["author_run_id"] == "auth-from-env"
+
+
 def test_head_sha_is_the_current_head(repo: Path, cli):
     """约定（gate.md §3.1）：内容提交后、证据提交前跑 build。"""
     directory = _ready_to_build(repo, cli)

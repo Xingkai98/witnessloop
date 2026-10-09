@@ -32,6 +32,12 @@ def test_design_documents_the_manifest_build_verb():
     assert "manifest build" in (REPO_ROOT / "docs/design.md").read_text(encoding="utf-8")
 
 
+def test_design_documents_the_run_id_strategy():
+    """design §5.2 是交互层的权威——取值规则必须写在那里。"""
+    text = (REPO_ROOT / "docs/design.md").read_text(encoding="utf-8")
+    assert "WITNESSLOOP_RUN_ID" in text
+
+
 @pytest.mark.parametrize("relpath", ("README.md", "docs/design.md"))
 def test_docs_name_all_four_verbs(relpath: str):
     text = (REPO_ROOT / relpath).read_text(encoding="utf-8")

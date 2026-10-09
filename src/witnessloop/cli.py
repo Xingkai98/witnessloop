@@ -80,8 +80,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="change 目录内的报告路径，如 reviews/building-review.md（必须在 reviews/ 下）",
     )
-    p_build.add_argument("--reviewer-run-id", required=True, help="审阅者的 run id")
-    p_build.add_argument("--author-run-id", required=True, help="作者的 run id")
+    p_build.add_argument(
+        "--reviewer-run-id",
+        default=None,
+        help="审阅者的 run id；缺省走 agentenv 的策略（WITNESSLOOP_REVIEWER_RUN_ID → "
+        "WITNESSLOOP_RUN_ID → 生成）。给了才幂等",
+    )
+    p_build.add_argument(
+        "--author-run-id",
+        default=None,
+        help="作者的 run id；缺省同上（..._AUTHOR_RUN_ID → WITNESSLOOP_RUN_ID → 生成）",
+    )
     p_build.add_argument(
         "--base",
         default=None,

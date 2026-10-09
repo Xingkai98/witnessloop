@@ -37,6 +37,18 @@ claude --plugin-dir /path/to/witnessloop/plugin
   判 `PASS` / `CHANGES_REQUESTED`，不通过则修并补回归测试，**轮数封顶**，
   收尾写报告并跑 `witnessloop manifest build` 落 manifest。
 
+## 环境变量：run id 怎么来
+
+| 变量 | 作用 |
+|---|---|
+| `WITNESSLOOP_RUN_ID` | **当前 run** 的 id。审阅者与作者是不同的 run，各自环境里这个值应当不同 |
+| `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` | 角色专用，优先级高于上面那个（同一进程里要同时给两个角色时用） |
+
+环境优先、生成兜底。三个变量都没设时，`witnessloop manifest build` 会生成
+`<stage>-<role>-<UTC 时间戳>-<短随机>`——`role` 编进 id，所以两个角色**必然不同**，
+不会撞上「`reviewer_run_id == author_run_id`」那道校验。给了显式 id，重建才幂等。
+解析规则的可执行实现见 `src/witnessloop/agentenv.py`。
+
 ## 只读、无状态
 
 交互层对 change 状态**只读**，**不得持有自己的状态文件**——状态一律以

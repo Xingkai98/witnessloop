@@ -14,6 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from witnessloop import agentenv
 from witnessloop import constants as C
 from witnessloop import contract
 from witnessloop import gitutil, policy as policy_mod
@@ -77,7 +78,12 @@ def run_build(args: argparse.Namespace) -> int:
     if not report_file.is_file():
         return _fail(f"报告不存在：{args.report}")
 
-    if args.reviewer_run_id == args.author_run_id:
+    # 没给就走交互层那套取值策略（环境优先、生成兜底）。
+    reviewer_run_id = args.reviewer_run_id or agentenv.resolve_run_id(
+        args.stage, "reviewer"
+    )
+    author_run_id = args.author_run_id or agentenv.resolve_run_id(args.stage, "author")
+    if reviewer_run_id == author_run_id:
         return _fail(
             "reviewer_run_id 与 author_run_id 相同：审阅者必须独立于作者"
             "（挡「忘了另开 run」）。没有写出任何文件。"
@@ -109,8 +115,8 @@ def run_build(args: argparse.Namespace) -> int:
         "schema": C.SCHEMA_REVIEW_MANIFEST,
         "change_id": change_id,
         "stage": args.stage,
-        "reviewer_run_id": args.reviewer_run_id,
-        "author_run_id": args.author_run_id,
+        "reviewer_run_id": reviewer_run_id,
+        "author_run_id": author_run_id,
         "base_sha": base_sha,
         "head_sha": head_sha,
         "tasks_hash": hashes["tasks_hash"],
@@ -128,5 +134,5 @@ def run_build(args: argparse.Namespace) -> int:
     print(f"manifest build：已写入 {manifest_rel}（未 commit）")
     print(f"  change={change_id} stage={args.stage}")
     print(f"  head_sha={head_sha}  base_sha={base_sha}")
-    print(f"  reviewer_run_id={args.reviewer_run_id} != author_run_id={args.author_run_id}")
+    print(f"  reviewer_run_id={reviewer_run_id}  author_run_id={author_run_id}")
     return C.EXIT_PASS

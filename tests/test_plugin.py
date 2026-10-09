@@ -136,6 +136,19 @@ def test_review_loop_adapter_states_the_bounded_rounds():
     assert "轮" in text and ("封顶" in text or "上限" in text)
 
 
+@pytest.mark.parametrize("command", COMMANDS)
+def test_adapters_pass_the_run_id_strategy_through(command: str):
+    """CC 侧怎么设/传 run id——策略在模板里，适配器负责把它接到环境变量上。"""
+    text = (PLUGIN / "commands" / f"{command}.md").read_text(encoding="utf-8")
+    assert "WITNESSLOOP_RUN_ID" in text
+    assert "--reviewer-run-id" in text or "--author-run-id" in text
+
+
+def test_readme_documents_the_run_id_variables():
+    text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+    assert "WITNESSLOOP_RUN_ID" in text
+
+
 def test_docs_say_git_or_local_distribution():
     """分发按 design §4：git / 本地 `--plugin-dir`，不上 marketplace。"""
     text = (PLUGIN / "README.md").read_text(encoding="utf-8").lower()
