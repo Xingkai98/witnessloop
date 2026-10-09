@@ -27,10 +27,23 @@ class EventError(RuntimeError):
 
 @dataclass(frozen=True)
 class Event:
+    """一条解释事件。**构造即归一**：不变式在这里收口，不依赖调用方记得处理。
+
+    ``artifact_path`` 去前导 ``./`` 并统一斜杠；``reason`` / ``approved_by`` /
+    ``event_type`` 去首尾空白——否则 ``covers`` 里 ``not event.reason`` 这类
+    真值判断会被 ``"   "`` 骗过去。
+    """
+
     event_type: str
     artifact_path: str
     reason: str
     approved_by: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "event_type", self.event_type.strip())
+        object.__setattr__(self, "artifact_path", pathutil.normalize(self.artifact_path))
+        object.__setattr__(self, "reason", self.reason.strip())
+        object.__setattr__(self, "approved_by", self.approved_by.strip())
 
 
 def load_events_file(path: Path) -> list[Event]:
@@ -48,9 +61,9 @@ def load_events_file(path: Path) -> list[Event]:
         events.append(
             Event(
                 event_type=str(doc.get("event_type") or ""),
-                artifact_path=pathutil.normalize(str(doc.get("artifact_path") or "")),
-                reason=str(doc.get("reason") or "").strip(),
-                approved_by=str(doc.get("approved_by") or "").strip(),
+                artifact_path=str(doc.get("artifact_path") or ""),
+                reason=str(doc.get("reason") or ""),
+                approved_by=str(doc.get("approved_by") or ""),
             )
         )
     return events

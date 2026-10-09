@@ -187,6 +187,27 @@ def test_base_sha_must_resolve_to_a_real_commit(gated: Path, cli):
     assert "不是本仓的提交" in err
 
 
+def test_sha_fields_must_look_like_shas(gated: Path, cli):
+    """回归 R2 3-6：字段名叫 *_sha，就不该接受 `main` / `HEAD~3` 这类符号 ref。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", base_sha="main")  # 能解析，但不是 sha
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "base_sha" in err
+    assert "40 位" in err
+
+
+def test_head_sha_symbolic_ref_is_rejected(gated: Path, cli):
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", head_sha="HEAD~1")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "head_sha" in err
+    assert "40 位" in err
+
+
 def test_code_committed_after_review_is_stale(gated: Path, cli):
     """回归 I-3：审阅之后又推一个只改 src/ 的提交 —— 必须报「审阅的是旧 revision」。"""
     commit_content(gated, "add-x")

@@ -12,6 +12,7 @@ v1 不做语义绑定——**防漂移，不防伪造**。
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,6 +60,9 @@ def validate_change_dir(root: Path, policy: Policy, change_id: str) -> list[Find
         if not (directory / artifact).exists():
             findings.append(Finding(rel, f"缺少必需件 {artifact}"))
     return findings
+
+
+_SHA_RE = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,19 @@ def _check_git_span(
     findings: list[Finding] = []
     base_sha = doc["base_sha"]
     head_sha = doc["head_sha"]
+
+    # 字段名叫 *_sha：先卡形状。`rev_parse` 什么 ref 表达式都收（main、HEAD~3、
+    # tag……），不卡的话字段语义会松到没有意义。
+    for field, value in (("base_sha", base_sha), ("head_sha", head_sha)):
+        if not _SHA_RE.match(value):
+            findings.append(
+                Finding(
+                    manifest_rel,
+                    f"{field}={value!r} 不是一个 git sha（40 位小写十六进制）",
+                )
+            )
+    if findings:
+        return findings
 
     if gitutil.rev_parse(root, base_sha) is None:
         findings.append(
