@@ -18,7 +18,9 @@ build-backend = "hatchling.build"
 packages = ["src/witnessloop"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+# pyyaml 给 test_gate_workflow.py 解析 workflow 用——只 grep 子串钉不住
+# `with.ref` 这种「位置 + 取值」都重要的行。
+dev = ["pytest>=8", "pyyaml>=6"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
