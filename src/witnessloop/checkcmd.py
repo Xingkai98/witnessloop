@@ -125,12 +125,14 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
 
 
 def _report(base, head, changes, change_ids, findings) -> None:
+    # flush：不 flush 的话 stdout 缓冲会让摘要排在 stderr 的失败明细后面。
     print(
         f"check：基线 {base}...{head}，{len(changes)} 个变更文件，"
-        f"{len(change_ids)} 个 change 目录"
+        f"{len(change_ids)} 个 change 目录",
+        flush=True,
     )
     if change_ids:
-        print(f"  change：{', '.join(change_ids)}")
+        print(f"  change：{', '.join(change_ids)}", flush=True)
     if not findings:
         print("check：通过 ✓")
         return

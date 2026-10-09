@@ -1,0 +1,52 @@
+name: witnessloop gate
+
+# reusable workflow —— `witnessloop init` 在目标仓写入的 caller 引用本文件：
+#   uses: Xingkai98/witnessloop/.github/workflows/gate.yml@v1
+# 本文件刻意极薄：门禁逻辑全在 `witnessloop check` 里（host-agnostic 的单二进制）。
+#
+# 注意：reusable workflow 不会凭空产生 required check。
+# 真正拦住合并的是目标仓 branch protection 里把本 workflow 的 job 勾成 required——
+# 那一次人肉操作就是 v1 的「人类签名」（design §4 / §9 风险 3）。
+
+on:
+  workflow_call:
+    inputs:
+      base-ref:
+        description: "diff 的 base ref；留空则用 origin/<PR 的 base branch>"
+        required: false
+        type: string
+        default: ""
+      witnessloop-ref:
+        description: "witnessloop 自身的 tag（钉版本）"
+        required: false
+        type: string
+        default: "v1"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 是必需的：浅克隆会让 merge-base 求不出来，
+      # 而 check 对「求不出 base」是 fail-closed（报错，不静默跳过）。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: witnessloop check
+        env:
+          BASE_INPUT: ${{ inputs.base-ref }}
+          PR_BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$BASE_INPUT" ]; then
+            BASE="$BASE_INPUT"
+          else
+            BASE="origin/$PR_BASE"
+          fi
+          uvx --from \
+            "git+https://github.com/Xingkai98/witnessloop@${{ inputs.witnessloop-ref }}" \
+            witnessloop check --root . --base "$BASE" --head HEAD

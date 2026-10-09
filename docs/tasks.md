@@ -5,31 +5,31 @@
 
 ## A. 骨架与分发
 
-- [ ] A1 `pyproject.toml`（uv 可 `uv tool install`）+ 包结构 + 控制台入口 `witnessloop`
-- [ ] A2 CLI 框架（子命令路由；未实现子命令给出明确报错，不静默）
+- [x] A1 `pyproject.toml`（uv 可 `uv tool install`）+ 包结构 + 控制台入口 `witnessloop`
+- [x] A2 CLI 框架（子命令路由；未实现子命令给出明确报错，不静默）
 
 ## B. `init`（接入目标仓）
 
-- [ ] B1 生成 `.witnessloop/policy.json`（schema：`protected_paths[]` + `required_artifacts[]` + `evidence`）
-- [ ] B2 生成 `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
-- [ ] B3 生成极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
-- [ ] B4 **幂等 + 只增不改 + 不 auto-commit**（已有文件不覆盖；冲突时报 diff）
-- [ ] B5 `--dry-run` 打印将做的改动，不落盘
+- [x] B1 生成 `.witnessloop/policy.json`（schema：`protected_paths[]` + `required_artifacts[]` + `evidence`）
+- [x] B2 生成 `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
+- [x] B3 生成极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
+- [x] B4 **幂等 + 只增不改 + 不 auto-commit**（已有文件不覆盖；冲突时报 diff）
+- [x] B5 `--dry-run` 打印将做的改动，不落盘
 
 ## C. `uninit`（精确回滚）
 
-- [ ] C1 依 `init-manifest.json` 删除本工具创建的文件
-- [ ] C2 文件 hash 被改过则**拒绝删除**并报 diff
-- [ ] C3 幂等（重复 uninit 安全）
+- [x] C1 依 `init-manifest.json` 删除本工具创建的文件
+- [x] C2 文件 hash 被改过则**拒绝删除**并报 diff
+- [x] C3 幂等（重复 uninit 安全）
 
 ## D. `check`（CI 入口，fail-closed）
 
-- [ ] D1 无 policy 时输出「**未接入**」并以非零退出（**不得静默通过**）
-- [ ] D2 校验 change 目录契约（proposal/design/tasks/specs + reviews/）
-- [ ] D3 校验 review manifest 存在且 hash 绑定（base/head sha + tasks/spec/report hash）
-- [ ] D4 校验 `reviewer_run_id != author_run_id`
-- [ ] D5 校验受保护路径写入有结构化解释事件（`reason`/`approved_by` 非空）
-- [ ] D6 不变集：policy / manifest 恒受保护、不可由 repo policy 移除（~5 条常量封顶）
+- [x] D1 无 policy 时输出「**未接入**」并以非零退出（**不得静默通过**）
+- [x] D2 校验 change 目录契约（proposal/design/tasks/specs + reviews/）
+- [x] D3 校验 review manifest 存在且 hash 绑定（base/head sha + tasks/spec/report hash）
+- [x] D4 校验 `reviewer_run_id != author_run_id`
+- [x] D5 校验受保护路径写入有结构化解释事件（`reason`/`approved_by` 非空）
+- [x] D6 不变集：policy / manifest 恒受保护、不可由 repo policy 移除（~5 条常量封顶）
 
 ## E. 交互层（CC plugin）
 
@@ -48,7 +48,7 @@
 
 ## 里程碑
 
-- **M1**：A + B + C + D（门禁层可跑，`check` 能在第二仓拦下缺证据 PR）
+- **M1**：A + B + C + D（门禁层可跑，`check` 能在第二仓拦下缺证据 PR）——**已完成**（分支 `mvp-m1/2026-10-09`）
 - **M2**：E（交互层 CC plugin 可用）
 - **M3**：F（第二仓 acid test 全绿，含负例）
 
