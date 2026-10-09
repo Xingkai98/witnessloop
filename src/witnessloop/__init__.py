@@ -1,10 +1,11 @@
 """witnessloop —— 把 agent 写代码的证据绑进 CI 门禁。
 
-单二进制，只有 3 个动词（design §5.1）：
+单二进制，3 个门禁动词 + 1 个证据产出动词（design §5.1）：
 
-- ``init``    接入目标仓：幂等 / 只增不改 / 不 auto-commit / ``--dry-run``
-- ``uninit``  依 init 台账精确回滚：文件被改过则拒绝删除并报 diff
-- ``check``   CI 入口，fail-closed：change 契约 / 审阅证据 / 受保护写入 / 不变集
+- ``init``            接入目标仓：幂等 / 只增不改 / 不 auto-commit / ``--dry-run``
+- ``uninit``          依 init 台账精确回滚：文件被改过则拒绝删除并报 diff
+- ``check``           CI 入口，fail-closed：change 契约 / 审阅证据 / 受保护写入 / 不变集
+- ``manifest build``  产出 check 认的 review manifest（与 check 共用同一套哈希）
 
 模块：
 

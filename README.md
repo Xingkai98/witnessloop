@@ -4,8 +4,10 @@
 
 流程：**设计先行 → 设计对抗式追问（grill）→ 实现 → 独立审阅闭环**，全程由**机械门禁 + 证据绑定**强制——而不是靠模型自觉。
 
-> **状态：M1「门禁层」已实现**（`init` / `uninit` / `check` 三动词，fail-closed）。
-> 交互层 CC plugin（grill / review-loop）是 M2，尚未开始。
+> **状态：M1「门禁层」+ M2「交互层」已实现。**
+> 动词面 = 3 个门禁动词（`init` / `uninit` / `check`，fail-closed）
+> + 1 个证据产出动词（`manifest build`）；
+> 交互层是 Claude Code plugin（`grill` / `review-loop`，只接线、只读、无状态）。
 > 设计见 [docs/design.md](docs/design.md)，任务见 [docs/tasks.md](docs/tasks.md)，
 > 门禁层数据契约见 [docs/gate.md](docs/gate.md)。
 

@@ -61,7 +61,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 单二进制 `witnessloop`（Python + uv 分发），跑在**终端 / CI required check**。
 
-**v1 只交付 3 个动词**：
+**v1 交付 3 个门禁动词 + 1 个证据产出动词**：
 
 - `init`：把 witnessloop 接入目标仓。**幂等、只增不改、不 auto-commit、支持 `--dry-run`**。写入：
   - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式 + `require_change_for`）
@@ -69,6 +69,13 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
   - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
 - `check`：CI 入口，**fail-closed**。校验 change 目录契约、review manifest 存在且 hash 绑定、`reviewer ≠ author`、受保护路径写入有结构化解释事件、**命中 `require_change_for` 的改动必须挂 change 目录**。无 policy 时报「未接入」并以非零退出。
 - `uninit`：依 `init-manifest.json` 精确回滚（被改过的文件拒绝删并报 diff）。
+
+外加一个**支撑动词**（M2 交付，交互层收尾要用）：
+
+- `manifest build`：产出 `check` 认的 review manifest。**与 `check` 共用同一张
+  字段↔artifact 绑定表和同一个哈希函数**（`constants.HASHED_ARTIFACTS` +
+  `hashing.sha256_tree`），杜绝「产出的 manifest」与「校验的期望」两边漂移。
+  幂等、不 auto-commit；不合格直接报错不写文件。
 
 **不变集**：witnessloop 自身的输入（policy 文件、manifest）**恒受保护、不可由 repo policy 移除**，封顶 ~5 条常量。
 
@@ -126,6 +133,6 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 **在第二个真实仓库里，用机械门禁把「设计与实现的证据」绑进 CI required check。**
 
-**做**：单二进制 + 3 动词（`init` / `check` / `uninit`）· policy（受保护路径 + 必需 artifact + `require_change_for` + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
+**做**：单二进制 + 3 个门禁动词（`init` / `check` / `uninit`）+ 支撑动词 `manifest build` · policy（受保护路径 + 必需 artifact + `require_change_for` + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
 
 **不做**：签名/密钥 · marketplace · spec 适配器抽象 · 状态机/projection/replay · platform-gate 自动注册 · `policy upgrade` · 证据分档机制 · 多 host · 7 动词 · schema 冻结 · 私有仓接入。

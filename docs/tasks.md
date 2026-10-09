@@ -1,6 +1,7 @@
 # witnessloop MVP 任务清单
 
-> 依据 `docs/design.md` v0.2 §10。范围锁定：**2 动词 + `uninit`**。明确不做项见 design §10。
+> 依据 `docs/design.md` v0.2 §10。范围锁定：**3 个门禁动词（`init` / `check` / `uninit`）
+> + 1 个支撑动词 `manifest build`**。明确不做项见 design §10。
 > 原则：测试先行（TDD）。每个能力先写失败测试再实现。
 
 ## A. 骨架与分发
