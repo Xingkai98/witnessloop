@@ -53,11 +53,16 @@ def run(args: argparse.Namespace) -> int:
         print(f"check：未通过 ✗ —— {exc}", file=sys.stderr)
         return C.EXIT_FAIL
 
+    # 被检 revision 的 sha：D3 用它核对 manifest 的 head_sha 是不是审对了 revision。
+    checked_head = gitutil.rev_parse(root, head) or head
+
     change_ids = contract.changed_change_ids(changes, pol.changes_root)
     findings: list[contract.Finding] = []
     for change_id in change_ids:
         findings += contract.validate_change_dir(root, pol, change_id)
-        findings += contract.validate_review_manifests(root, pol, change_id)
+        findings += contract.validate_review_manifests(
+            root, pol, change_id, checked_head=checked_head
+        )
     findings += _protected_writes(root, pol, changes)
 
     _report(base, head, changes, change_ids, findings)

@@ -10,13 +10,19 @@ import pytest
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import check, change_dir, write_change, write_review
+from helpers import (
+    change_dir,
+    check,
+    commit_content,
+    commit_evidence,
+    write_change,
+    write_review,
+)
 
 
 def test_complete_change_passes(gated: Path, cli):
-    write_change(gated, "add-retry-policy")
-    write_review(gated, "add-retry-policy")
-    commit_all(gated, "一个完整的 change")
+    commit_content(gated, "add-retry-policy")
+    commit_evidence(gated, "add-retry-policy")
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err
@@ -26,9 +32,8 @@ def test_complete_change_passes(gated: Path, cli):
 @pytest.mark.parametrize("missing", ["proposal.md", "design.md", "tasks.md"])
 def test_missing_artifact_is_reported(gated: Path, cli, missing):
     kept = tuple(a for a in ("proposal.md", "design.md", "tasks.md") if a != missing)
-    write_change(gated, "add-x", artifacts=kept)
-    write_review(gated, "add-x")
-    commit_all(gated, "缺件")
+    commit_content(gated, "add-x", artifacts=kept)
+    commit_evidence(gated, "add-x")
 
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL
@@ -36,9 +41,8 @@ def test_missing_artifact_is_reported(gated: Path, cli, missing):
 
 
 def test_missing_specs_dir_is_reported(gated: Path, cli):
-    write_change(gated, "add-x", specs=False)
-    write_review(gated, "add-x")
-    commit_all(gated, "无 specs")
+    commit_content(gated, "add-x", specs=False)
+    commit_evidence(gated, "add-x")
 
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL
@@ -46,8 +50,7 @@ def test_missing_specs_dir_is_reported(gated: Path, cli):
 
 
 def test_missing_reviews_dir_is_reported(gated: Path, cli):
-    write_change(gated, "add-x", reviews=False)
-    commit_all(gated, "无 reviews")
+    commit_content(gated, "add-x", reviews=False)
 
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL

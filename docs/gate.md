@@ -51,6 +51,11 @@ openspec/changes/<change-id>/
 
 glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`）。
 不用 `fnmatch`——它的 `*` 跨 `/`，会让「前缀约束」失效。
+逐条语义由 `tests/test_paths.py` 钉死（每条都可变异验证）。
+
+归一化边界（design §9 风险 7）：`normalize` 只做 `\` → `/` 与前导 `./` 剥离。
+**不做大小写折叠、不展开 `~`**——因为 M1 的输入恒为 git 输出的 posix 相对路径
+（大小写敏感、无 `~`）。这条是**声明出来的边界**，不是遗漏。
 
 ## 3. `review manifest`（审阅证据的权威件）
 
@@ -72,12 +77,34 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
 ```
 
 - **必需字段**：除 `diff_hash` 外全部（`diff_hash` 是 informational，见 design §5.3）。
-- **hash 绑定**：`tasks_hash` / `spec_hash` / `report_hash` 必须等于当前 artifact 字节的
-  sha256——这是「证据之间没漂移」的机械证明。
+- **内容 hash 绑定**：`tasks_hash` / `spec_hash` / `report_hash` 必须等于当前 artifact
+  字节的 sha256——这是「证据之间没漂移」的机械证明。
 - **目录哈希**：`spec_hash` 覆盖 `specs/` 整棵树，算法 = 对按 posix 相对路径排序的
   `(路径, 内容)` 对做 sha256（跨平台可复现，见 `hashing.sha256_tree`）。
+- **revision 绑定**（`base_sha` / `head_sha`，tasks.md D3）：
+  1. `base_sha` 与 `head_sha` 都必须**能解析成本仓的一个提交**（乱填 `"0"*40` 会被拒）；
+  2. `head_sha` 必须是本次被检 head 的**祖先**（含相等）；
+  3. 从 `head_sha` 到本次被检 head 之间，只允许出现**证据文件**
+     （`.witnessloop/**`、`**/reviews/**`、`**/workflow-events.jsonl`）——
+     出现源码/spec 等非证据文件即判「**审阅的是旧 revision**」。
 - **强制 `reviewer_run_id != author_run_id`**：挡「忘了另开 run」，**不挡蓄意**。
 - `report_path` 解析后必须落在 change 目录内（禁 `../` 逃逸）。
+
+### 3.1 由此推出的提交约定：**先内容，后证据**
+
+一条 manifest 不可能写下**自己所在提交**的 sha（自指），所以「`head_sha` 等于本次被检
+revision」在字面上不可满足。上面第 3 条是等价且可满足的写法：**`head_sha` 是最后一个
+非证据 revision**。实务上就是：
+
+```bash
+git commit -m "内容：change 目录 + 实现代码 + spec 写入"   # ← head_sha 指这里
+witnessloop …            # 跑 grill / review-loop，产出报告 + manifest + 事件
+git commit -m "证据：reviews/ + workflow-events.jsonl"    # ← check 的被检 head
+```
+
+审阅之后**再落任何非证据文件**（哪怕只改 `src/`），下一次 `check` 会报
+「审阅的是旧 revision：head_sha=… 之后又改动了非证据文件：…」。
+补新的解释事件、补报告则不算——它们本身就是证据。
 
 ## 4. 结构化解释事件（`workflow-events.jsonl`）
 

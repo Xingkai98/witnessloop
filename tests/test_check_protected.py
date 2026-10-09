@@ -8,7 +8,14 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import check, write_change, write_event, write_review
+from helpers import (
+    check,
+    commit_content,
+    commit_evidence,
+    write_change,
+    write_event,
+    write_review,
+)
 
 SPEC = "openspec/specs/retry/spec.md"
 
@@ -36,10 +43,8 @@ def test_protected_write_without_event_is_rejected(gated: Path, cli):
 
 def test_protected_write_with_valid_event_passes(gated: Path, cli):
     """也就是 F2 负例 (a)：手写一行放行事件 → 门禁**不拦**（防漂移不防伪造）。"""
-    _full_change(gated, "sync-retry-spec")
-    write_event(gated, "sync-retry-spec", SPEC)
-    _write_spec(gated)
-    commit_all(gated, "带解释事件地改 spec")
+    commit_content(gated, "sync-retry-spec", spec_writes=((SPEC, "# canonical\n"),))
+    commit_evidence(gated, "sync-retry-spec", events=(SPEC,))
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err
@@ -144,10 +149,8 @@ def test_renaming_with_an_event_is_allowed(repo: Path, cli):
 
 
 def test_writes_outside_protected_paths_need_no_event(gated: Path, cli):
-    _full_change(gated, "c")
-    (gated / "src").mkdir(exist_ok=True)
-    (gated / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
-    commit_all(gated, "改普通代码")
+    commit_content(gated, "c", spec_writes=(("src/app.py", "x = 1\n"),))
+    commit_evidence(gated, "c")
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err

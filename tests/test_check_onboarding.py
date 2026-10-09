@@ -7,7 +7,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all
-from helpers import check, write_change, write_review
+from helpers import check, commit_content, commit_evidence, write_change
 
 
 def test_check_without_policy_is_not_onboarded(repo: Path, cli):
@@ -67,9 +67,8 @@ def test_modifying_policy_file_needs_an_explanation_event(gated: Path, cli):
 
 
 def test_git_refs_default_from_env(gated: Path, cli, monkeypatch):
-    write_change(gated, "add-x")
-    write_review(gated, "add-x")
-    commit_all(gated, "change")
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
     monkeypatch.setenv("WITNESSLOOP_BASE_REF", "main")
     code, out, _ = cli("check", "--root", str(gated))
     assert code == C.EXIT_PASS

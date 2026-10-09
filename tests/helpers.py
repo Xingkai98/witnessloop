@@ -1,4 +1,10 @@
-"""测试脚手架：构造 OpenSpec 形状的 change 目录、审阅证据与解释事件。"""
+"""测试脚手架：构造 OpenSpec 形状的 change 目录、审阅证据与解释事件。
+
+**提交约定**（D3 的 base/head 绑定要求，见 docs/gate.md §3）：
+证据必须**晚于**它所认证的内容——先 `commit_content`，再 `commit_evidence`。
+`write_review` 默认把 `head_sha` 记为当前的 HEAD（即内容提交），
+把 `base_sha` 记为与主干的 merge-base。
+"""
 
 from __future__ import annotations
 
@@ -8,11 +14,22 @@ from pathlib import Path
 from witnessloop import constants as C
 from witnessloop.hashing import sha256_tree
 
+from conftest import commit_all, git
+
 CHANGES_ROOT = C.DEFAULT_CHANGES_ROOT
 
 
 def change_dir(repo: str | Path, change_id: str) -> Path:
     return Path(repo) / CHANGES_ROOT / change_id
+
+
+def head_sha(repo: str | Path) -> str:
+    return git(repo, "rev-parse", "HEAD").strip()
+
+
+def default_base_sha(repo: str | Path, ref: str = "main") -> str:
+    merge_base = git(repo, "merge-base", ref, "HEAD", check=False).strip()
+    return merge_base or head_sha(repo)
 
 
 def write_change(
@@ -44,6 +61,14 @@ def write_change(
     return directory
 
 
+def write_artifact(repo: str | Path, rel: str, body: str) -> Path:
+    """在任意仓内相对路径写文件（受保护 spec 等）。"""
+    path = Path(repo) / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def _hash_or_placeholder(path: Path) -> str:
     """缺件时给个占位 hash，让「缺件」的负例也能造出 manifest。"""
     try:
@@ -73,8 +98,8 @@ def write_review(
         "stage": stage,
         "reviewer_run_id": "run-reviewer-1",
         "author_run_id": "run-author-1",
-        "base_sha": "0" * 40,
-        "head_sha": "1" * 40,
+        "base_sha": default_base_sha(repo),
+        "head_sha": head_sha(repo),
         "tasks_hash": _hash_or_placeholder(directory / "tasks.md"),
         "spec_hash": _hash_or_placeholder(directory / "specs"),
         "diff_hash": "informational-not-verified",
@@ -114,6 +139,48 @@ def write_event(
     )
     with (directory / C.DEFAULT_EVENTS_FILE).open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
+
+
+def commit_content(
+    repo: str | Path,
+    change_id: str,
+    *,
+    artifacts: tuple[str, ...] = ("proposal.md", "design.md", "tasks.md"),
+    specs: bool = True,
+    reviews: bool = True,
+    tasks_body: str = "# tasks\n\n- [ ] 做点什么\n",
+    spec_writes: tuple[tuple[str, str], ...] = (),
+    message: str = "内容",
+) -> str:
+    """提交被审阅的**内容**（change 目录 + 可选的受保护 artifact 写入）。"""
+    write_change(
+        repo,
+        change_id,
+        artifacts=artifacts,
+        specs=specs,
+        reviews=reviews,
+        tasks_body=tasks_body,
+    )
+    for rel, body in spec_writes:
+        write_artifact(repo, rel, body)
+    return commit_all(repo, message)
+
+
+def commit_evidence(
+    repo: str | Path,
+    change_id: str,
+    *,
+    stages: tuple[str, ...] = ("building",),
+    events: tuple[str, ...] = (),
+    message: str = "证据",
+    **review_kwargs,
+) -> str:
+    """提交**证据**（审阅报告 + manifest + 解释事件）——必须晚于内容。"""
+    for stage in stages:
+        write_review(repo, change_id, stage=stage, **review_kwargs)
+    for artifact_path in events:
+        write_event(repo, change_id, artifact_path)
+    return commit_all(repo, message)
 
 
 def check(repo: str | Path, cli, *extra: str):

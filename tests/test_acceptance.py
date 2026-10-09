@@ -12,7 +12,15 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import check, change_dir, write_change, write_event, write_review
+from helpers import (
+    change_dir,
+    check,
+    commit_content,
+    commit_evidence,
+    write_change,
+    write_event,
+    write_review,
+)
 
 SPEC = "openspec/specs/retry/spec.md"
 
@@ -30,12 +38,11 @@ def test_f1_end_to_end_green(repo: Path, cli):
     git(repo, "checkout", "-q", "-b", "add-retry-policy")
 
     change_id = "add-retry-policy"
-    write_change(repo, change_id)
-    write_review(repo, change_id, stage="grill")  # 设计对抗阶段通过
-    write_review(repo, change_id, stage="building")  # 实现审阅阶段通过
-    write_event(repo, change_id, SPEC)  # spec delta 落地带解释
-    _write_spec(repo)
-    commit_all(repo, "一个完整的、有证据的 change")
+    commit_content(repo, change_id, spec_writes=((SPEC, "# canonical spec: retry\n"),))
+    # 设计对抗阶段 + 实现审阅阶段都通过；spec delta 落地带解释事件。
+    commit_evidence(
+        repo, change_id, stages=("grill", "building"), events=(SPEC,)
+    )
 
     code, out, err = check(repo, cli)
     assert code == C.EXIT_PASS, err
@@ -52,11 +59,10 @@ def test_f2_handwritten_allow_event_is_not_blocked(repo: Path, cli):
     commit_all(repo, "接入")
     git(repo, "checkout", "-q", "-b", "sneaky")
 
-    write_change(repo, "sneaky")
-    write_review(repo, "sneaky")
+    commit_content(repo, "sneaky", spec_writes=((SPEC, "# canonical spec: retry\n"),))
     # agent 自己手写一行「人类批准」——没有任何外部锚能证伪它。
+    write_review(repo, "sneaky")
     write_event(repo, "sneaky", SPEC, approved_by="user:totally-real-human")
-    _write_spec(repo)
     commit_all(repo, "自称已获批")
 
     code, _, err = check(repo, cli)

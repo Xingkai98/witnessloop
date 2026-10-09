@@ -8,8 +8,17 @@ from pathlib import Path
 from witnessloop import constants as C
 from witnessloop.hashing import sha256_tree
 
-from conftest import commit_all
-from helpers import check, change_dir, write_change, write_review
+from conftest import commit_all, git
+from helpers import (
+    change_dir,
+    check,
+    commit_content,
+    commit_evidence,
+    write_artifact,
+    write_change,
+    write_event,
+    write_review,
+)
 
 
 def _stage(gated: Path, change_id: str = "add-x") -> Path:
@@ -95,15 +104,15 @@ def test_spec_hash_drift_is_rejected(gated: Path, cli):
 
 
 def test_manifest_matching_current_bytes_passes(gated: Path, cli):
-    directory = _stage(gated)
-    write_review(gated, "add-x")
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    directory = change_dir(gated, "add-x")
     manifest = json.loads(
         (directory / "reviews" / "building.manifest.json").read_text(encoding="utf-8")
     )
     # 证据确实绑定了真实字节
     assert manifest["tasks_hash"] == sha256_tree(directory / "tasks.md")
     assert manifest["spec_hash"] == sha256_tree(directory / "specs")
-    commit_all(gated, "完整证据")
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err
@@ -156,11 +165,86 @@ def test_multiple_stage_manifests_are_all_validated(gated: Path, cli):
     assert "grill.manifest.json" in err
 
 
+def test_head_sha_must_resolve_to_a_real_commit(gated: Path, cli):
+    """回归 I-3：以前乱填 head_sha（如全 1）也绿。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", head_sha="1" * 40)
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "head_sha" in err
+    assert "不是本仓的提交" in err
+
+
+def test_base_sha_must_resolve_to_a_real_commit(gated: Path, cli):
+    """回归 I-3：以前乱填 base_sha（如全 0）也绿。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", base_sha="0" * 40)
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "base_sha" in err
+    assert "不是本仓的提交" in err
+
+
+def test_code_committed_after_review_is_stale(gated: Path, cli):
+    """回归 I-3：审阅之后又推一个只改 src/ 的提交 —— 必须报「审阅的是旧 revision」。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    write_artifact(gated, "src/later.py", "x = 1\n")
+    commit_all(gated, "审阅之后又改代码")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+    assert "src/later.py" in err
+
+
+def test_head_sha_must_be_an_ancestor_of_the_checked_head(gated: Path, cli):
+    """head_sha 指向一个真实存在、但不在本次被检历史里的提交。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    # 在主干上另造一个提交：它真实存在，但不是 feature HEAD 的祖先。
+    git(gated, "checkout", "-q", "main")
+    write_artifact(gated, "unrelated.txt", "x\n")
+    unrelated = commit_all(gated, "无关提交")
+    git(gated, "checkout", "-q", "feature")
+
+    manifest = change_dir(gated, "add-x") / "reviews" / "building.manifest.json"
+    doc = json.loads(manifest.read_text(encoding="utf-8"))
+    doc["head_sha"] = unrelated
+    manifest.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    commit_all(gated, "篡改 head_sha")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "祖先" in err
+
+
+def test_evidence_committed_after_content_passes(gated: Path, cli):
+    """正确约定：内容一个提交，证据紧接着一个提交 → 绿。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+
+    code, out, err = check(gated, cli)
+    assert code == C.EXIT_PASS, err
+
+
+def test_evidence_only_delta_does_not_count_as_stale(gated: Path, cli):
+    """审阅后再补一条解释事件（属证据）→ 不算 stale。"""
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x")
+    write_event(gated, "add-x", "openspec/specs/whatever.md")
+    commit_all(gated, "补证据")
+
+    code, out, err = check(gated, cli)
+    assert code == C.EXIT_PASS, err
+
+
 def test_diff_hash_is_informational(gated: Path, cli):
     """diff_hash 是 informational（design §5.3）：在位即可，不校验内容。"""
-    write_change(gated, "add-x")
-    write_review(gated, "add-x", diff_hash="完全对不上的值")
-    commit_all(gated, "diff_hash 乱填")
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", diff_hash="完全对不上的值")
 
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err

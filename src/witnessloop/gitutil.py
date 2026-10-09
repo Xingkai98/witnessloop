@@ -45,6 +45,21 @@ def current_branch(root: str | Path) -> str | None:
     return proc.stdout.strip() if proc.returncode == 0 else None
 
 
+def is_ancestor(root: str | Path, ancestor: str, descendant: str) -> bool:
+    """``ancestor`` 是否在 ``descendant`` 的历史里（含相等）。"""
+    return _run(root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def diff_names(root: str | Path, base: str, head: str) -> list[str]:
+    """``base..head``（两点）之间被改动的文件路径（仓根相对，posix）。"""
+    proc = _run(root, "diff", "--name-only", "-z", f"{base}..{head}")
+    if proc.returncode != 0:
+        raise GitError(
+            f"无法对 {base}..{head} 求 diff：{proc.stderr.strip() or '未知错误'}"
+        )
+    return [path for path in proc.stdout.split("\0") if path]
+
+
 def changed_files(root: str | Path, base: str, head: str) -> list[Change]:
     """``base...head``（三点，merge-base）之间的变更文件。
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from witnessloop import constants as C
+from witnessloop import gitutil
 from witnessloop import paths as pathutil
 from witnessloop.hashing import sha256_tree
 from witnessloop.policy import Policy
@@ -61,9 +62,9 @@ def validate_change_dir(root: Path, policy: Policy, change_id: str) -> list[Find
 
 
 def validate_review_manifests(
-    root: Path, policy: Policy, change_id: str
+    root: Path, policy: Policy, change_id: str, *, checked_head: str
 ) -> list[Finding]:
-    """D3 + D4：review manifest 存在且 hash 绑定；reviewer ≠ author。"""
+    """D3 + D4：review manifest 存在、hash 绑定、base/head 真绑；reviewer ≠ author。"""
     directory = change_dir(root, policy, change_id)
     rel = f"{policy.changes_root.rstrip('/')}/{change_id}"
     manifests = sorted(directory.glob(policy.review_manifest_glob))
@@ -78,11 +79,17 @@ def validate_review_manifests(
 
     findings: list[Finding] = []
     for manifest_path in manifests:
-        findings.extend(_validate_one(directory, rel, manifest_path))
+        findings.extend(_validate_one(root, directory, rel, manifest_path, checked_head))
     return findings
 
 
-def _validate_one(directory: Path, rel_change: str, manifest_path: Path) -> list[Finding]:
+def _validate_one(
+    root: Path,
+    directory: Path,
+    rel_change: str,
+    manifest_path: Path,
+    checked_head: str,
+) -> list[Finding]:
     manifest_rel = f"{rel_change}/{manifest_path.relative_to(directory).as_posix()}"
     try:
         doc = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -117,8 +124,74 @@ def _validate_one(directory: Path, rel_change: str, manifest_path: Path) -> list
             )
         )
 
-    # D3：hash 绑定真实 artifact 字节。
+    # D3：hash 绑定真实 artifact 字节；base/head 绑定真实 git revision。
     findings.extend(_check_hashes(directory, manifest_rel, doc))
+    findings.extend(_check_git_span(root, manifest_rel, doc, checked_head))
+    return findings
+
+
+def _check_git_span(
+    root: Path, manifest_rel: str, doc: dict, checked_head: str
+) -> list[Finding]:
+    """D3 的 revision 绑定（tasks.md：「base/head sha + ...」）。
+
+    一条 manifest 不可能写下**自己所在提交**的 sha（自指），所以「head_sha 等于本次
+    被检 revision」在字面上不可满足。等价且可满足的规则是：head_sha 必须是本次被检
+    head 的**祖先**，且从 head_sha 到被检 head 之间**只允许出现证据文件**。
+    这等价于「head_sha 是最后一个非证据 revision」——审阅之后又落了代码即判 stale。
+
+    约定（docs/gate.md §3）：**先提交内容，再单独提交证据**。
+    """
+    findings: list[Finding] = []
+    base_sha = doc["base_sha"]
+    head_sha = doc["head_sha"]
+
+    if gitutil.rev_parse(root, base_sha) is None:
+        findings.append(
+            Finding(
+                manifest_rel,
+                f"base_sha={base_sha} 不是本仓的提交（证据必须绑定真实 revision）",
+            )
+        )
+
+    if gitutil.rev_parse(root, head_sha) is None:
+        findings.append(
+            Finding(
+                manifest_rel,
+                f"head_sha={head_sha} 不是本仓的提交（证据必须绑定真实 revision）",
+            )
+        )
+        return findings
+
+    if not gitutil.is_ancestor(root, head_sha, checked_head):
+        findings.append(
+            Finding(
+                manifest_rel,
+                f"head_sha={head_sha} 不是本次被检 revision {checked_head} 的祖先"
+                "——审阅的是别的 revision",
+            )
+        )
+        return findings
+
+    try:
+        delta = gitutil.diff_names(root, head_sha, checked_head)
+    except gitutil.GitError as exc:
+        findings.append(Finding(manifest_rel, f"无法核对审阅跨度：{exc}"))
+        return findings
+
+    stray = sorted(
+        path
+        for path in delta
+        if not pathutil.matches_any(path, C.EVIDENCE_PATH_PATTERNS)
+    )
+    if stray:
+        shown = ", ".join(stray[:5]) + ("…" if len(stray) > 5 else "")
+        findings.append(
+            Finding(
+                manifest_rel,
+                f"审阅的是旧 revision：head_sha={head_sha} 之后又改动了非证据文件：{shown}",
+            )
+        )
     return findings
 
 
