@@ -168,7 +168,10 @@ def _check_git_span(
     # 字段名叫 *_sha：先卡形状。`rev_parse` 什么 ref 表达式都收（main、HEAD~3、
     # tag……），不卡的话字段语义会松到没有意义。
     for field, value in (("base_sha", base_sha), ("head_sha", head_sha)):
-        if not _SHA_RE.match(value):
+        # isinstance 守卫不能省：manifest 是 agent 可写的 JSON，字段可能是数字/
+        # 布尔/列表，直接喂给 re.match 会抛未捕获 TypeError（栈回溯崩溃）。
+        # 非字符串一律走干净 finding——fail-closed 但要**受控**。
+        if not isinstance(value, str) or not _SHA_RE.match(value):
             findings.append(
                 Finding(
                     manifest_rel,

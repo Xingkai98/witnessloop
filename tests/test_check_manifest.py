@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from witnessloop import constants as C
 from witnessloop.hashing import sha256_tree
 
@@ -205,6 +207,26 @@ def test_head_sha_symbolic_ref_is_rejected(gated: Path, cli):
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL
     assert "head_sha" in err
+    assert "40 位" in err
+
+
+@pytest.mark.parametrize("field", ["base_sha", "head_sha"])
+@pytest.mark.parametrize("bad_value", [12345, True, ["x"], {"a": 1}])
+def test_non_string_sha_is_a_clean_finding_not_a_crash(gated: Path, cli, field, bad_value):
+    """回归 R3 4-1：非字符串 JSON 值曾让 `_SHA_RE.match` 抛未捕获 TypeError。
+
+    manifest 是提交进仓、agent 可写的。把 `base_sha` 写成 JSON 数字/布尔/列表
+    就让 check 栈回溯崩溃，属修复回合引入的未受控崩溃（R1 对 uninit 的同类问题
+    判过 MUST-FIX）。要求：fail-closed 但**干净**——exit 1、无 Traceback。
+    """
+    commit_content(gated, "add-x")
+    commit_evidence(gated, "add-x", **{field: bad_value})
+
+    code, _, err = check(gated, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "Traceback" not in err
+    assert field in err
     assert "40 位" in err
 
 
