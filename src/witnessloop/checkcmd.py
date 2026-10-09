@@ -91,6 +91,10 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
       不需要事件（创建证据本体/门禁自身配置就是正常工作流），**修改或删除**才要。
       否则每个正常 PR 都得为「新增自己那份 manifest」写一条解释事件（自相矛盾），
       接入 PR 也会被自己的门禁拦下（鸡生蛋）。
+
+    **改名**按「对旧路径的删除」处理：``git mv`` 一个受保护文件等于把它从保护区
+    删掉再在别处新建。若只看新路径，把 ``openspec/specs/x.md`` 改名到 ``src/x.md``
+    就能无解释地让受保护 artifact 消失。因此 old_path 必须一并检查。
     """
     invariant = policy_mod.INVARIANT_PROTECTED_PATHS
     try:
@@ -100,27 +104,34 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
 
     findings: list[contract.Finding] = []
     for change in changes:
-        path = pathutil.normalize(change.path)
-        by_policy = pathutil.matches_any(path, pol.protected_paths)
-        by_invariant = pathutil.matches_any(path, invariant)
-        if not (by_policy or by_invariant):
-            continue
-        if by_invariant and change.status == "A":
-            continue  # 新增证据本体 / 门禁自身配置：不需要解释
-        if any(
-            events_mod.covers(event, path, pol.protected_write_event_types)
-            for event in known
-        ):
-            continue
-        findings.append(
-            contract.Finding(
-                path,
-                "受保护路径被写入，但没有结构化解释事件"
-                f"（需 {pol.events_file} 里有 event_type="
-                f"{'/'.join(pol.protected_write_event_types)}、artifact_path 指向该文件、"
-                "reason/approved_by 非空的事件）",
+        # 每个变更文件贡献 1~2 个「待解释的路径」：新路径（写入），
+        # 以及改名时的旧路径（等同于删除）。
+        targets = [(change.path, change.status)]
+        if change.old_path:
+            targets.append((change.old_path, "D"))
+
+        for raw_path, status in targets:
+            path = pathutil.normalize(raw_path)
+            by_policy = pathutil.matches_any(path, pol.protected_paths)
+            by_invariant = pathutil.matches_any(path, invariant)
+            if not (by_policy or by_invariant):
+                continue
+            if by_invariant and status == "A":
+                continue  # 新增证据本体 / 门禁自身配置：不需要解释
+            if any(
+                events_mod.covers(event, path, pol.protected_write_event_types)
+                for event in known
+            ):
+                continue
+            findings.append(
+                contract.Finding(
+                    path,
+                    "受保护路径被写入，但没有结构化解释事件"
+                    f"（需 {pol.events_file} 里有 event_type="
+                    f"{'/'.join(pol.protected_write_event_types)}、"
+                    "artifact_path 指向该文件、reason/approved_by 非空的事件）",
+                )
             )
-        )
     return findings
 
 

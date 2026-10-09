@@ -103,6 +103,46 @@ def test_deleting_a_protected_spec_needs_an_event(repo: Path, cli):
     assert "受保护路径被写入" in err
 
 
+def test_renaming_a_protected_file_out_of_the_area_is_rejected(repo: Path, cli):
+    """改名外逃：`git mv` 受保护文件到保护区外 == 删除，必须解释。
+
+    回归 I-1：`_protected_writes` 原先只看新路径，改名后新路径不受保护 → 放行。
+    注意 `git diff --name-status` 对改名给 `R<score> old new`，old_path 才是关键。
+    """
+    _write_spec(repo, "# baseline spec\n")
+    cli("init", "--root", str(repo))
+    commit_all(repo, "main：已有受保护 spec")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    (repo / "src").mkdir()
+    git(repo, "mv", SPEC, "src/moved-spec.md")
+    commit_all(repo, "改名外逃")
+
+    code, _, err = check(repo, cli)
+    assert code == C.EXIT_FAIL, "改名把受保护文件移出保护区却被放行"
+    assert SPEC in err
+    assert "受保护路径被写入" in err
+
+
+def test_renaming_with_an_event_is_allowed(repo: Path, cli):
+    """给了针对**旧路径**的解释事件，改名外逃应该放行。"""
+    _write_spec(repo, "# baseline spec\n")
+    cli("init", "--root", str(repo))
+    commit_all(repo, "main：已有受保护 spec")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    write_change(repo, "move-retry-spec")
+    (repo / "src").mkdir()
+    git(repo, "mv", SPEC, "src/moved-spec.md")
+    commit_all(repo, "内容：把 spec 改名搬走")
+    write_review(repo, "move-retry-spec")
+    write_event(repo, "move-retry-spec", SPEC)  # 解释的是**旧路径**
+    commit_all(repo, "证据")
+
+    code, out, err = check(repo, cli)
+    assert code == C.EXIT_PASS, err
+
+
 def test_writes_outside_protected_paths_need_no_event(gated: Path, cli):
     _full_change(gated, "c")
     (gated / "src").mkdir(exist_ok=True)
