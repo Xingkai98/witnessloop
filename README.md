@@ -18,12 +18,26 @@ uv tool install git+https://github.com/Xingkai98/witnessloop@v1
 cd your-repo && witnessloop init --dry-run   # 先看要写什么
 witnessloop init                             # 落盘，然后**人工审阅并提交**
 
+# 审阅跑完，落证据（复用 check 同一套哈希；幂等、不 auto-commit）
+witnessloop manifest build --change add-retry --stage building \
+  --report reviews/building-review.md \
+  --reviewer-run-id run-A --author-run-id run-B
+
 # CI 入口（fail-closed）
 witnessloop check --base origin/main --head HEAD
 
 # 精确回滚（文件被改过就拒绝删除并报 diff）
 witnessloop uninit
 ```
+
+交互层（`grill` / `review-loop`）是一个 Claude Code plugin，**只做接线**——
+算法在 host 中立的 `templates/` 下，适配器在 `plugin/` 下，两者物理分离：
+
+```bash
+claude --plugin-dir /path/to/witnessloop/plugin
+```
+
+分发按设计走 **git / 本地目录，不上 marketplace**（design §4）。
 
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
 

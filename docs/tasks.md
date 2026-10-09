@@ -37,10 +37,15 @@
 
 ## E. 交互层（CC plugin）
 
-- [ ] E1 host 中立模板（grill / review-loop 的算法与 prompt）与 CC 适配器**物理分离**
-- [ ] E2 CC 适配器：`grill` 命令（零记忆追问 → 结构化决策记录）
-- [ ] E3 CC 适配器：`review-loop` 命令（独立审阅 → 修复 → 再审，有界轮数）
-- [ ] E4 **只读、无状态**（不得持有自己的状态文件；一切以 manifest 为准）
+- [x] E1 host 中立模板（grill / review-loop 的算法与 prompt）与 CC 适配器**物理分离**
+- [x] E2 CC 适配器：`grill` 命令（零记忆追问 → 结构化决策记录）
+- [x] E3 CC 适配器：`review-loop` 命令（独立审阅 → 修复 → 再审，有界轮数）
+- [x] E4 **只读、无状态**（不得持有自己的状态文件；一切以 manifest 为准）
+
+支撑动词（M2 新增，证据回路闭合所需）：
+
+- [x] E5 `witnessloop manifest build`：产出 `check` 认的 review manifest，
+      与 `check` **共用同一张哈希绑定表 + 同一个哈希函数**，杜绝两边漂移
 
 ## F. 验收（acid test，见 design §7）
 
@@ -53,7 +58,8 @@
 ## 里程碑
 
 - **M1**：A + B + C + D（门禁层可跑，`check` 能在第二仓拦下缺证据 PR）——**已完成**（分支 `mvp-m1/2026-10-09`）
-- **M2**：E（交互层 CC plugin 可用）
+- **M2**：E（交互层 CC plugin 可用）——**已完成**（分支 `mvp-m2/2026-10-09`，
+  含支撑动词 `manifest build`）
 - **M3**：F（第二仓 acid test 全绿，含负例）
 
 ## 明确不做（v1）

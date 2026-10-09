@@ -138,6 +138,29 @@ git commit -m "证据：reviews/ + workflow-events.jsonl"    # ← check 的被�
 > `tests/test_check_manifest.py::test_single_commit_pr_is_rejected` 把它钉成契约。
 > 若要把单提交变成可行，需要引入 `base_sha`/`head_sha` 之外的第三锚（成本较高）。
 
+### 3.2 怎么产出 manifest：`witnessloop manifest build`
+
+审阅跑完，用这个动词把报告落成 manifest——**它复用 `check` 同一张绑定表
+（`constants.HASHED_ARTIFACTS`）与同一个 `hashing.sha256_tree`**，两边不会漂移。
+
+```bash
+witnessloop manifest build \
+  --root . --change <change-id> --stage <stage> \
+  --report reviews/<stage>-review.md \
+  --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
+```
+
+- `head_sha` = 跑 build 时的 HEAD。所以要在**内容提交之后、证据提交之前**跑
+  （§3.1）；随后把报告 + manifest 单独提交。
+- `base_sha` = 给定 `--base`（缺省与 `check` 用同一套解析）的 sha。
+- `tasks_hash` / `spec_hash` / `report_hash` 由 build 算出；`diff_hash` 是
+  informational（如实算 `base..head` 的 diff 文本 sha256，`check` 不校验）。
+- 写 `reviews/<stage>.manifest.json`。**幂等**（同输入覆盖同一文件）、**不 auto-commit**。
+- 不合格就**不写出文件**、直接报错：`reviewer_run_id == author_run_id`、
+  `report_path` 逃逸出 change 目录、报告不在 `reviews/` 下（把这个坑从
+  「CI 里像误报的 stale」变成清楚的即时错误）、缺 `tasks.md`、change 目录不存在、
+  仓里没有提交、未接入（exit 3）。
+
 ## 4. 结构化解释事件（`workflow-events.jsonl`）
 
 一行一个 JSON 对象：
