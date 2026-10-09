@@ -18,6 +18,9 @@ GATE_WORKFLOW_PATH = ".github/workflows/witnessloop.yml"
 # change 目录默认根（policy 可覆写）。
 DEFAULT_CHANGES_ROOT = "openspec/changes"
 
+# 归档目录名：`<changes_root>/archive/**` 放下线后的 change。
+ARCHIVE_DIR_NAME = "archive"
+
 # `require_change_for` 的默认值：命中这些路径的改动**必须**挂一个 change 目录。
 # 否则「什么都不建」就是最省事的绕过方式——只改 `src/` 的 PR 会直接放行。
 # 刻意**不含** `docs/**` / `tests/**` 这类目录：纯文档/纯测试改动不该被拦。

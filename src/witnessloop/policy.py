@@ -57,18 +57,25 @@ class Policy:
     protected_write_event_types: tuple[str, ...]
 
     @property
-    def evidence_path_patterns(self) -> tuple[str, ...]:
-        """「证据类路径」——D3 判定 stale 时，被审阅 revision 之后允许改动的范围。
+    def archive_root(self) -> str:
+        return f"{self.changes_root.rstrip('/')}/{C.ARCHIVE_DIR_NAME}"
 
-        刻意收窄到 **change 目录内**。早先用 ``**/reviews/**``，任意深度的
-        ``reviews/`` 目录都算证据（例如 ``src/reviews/x.py``），审阅后往那儿
-        塞非证据内容即可绕开 stale 判定。
+    @property
+    def stale_exempt_paths(self) -> tuple[str, ...]:
+        """被审阅 revision 之后**允许**出现的路径（D3 判 stale 时的豁免集）。
+
+        * 证据本体——刻意收窄到 **change 目录内的 reviews/**。早先用
+          ``**/reviews/**``，任意深度的 ``reviews/`` 目录都算证据
+          （例如 ``src/reviews/x.py``），审阅后往那儿塞内容即可绕开 stale 判定。
+        * ``archive/**``——归档是**簿记动作**，把已审的 change 从 active 挪走
+          不改变任何被审内容，不该算「审阅后动了非证据文件」。
         """
         root = self.changes_root.rstrip("/") + "/"
         return (
             ".witnessloop/**",  # 门禁自身配置（改动仍需解释事件）
             f"{root}*/reviews/**",  # 审阅报告 + manifest
             f"{root}*/{self.events_file}",  # 结构化解释事件
+            f"{self.archive_root}/**",  # 归档（簿记）
         )
 
     @classmethod

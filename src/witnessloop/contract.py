@@ -35,14 +35,52 @@ def change_dir(root: Path, policy: Policy, change_id: str) -> Path:
     return root / policy.changes_root / change_id
 
 
+def is_archive_move(change, changes_root: str) -> bool:
+    """`git mv <changes_root>/<id>/… <changes_root>/archive/<id>/…` —— 归档动作。
+
+    只认**纯改名**（状态 ``R100``，没带内容改动）：带走改动的移动不算归档，
+    仍须解释事件。旧路径必须在 active 目录（不能本来就是 archive 里的东西），
+    新路径必须落在 ``<changes_root>/archive/**``。
+    """
+    if change.status != "R100" or not change.old_path:
+        return False
+    root = changes_root.rstrip("/")
+    new = pathutil.normalize(change.path)
+    old = pathutil.normalize(change.old_path)
+    archive = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    return (
+        pathutil.matches(new, f"{archive}/**")
+        and pathutil.matches(old, f"{root}/*/**")
+        and not pathutil.matches(old, f"{archive}/**")
+    )
+
+
 def changed_change_ids(changes, changes_root: str) -> list[str]:
-    """从 diff 里挑出被触碰的 change id（changes_root 下的一级目录名）。"""
-    prefix = changes_root.rstrip("/") + "/"
+    """从 diff 里挑出被触碰的 **active** change id。
+
+    归档 move 的两端都要排除：目标在 ``archive/`` 下（否则 ``archive`` 会被当成
+    一个 change id，然后报「缺少必需件 proposal.md」），来源是那个已经搬走的
+    active 目录（它的内容已随归档离开 active，不该再按 active 契约校验）。
+    """
+    root = changes_root.rstrip("/")
+    prefix = root + "/"
+    archived_sources = {
+        pathutil.normalize(change.old_path)
+        for change in changes
+        if change.old_path and is_archive_move(change, changes_root)
+    }
     ids: set[str] = set()
     for change in changes:
         for path in (change.path, change.old_path):
-            if path and path.startswith(prefix):
-                head = path[len(prefix) :].split("/", 1)[0]
+            if not path:
+                continue
+            normalized = pathutil.normalize(path)
+            if normalized in archived_sources:
+                continue
+            if pathutil.matches(normalized, f"{root}/{C.ARCHIVE_DIR_NAME}/**"):
+                continue
+            if normalized.startswith(prefix):
+                head = normalized[len(prefix) :].split("/", 1)[0]
                 if head:
                     ids.add(head)
     return sorted(ids)

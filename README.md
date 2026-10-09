@@ -36,6 +36,10 @@ witnessloop uninit
   办法是什么都不建——只改 `src/` 的 PR 会直接放行。写 `[]` 可显式关掉。
 - `required_artifacts` / `evidence`：change 目录必须齐备的件、证据文件名与事件格式。
 
+归档（把 change 从 active `git mv` 进 `openspec/changes/archive/`）属簿记动作，
+**不需要**手写解释事件；删改证据文件仍然要。边界见
+[docs/gate.md §5.1](docs/gate.md)。
+
 `init` 写的 caller workflow 引用本仓的 reusable workflow
 `.github/workflows/gate.yml@v1`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。

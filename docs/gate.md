@@ -173,6 +173,25 @@ git commit -m "证据：reviews/ + workflow-events.jsonl"    # ← check 的被�
 若新增也要事件，每个正常 PR 都得为自己那份 manifest 写一条解释（自相矛盾），
 接入 PR 更会被自己的门禁拦下（鸡生蛋）。**修改或删除**才是要解释的动作。
 
+### 5.1 归档豁免：`<changes_root>/archive/**` 上的**纯改名**免解释
+
+OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifest、事件文件都在
+不变集里，改名会被判成「修改受保护路径」——于是每次归档都得手写一条解释事件。
+归档是**簿记动作**，不该如此。豁免定义（`contract.is_archive_move`）刻意收窄：
+
+| 动作 | 免解释？ |
+|---|---|
+| `git mv <changes_root>/<id>/… <changes_root>/archive/<id>/…`（**R100 纯改名**） | ✅ 免 |
+| 带走内容改动的移动（R 分数 < 100 / D+A） | ❌ 仍要 |
+| 删掉证据文件（如 manifest） | ❌ 仍要 |
+| 改 `archive/` 里已有的文件 | ❌ 仍要 |
+| active 目录内改名（含改名 manifest） | ❌ 仍要 |
+| 把受保护 spec 挪进 `archive/` | ❌ 仍要 |
+
+配套：归档 move 的两端都不计入 active change id（否则 `archive` 会被当成一个 change
+id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在」）；`archive/**` 同时
+进 `stale_exempt_paths`（归档不改内容，不该触发「审阅的是旧 revision」）。
+
 ## 6. `check` 的退出码
 
 | 码 | 含义 |

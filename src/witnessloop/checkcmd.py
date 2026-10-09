@@ -64,7 +64,7 @@ def run(args: argparse.Namespace) -> int:
             for path in (change.path, change.old_path)
             if path
         ),
-        evidence_patterns=pol.evidence_path_patterns,
+        evidence_patterns=pol.stale_exempt_paths,
     )
 
     change_ids = contract.changed_change_ids(changes, pol.changes_root)
@@ -152,6 +152,12 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
 
     findings: list[contract.Finding] = []
     for change in changes:
+        # 归档 = 把已审的 change 从 active 挪进 archive/ 的**纯改名**，是簿记动作，
+        # 不是受保护写入。豁免面刻意收窄（见 contract.is_archive_move）：
+        # 带走内容改动的移动、以及 archive 里的删改，仍都要解释事件。
+        if contract.is_archive_move(change, pol.changes_root):
+            continue
+
         # 每个变更文件贡献 1~2 个「待解释的路径」：新路径（写入），
         # 以及改名时的旧路径（等同于删除）。
         targets = [(change.path, change.status)]
@@ -164,7 +170,7 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
             by_invariant = pathutil.matches_any(path, invariant)
             if not (by_policy or by_invariant):
                 continue
-            if by_invariant and status == "A":
+            if by_invariant and status[:1] == "A":
                 continue  # 新增证据本体 / 门禁自身配置：不需要解释
             if any(
                 events_mod.covers(event, path, pol.protected_write_event_types)

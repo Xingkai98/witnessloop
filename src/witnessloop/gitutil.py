@@ -13,7 +13,12 @@ class GitError(RuntimeError):
 
 @dataclass(frozen=True)
 class Change:
-    """一条 diff 记录。``status`` 是 A/M/D/R/C/T 之一。"""
+    """一条 diff 记录。
+
+    ``status`` 是**完整**状态下标（``"A"`` / ``"M"`` / ``"D"`` / ``"R100"`` /
+    ``"C075"`` …）——保留相似度分数，归档识别要判「是不是纯改名」。
+    只关心字母时用 ``status[:1]``。
+    """
 
     status: str
     path: str
@@ -84,11 +89,11 @@ def _parse_name_status(out: str) -> list[Change]:
         if not raw:
             i += 1
             continue
-        status = raw[0]
-        if status in ("R", "C"):
-            changes.append(Change(status, fields[i + 2], fields[i + 1]))
+        # raw 形如 "A" / "M" / "R100" / "C075"——整段留作 status。
+        if raw[:1] in ("R", "C"):
+            changes.append(Change(raw, fields[i + 2], fields[i + 1]))
             i += 3
         else:
-            changes.append(Change(status, fields[i + 1]))
+            changes.append(Change(raw, fields[i + 1]))
             i += 2
     return changes
