@@ -108,6 +108,45 @@ def test_deleting_a_protected_spec_needs_an_event(repo: Path, cli):
     assert "受保护路径被写入" in err
 
 
+def test_catch_all_event_does_not_cover_everything(gated: Path, cli):
+    """回归 I-6：一条 `artifact_path:"**"` 事件曾能豁免**全部**受保护路径。
+
+    「结构化解释」必须点名具体路径——否则它塌缩成「一行 `**` 放行一切」。
+    """
+    commit_content(gated, "c", spec_writes=((SPEC, "# canonical\n"),))
+    commit_evidence(gated, "c", events=("**",))
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "受保护路径被写入" in err
+    assert SPEC in err
+
+
+def test_single_event_does_not_cover_a_second_protected_path(gated: Path, cli):
+    """一条事件只能豁免它点名的那一个路径，不能顺带豁免别的。"""
+    other = "openspec/specs/other/spec.md"
+    commit_content(
+        gated,
+        "c",
+        spec_writes=((SPEC, "# canonical\n"), (other, "# other\n")),
+    )
+    commit_evidence(gated, "c", events=(SPEC,))  # 只点名 SPEC
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert other in err
+
+
+def test_glob_event_does_not_cover_a_path_it_would_have_matched(gated: Path, cli):
+    """`openspec/specs/**` 这种通配事件同样不算「点名具体路径」。"""
+    commit_content(gated, "c", spec_writes=((SPEC, "# canonical\n"),))
+    commit_evidence(gated, "c", events=("openspec/specs/**",))
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "受保护路径被写入" in err
+
+
 def test_renaming_a_protected_file_out_of_the_area_is_rejected(repo: Path, cli):
     """改名外逃：`git mv` 受保护文件到保护区外 == 删除，必须解释。
 

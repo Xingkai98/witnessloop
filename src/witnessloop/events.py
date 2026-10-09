@@ -1,10 +1,11 @@
 """``workflow-events.jsonl`` 里的结构化解释事件（D5）。
 
 一行一个 JSON 对象。受保护路径的写入，需要在某个 change 目录的事件文件里
-留下一条 ``artifact_path`` 指向它、且 ``reason`` / ``approved_by`` 非空的事件。
+留下一条 ``artifact_path`` **点名该路径**、且 ``reason`` / ``approved_by`` 非空的事件。
 
 诚实边界（design §2 / §9 风险 1）：这些字段是自由文本，**防漂移不防伪造**——
-agent 手写一行同样的 JSON 提交即可放行。
+agent 手写一行同样的 JSON 提交即可放行。收紧 ``artifact_path`` 只堵「一条通配
+豁免一切」，不改变这个边界。
 """
 
 from __future__ import annotations
@@ -15,6 +16,9 @@ from pathlib import Path
 
 from witnessloop import paths as pathutil
 from witnessloop.policy import Policy
+
+#: 在本模块的匹配语义里，这两个字符是唯一的通配符（见 ``paths.glob_to_regex``）。
+GLOB_METACHARACTERS = "*?"
 
 
 class EventError(RuntimeError):
@@ -27,7 +31,6 @@ class Event:
     artifact_path: str
     reason: str
     approved_by: str
-    change_id: str | None = None
 
 
 def load_events_file(path: Path) -> list[Event]:
@@ -48,7 +51,6 @@ def load_events_file(path: Path) -> list[Event]:
                 artifact_path=pathutil.normalize(str(doc.get("artifact_path") or "")),
                 reason=str(doc.get("reason") or "").strip(),
                 approved_by=str(doc.get("approved_by") or "").strip(),
-                change_id=doc.get("change_id"),
             )
         )
     return events
@@ -63,13 +65,18 @@ def load_all(root: Path, policy: Policy) -> list[Event]:
 
 
 def covers(event: Event, artifact_path: str, allowed_types) -> bool:
-    """这条事件是否为 ``artifact_path`` 提供了合规的结构化解释。"""
+    """这条事件是否为**这一个**路径提供了合规的结构化解释。
+
+    事件的 ``artifact_path`` 必须是**具体路径**，不接受通配（``*`` / ``?``）——
+    否则一条 ``artifact_path:"**"`` 就能豁免全部受保护路径，
+    「结构化解释」塌缩成「一行 `**` 放行一切」，连不变集都能被它绕过。
+    """
     if event.event_type not in allowed_types:
         return False
     if not event.reason or not event.approved_by:
         return False
     if not event.artifact_path:
         return False
-    return pathutil.matches(artifact_path, event.artifact_path) or (
-        event.artifact_path == pathutil.normalize(artifact_path)
-    )
+    if any(ch in event.artifact_path for ch in GLOB_METACHARACTERS):
+        return False
+    return event.artifact_path == pathutil.normalize(artifact_path)

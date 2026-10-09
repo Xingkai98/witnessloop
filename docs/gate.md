@@ -116,7 +116,10 @@ git commit -m "证据：reviews/ + workflow-events.jsonl"    # ← check 的被�
  "reason":"…","approved_by":"user:kai"}
 ```
 
-`artifact_path` 支持 glob。`reason` / `approved_by` 去空白后必须非空。
+`artifact_path` 必须是**具体路径**，不接受通配（`*` / `?`）——一条事件只豁免它
+点名的那个文件。否则 `artifact_path:"**"` 会成为「一行放行一切」的后门，
+连不变集都能被绕开。`reason` / `approved_by` 去空白后必须非空。
+事件里的 `change_id` 是 informational，check 不消费它。
 
 ## 5. 受保护写入的两档规则
 
