@@ -284,6 +284,23 @@ def test_evidence_committed_after_content_passes(gated: Path, cli):
     assert code == C.EXIT_PASS, err
 
 
+def test_single_commit_pr_is_rejected(gated: Path, cli):
+    """已文档化的限制（gate.md §3.1）：内容与证据同处**一个**提交 → 恒判 stale。
+
+    写 manifest 时 HEAD 还停在改动前的提交上，`head_sha` 只能等于那个更早的
+    revision，于是从它到被检 head 之间全是内容文件。这是自指带来的固有约束。
+
+    把限制钉成契约：哪天它变绿了，说明绑定机制变了，gate.md §3.1 必须同步改。
+    """
+    write_change(gated, "add-x")
+    write_review(gated, "add-x")  # head_sha = 本次提交的父提交
+    commit_all(gated, "内容与证据同一个提交")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+
+
 def test_reviews_dir_outside_the_change_is_not_evidence(gated: Path, cli):
     """回归 R2 3-3：`**/reviews/**` 太宽——审阅后往任意 reviews 目录塞内容即可绕开 stale。"""
     commit_content(gated, "add-x")

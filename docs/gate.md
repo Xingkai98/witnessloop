@@ -111,6 +111,13 @@ git commit -m "证据：reviews/ + workflow-events.jsonl"    # ← check 的被�
 「审阅的是旧 revision：head_sha=… 之后又改动了非证据文件：…」。
 补新的解释事件、补报告则不算——它们本身就是证据。
 
+> **推论：内容与证据必须分属两个提交；单提交 PR 不被支持。**
+> 若把内容和证据放进同一个 commit，写 manifest 时 HEAD 还停在改动前的提交上，
+> `head_sha` 必然等于那个更早的 revision，于是 `head_sha..被检 head` 之间全是
+> 内容文件 → 恒判 stale。这是自指带来的**固有约束**，不是缺陷；本仓用
+> `tests/test_check_manifest.py::test_single_commit_pr_is_rejected` 把它钉成契约。
+> 若要把单提交变成可行，需要引入 `base_sha`/`head_sha` 之外的第三锚（成本较高）。
+
 ## 4. 结构化解释事件（`workflow-events.jsonl`）
 
 一行一个 JSON 对象：
