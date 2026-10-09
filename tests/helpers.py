@@ -83,14 +83,20 @@ def write_review(
     *,
     stage: str = "building",
     report_body: str = "PASS\n\n审阅通过。\n",
+    report_rel: str | None = None,
     doc_overrides: dict | None = None,
     **overrides,
 ) -> Path:
-    """写「报告 + manifest」成对证据；``overrides`` / ``doc_overrides`` 注入错误字段。"""
+    """写「报告 + manifest」成对证据；``overrides`` / ``doc_overrides`` 注入错误字段。
+
+    ``report_rel`` 可把报告放到别处（默认 ``reviews/<stage>-review.md``）。
+    """
     directory = change_dir(repo, change_id)
     (directory / "reviews").mkdir(parents=True, exist_ok=True)
-    report_rel = f"reviews/{stage}-review.md"
-    (directory / report_rel).write_text(report_body, encoding="utf-8")
+    report_rel = report_rel or f"reviews/{stage}-review.md"
+    report_file = directory / report_rel
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(report_body, encoding="utf-8")
 
     doc = {
         "schema": C.SCHEMA_REVIEW_MANIFEST,
@@ -103,7 +109,7 @@ def write_review(
         "tasks_hash": _hash_or_placeholder(directory / "tasks.md"),
         "spec_hash": _hash_or_placeholder(directory / "specs"),
         "diff_hash": "informational-not-verified",
-        "report_hash": sha256_tree(directory / report_rel),
+        "report_hash": sha256_tree(report_file),
         "report_path": report_rel,
     }
     doc.update(overrides)

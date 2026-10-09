@@ -368,6 +368,36 @@ def test_events_file_outside_the_change_is_not_evidence(gated: Path, cli):
     assert "旧 revision" in err
 
 
+def test_report_outside_reviews_is_not_evidence(gated: Path, cli):
+    """边界（gate.md §3）：报告必须放在 `reviews/` 下。
+
+    放在 change 目录根的报告不匹配证据 glob，于是在 `head_sha..被检 head` 的 delta
+    里被判 stray，额外报一条「旧 revision」。这是**已声明的边界**而非静默行为：
+    `gate.md §1` 约定报告在 `reviews/`。
+
+    本测试把现状钉住——若哪天把 `report_path` 纳入证据判定，它会变红，届时
+    必须同步改 §3（并评估是否放宽了规避面）。
+    """
+    commit_content(gated, "add-x")
+    write_review(gated, "add-x", report_rel="my-report.md")  # 报告放 change 目录根
+    commit_all(gated, "证据：报告没放 reviews/")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "旧 revision" in err
+    assert "my-report.md" in err
+
+
+def test_report_inside_reviews_is_evidence(gated: Path, cli):
+    """对照：报告在 `reviews/` 下（约定的位置）→ 不算 stale。"""
+    commit_content(gated, "add-x")
+    write_review(gated, "add-x")  # 默认落在 reviews/building-review.md
+    commit_all(gated, "证据")
+
+    code, out, err = check(gated, cli)
+    assert code == C.EXIT_PASS, err
+
+
 def test_evidence_only_delta_does_not_count_as_stale(gated: Path, cli):
     """审阅后再补一条解释事件（属证据）→ 不算 stale。"""
     commit_content(gated, "add-x")

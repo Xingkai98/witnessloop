@@ -96,6 +96,13 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
        任意深度的 `reviews/` 目录都算证据会让 `src/reviews/x.py` 变成规避面）。
 - **强制 `reviewer_run_id != author_run_id`**：挡「忘了另开 run」，**不挡蓄意**。
 - `report_path` 解析后必须落在 change 目录内（禁 `../` 逃逸）。
+- ⚠️ **报告必须放在 `reviews/` 下**（`gate.md §1` 的布局约定）。放在 change 目录
+  根（如 `report_path: "my-report.md"`）虽然能通过 hash 校验，但**不匹配证据
+  glob**，于是在 `head_sha..被检 head` 的 delta 里被判 stray，会**额外**报一条
+  「审阅的是旧 revision」——诊断上像误报，实际是违反布局约定。
+  `tests/test_check_manifest.py::test_report_outside_reviews_is_not_evidence`
+  把这条边界钉住了；若日后把 `report_path` 纳入证据判定，该测试会变红，
+  届时须同步改本节并评估是否放宽了规避面。
 
 ### 3.1 由此推出的提交约定：**先内容，后证据**
 
