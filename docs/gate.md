@@ -106,6 +106,23 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
        `<changes_root>/*/workflow-events.jsonl`**（收窄到 change 目录内——
        任意深度的 `reviews/` 目录都算证据会让 `src/reviews/x.py` 变成规避面）。
 - **强制 `reviewer_run_id != author_run_id`**：挡「忘了另开 run」，**不挡蓄意**。
+- **每个审阅报告各配一份 manifest（无孤儿报告）**：`reviews/**/*.md` 里**每个**报告
+  文件都必须被**某份** manifest 的 `report_path` 引用；否则 `check` 报
+  「孤儿报告：`<path>` 未被任何 manifest 绑定」。`manifest build` 因此要**对每个报告
+  各跑一次**：
+
+  ```bash
+  witnessloop manifest build --change <id> --stage grill \
+    --report reviews/grill-review.md …          # → reviews/grill.manifest.json
+  witnessloop manifest build --change <id> --stage grill-adversarial \
+    --report reviews/grill-adversarial.md …     # → reviews/grill-adversarial.manifest.json
+  ```
+
+  判定**只做文件名交叉引用**（`report_path` 解析后的相对路径 vs `reviews/**/*.md`），
+  **不解析报告正文**。多份 manifest 指向同一个报告不额外报错（保持简单）；
+  `reviews/` 下没有 `.md` 报告时不报孤儿（那种情况由「报告不存在」管）。
+  若某份 manifest 解析不出 `report_path`，绑定集合不可靠 → 孤儿判定整体跳过
+  （那份 manifest 自己已经报错了）。
 - `report_path` 解析后必须落在 change 目录内（禁 `../` 逃逸）。
 - ⚠️ **报告必须放在 `reviews/` 下**（`gate.md §1` 的布局约定）。放在 change 目录
   根（如 `report_path: "my-report.md"`）虽然能通过 hash 校验，但**不匹配证据
@@ -220,7 +237,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / 受保护写入无解释 / base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / 受保护写入无解释 / base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 

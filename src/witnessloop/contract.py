@@ -135,8 +135,69 @@ def validate_review_manifests(
         ]
 
     findings: list[Finding] = []
+    bound: set[str] = set()
+    bindings_reliable = True
     for manifest_path in manifests:
         findings.extend(_validate_one(root, directory, rel, manifest_path, scope))
+        report = _bound_report(directory, manifest_path)
+        if report is None:
+            # 有一份 manifest 解析不出 report_path——绑定集合不可靠，
+            # 不报孤儿（那份 manifest 自己已经被 `_validate_one` 报错了）。
+            bindings_reliable = False
+        else:
+            bound.add(report)
+
+    if bindings_reliable:
+        findings.extend(_check_orphan_reports(directory, rel, bound))
+    return findings
+
+
+def _bound_report(directory: Path, manifest_path: Path) -> str | None:
+    """这份 manifest 绑定了哪个报告（change 目录内相对路径）；取不到则 None。
+
+    与 `_check_hashes` 同口径：报告必须落在 change 目录内，逃逸/绝对路径一律不算绑定。
+    """
+    try:
+        doc = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    raw = str(doc.get("report_path") or "").strip()
+    if not raw:
+        return None
+    normalized = pathutil.normalize(raw)
+    if not pathutil.is_within(directory / normalized, directory):
+        return None
+    return normalized
+
+
+def _check_orphan_reports(
+    directory: Path, rel_change: str, bound: set[str]
+) -> list[Finding]:
+    """`reviews/**/*.md` 里每个报告都必须被某份 manifest 的 `report_path` 引用。
+
+    否则会出现「只绑一份、把另一份晾着」的缺口——那份报告可以随便漂移而门禁不管。
+
+    **只做文件名交叉引用**，不解析报告正文。多份 manifest 指向同一个报告不额外报错
+    （保持简单）；`reviews/` 下没有 `.md` 报告时不报孤儿。
+    """
+    reviews = directory / "reviews"
+    if not reviews.is_dir():
+        return []
+
+    findings: list[Finding] = []
+    for report in sorted(reviews.rglob("*.md")):
+        rel_report = report.relative_to(directory).as_posix()
+        if rel_report in bound:
+            continue
+        findings.append(
+            Finding(
+                f"{rel_change}/{rel_report}",
+                f"孤儿报告：{rel_report} 未被任何 manifest 绑定"
+                "（每个审阅报告都要各配一份 manifest，见 docs/gate.md §3）",
+            )
+        )
     return findings
 
 
