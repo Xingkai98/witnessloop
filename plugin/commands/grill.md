@@ -15,11 +15,19 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
    `.witnessloop/policy.json`（缺省 `openspec/changes`）。
 3. 起一个**另起的 run** 当审阅者（作者 run 与审阅者 run 必须不同）。审阅者零记忆：
    不读作者的会话历史、不共享上下文，只读 change 目录里的文本。
-4. 按 `templates/grill.md` 的步骤 1–5 执行，产出
+4. 按 `templates/grill.md` 的步骤 1–7 执行，产出
    `<change-dir>/reviews/grill-review.md`。
-5. **停轮**：把 `## Open Questions` 逐条交给用户确认后再往下走。
-   `## User Confirmation` 没写齐之前，**不要开始实现**。
-6. 收尾落证据（内容提交之后、证据提交之前）：
+5. **本命令跨多轮，不是一趟跑完。** 每一轮的收尾动作是：**把这轮的整条 frontier
+   抛给用户，然后结束本轮**——不要自问自答往下走，也不要替用户拍板。
+   用户答复之后**再调用本命令一次**，从「重算 frontier」接着走**下一轮**。
+   `frontier` 为空之前，`## User Confirmation` 必然是残缺的，
+   此时**不要开始实现**。
+6. **对抗验证**：grill 结论出来后，**另起一个独立零记忆的 run** 默认这些结论有错、
+   逐条证伪，产物 `<change-dir>/reviews/grill-adversarial.md`；未到 `PASS`
+   （或轮数封顶交人）之前同样不要开始实现。
+7. **整合回 `design.md`**：把验收出的必须修改项落进 Decision，并更新
+   `design.md` 的 `## Pre-Implementation Review` 节。
+8. 收尾落证据（内容提交之后、证据提交之前）：
 
    ```
    witnessloop manifest build --root . --change <change-id> --stage grill \

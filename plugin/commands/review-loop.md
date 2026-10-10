@@ -13,13 +13,22 @@ description: 独立审阅闭环——零记忆审阅者审实现，不通过就�
 1. 取 `change-id` 与 `stage`（默认 `building`）。
 2. 定位 change 目录：`<changes_root>/<change-id>/`，`changes_root` 读
    `.witnessloop/policy.json`（缺省 `openspec/changes`）。
-3. 起一个**另起的 run** 当审阅者，拿它的 id 作 `reviewer_run_id`；作者 run 的 id
+3. **先把审阅基线钉死**：确定主干 ref、`git merge-base` 得到的 base。
+   分支若落后主干，先 rebase 再审——否则审的是一个不存在的差异。
+4. 起一个**另起的 run** 当审阅者，拿它的 id 作 `reviewer_run_id`；作者 run 的 id
    作 `author_run_id`。两者必须不同，否则 `manifest build` 会直接拒写。
-4. 按 `templates/review-loop.md` 的步骤 1–5 执行，产出
-   `<change-dir>/reviews/<stage>-review.md`。
-5. **有界轮数**（默认上限 3 轮）：到顶仍不通过就停下来交人判断，
+   审阅者零记忆，并要求它**逐项验证 `tasks.md` 的每个 `[x]`**（读代码确认真实存在），
+   且**对「后续批」的 `[ ]` 不报缺陷**。
+5. 按 `templates/review-loop.md` 的步骤 1–6 执行，产出
+   `<change-dir>/reviews/<stage>-review.md`。verdict 是**三态**：
+   - `PASS` → 走收尾；
+   - `CHANGES_REQUESTED` → 逐条修、每条补回归测试、在 `tasks.md` 追加
+     「审阅修复」节、**提交修复**，然后再审；
+   - `BLOCKED` → **停下、向用户报告阻塞项、不自行修复**（阻塞性缺陷是设计或范围的
+     问题，不是顺手补一下的事）。
+6. **有界轮数**（默认上限 3 轮）：到顶仍不通过就停下来交人判断，
    不要无限循环、也不要悄悄放宽断言让自己过。
-6. 收尾落证据（**内容提交之后、证据提交之前**）：
+7. 收尾落证据（**内容提交之后、证据提交之前**）：
 
    ```
    witnessloop manifest build --root . --change <change-id> --stage <stage> \
@@ -46,5 +55,8 @@ description: 独立审阅闭环——零记忆审阅者审实现，不通过就�
 - **只读**：审阅者不改实现；修复由作者 run 做。
 - **无状态**：本命令不创建、不维护自己的状态文件；状态一律以
   `reviews/*.manifest.json` 为准。
-- 结论只有 `PASS` / `CHANGES_REQUESTED` 两种，不许模糊。
+- 结论是**三态**：`PASS` / `CHANGES_REQUESTED` / `BLOCKED`，不许模糊；
+  `BLOCKED` 时本命令只负责停下来把阻塞项讲清楚，**不自行修复**。
+- **批次 aware**：`tasks.md` 里标「后续批」的未勾项不是缺陷，别据此打回。
+- `CHANGES_REQUESTED` 的修复要同步更新 change 文档（`tasks.md` 追加「审阅修复」节）并提交。
 - 身份字段是自由文本——本工具**防漂移、不防蓄意伪造**，别当成签名。

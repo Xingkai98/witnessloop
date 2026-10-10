@@ -131,6 +131,29 @@ def test_review_loop_adapter_calls_manifest_build():
     assert "--reviewer-run-id" in text and "--author-run-id" in text
 
 
+def test_grill_adapter_runs_the_loop_across_turns():
+    """多轮 frontier 循环落在适配器上的部分：本轮抛完就结束，等答复再来一轮。"""
+    text = (PLUGIN / "commands" / "grill.md").read_text(encoding="utf-8")
+    assert "frontier" in text
+    assert "本轮" in text and "下一轮" in text
+    # 对抗验证与整合回 design.md 也在接线里点到
+    assert "grill-adversarial" in text
+    assert "Pre-Implementation Review" in text
+
+
+def test_review_loop_adapter_handles_a_blocked_verdict():
+    """R1 落在适配器上的部分：BLOCKED 要停、报告、不自行修复。"""
+    text = (PLUGIN / "commands" / "review-loop.md").read_text(encoding="utf-8")
+    assert "BLOCKED" in text
+    assert "不自行修复" in text
+
+
+def test_review_loop_adapter_is_batch_aware_and_syncs_docs():
+    text = (PLUGIN / "commands" / "review-loop.md").read_text(encoding="utf-8")
+    assert "后续批" in text
+    assert "审阅修复" in text
+
+
 def test_review_loop_adapter_states_the_bounded_rounds():
     text = (PLUGIN / "commands" / "review-loop.md").read_text(encoding="utf-8")
     assert "轮" in text and ("封顶" in text or "上限" in text)
