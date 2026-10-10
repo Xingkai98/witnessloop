@@ -105,7 +105,9 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
      - **证据路径 = `.witnessloop/**`、`<changes_root>/*/reviews/**`、
        `<changes_root>/*/workflow-events.jsonl`**（收窄到 change 目录内——
        任意深度的 `reviews/` 目录都算证据会让 `src/reviews/x.py` 变成规避面）。
-- **强制 `reviewer_run_id != author_run_id`**：挡「忘了另开 run」，**不挡蓄意**。
+- **强制 `reviewer_run_id != author_run_id`**：兜底路径下两角色 id **结构性不同**，所以它只挡
+  「**显式**把同一个值喂给两个角色」（如只设共享 `WITNESSLOOP_RUN_ID`）——**不**等于「挡忘了另开
+  run」；也**不挡蓄意伪造**。兜底 id 是**「审阅目标的指纹」**、非真实 run 身份（见 design §5.2）。
 - **每个审阅报告各配一份 manifest（无孤儿报告）**：`reviews/**/*.md` 里**每个**报告
   文件都必须被**某份** manifest 的 `report_path` 引用；否则 `check` 报
   「孤儿报告：`<path>` 未被任何 manifest 绑定」。`manifest build` 因此要**对每个报告

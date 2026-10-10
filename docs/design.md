@@ -90,10 +90,15 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 - **硬约束**：交互层对 change 状态**只读**，**不得持有自己的状态文件**；一切以 `manifest` 为准。
 - **两个取值覆盖点**（host 没有稳定的 run id 注入点，插件也没有固定安装位置，
   所以适配器与工具必须按同一套规则取值；可执行实现见 `src/witnessloop/agentenv.py`）：
-  - `WITNESSLOOP_RUN_ID`：当前 run 的 id。**环境优先、生成兜底**——取不到就生成
-    `<stage>-<role>-<UTC 时间戳>-<短随机>`，`role` 编进 id 所以两个角色必然不同
-    （`reviewer_run_id != author_run_id` 是门禁的硬校验）。角色专用变量
-    `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` 优先级更高。
+  - `WITNESSLOOP_RUN_ID`：当前 run 的 id。**环境优先、确定性兜底**——取不到就生成
+    `<stage>-<role>-<anchor>`，`anchor` = change id + `head` 短摘要（**≥12 位**，见 #3）。
+    兜底 id 是**「审阅目标的指纹」**——只表示「哪个 change 的哪个 revision 的哪个角色」，
+    **不代表真实 run 身份**（与「防漂移、不防伪造」同一边界）；要真实身份就设
+    `WITNESSLOOP_RUN_ID`。**幂等**只在**固定 base 与 revision 时**成立（幂等键 =
+    `(change, stage, role, revision, base ref 的解析目标)`；`base_sha`/`diff_hash` 会随上游
+    base 漂移）。`role` 编进 id ⇒ 兜底路径下 `reviewer_run_id != author_run_id` **结构性恒真**
+    （门禁的硬校验因此只挡「**显式**把同一个值喂给两个角色」，**不**等于「挡忘了另开 run」）。
+    角色专用变量 `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` 优先级更高。
   - `WITNESSLOOP_TEMPLATES_DIR`：覆盖模板目录；未设时适配器回落
     `${CLAUDE_PLUGIN_ROOT}/../templates`（`plugin/` 被单独拷走时靠它指回模板）。
 
@@ -101,7 +106,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 - change 目录契约：OpenSpec 形状（`proposal / design / tasks / specs delta`）+ `reviews/` + `workflow-events.jsonl`。
 - 审阅证据 = **报告 + manifest 成对**。manifest 的 `head_sha` = **最后一个非证据 revision**，其到被检 head 之间只允许证据文件改动（由此推出**提交约定：先内容、后证据**；单提交 PR 不被支持）。
-- manifest 字段：`reviewer_run_id` / `author_run_id`（**强制 `reviewer ≠ author`**）/ `base_sha` / `head_sha` / `tasks_hash` / `spec_hash` / `diff_hash`（informational）/ `report_hash`。
+- manifest 字段：`reviewer_run_id` / `author_run_id`（**强制 `reviewer ≠ author`**——兜底路径下**结构性恒真**、只挡显式喂同值，见 §5.2 与 §9 风险 5）/ `base_sha` / `head_sha` / `tasks_hash` / `spec_hash` / `diff_hash`（informational）/ `report_hash`。
 - **能力边界**：hash 绑定真实 artifact 字节，证明「证据之间没漂移」；`reviewer_run_id` 等身份字段是自由文本，v1 不做语义绑定。
 
 ## 6. 从 asterwynd 抽取的资产（探索 + 实测核对）
@@ -134,7 +139,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 2. **越抽越耦合，且成本被低估**：`check_openspec_artifacts.py` 的常量参数化是主成本。
 3. **required-check 鸡生蛋**：注册 required check 需 admin，fork/新仓不跑 init 就**静默为零**。→ `check` 无 policy 时报「未接入」。
 4. **强制只在 CI 一层**：guard hook 是 PreToolUse、需手动装，CI 只跑 `check`。
-5. **「独立审阅」剧场化**：`reviewer_run_id` 不校验 ⇒ 同一 run 既写又审也能过。→ 强制 `reviewer ≠ author`。
+5. **「独立审阅」剧场化**：`reviewer_run_id` 是自由文本，且兜底路径下 `reviewer ≠ author` **结构性恒真** ⇒ 该校验**不证独立性**，只挡「**显式**把同一个值喂给两个角色」（如只设共享 `WITNESSLOOP_RUN_ID`）。→ 文档说穿；要真身份须设 `WITNESSLOOP_RUN_ID`。
 6. **可见性错配**：私有 witnessloop 会让接入方 CI 全面失败（见 §4.1）→ v1 明确要求公开。
 7. **路径语义**：Windows 反斜杠/大小写/`~` 是已知坑，通用化须显式处理。
 

@@ -45,9 +45,19 @@ claude --plugin-dir /path/to/witnessloop/plugin
 | `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID` | 角色专用，优先级高于上面那个（同一进程里要同时给两个角色时用） |
 | `WITNESSLOOP_TEMPLATES_DIR` | 覆盖模板目录 |
 
-**run id 怎么来**：环境优先、生成兜底。三个变量都没设时，`witnessloop manifest build`
-会生成 `<stage>-<role>-<UTC 时间戳>-<短随机>`——`role` 编进 id，所以两个角色**必然不同**，
-不会撞上「`reviewer_run_id == author_run_id`」那道校验。给了显式 id，重建才幂等。
+**run id 怎么来**：环境优先、**确定性兜底**。三个变量都没设时，`witnessloop manifest build`
+会生成 `<stage>-<role>-<anchor>`（`anchor` = change id + `head` 短摘要 **≥12 位**）——`role`
+编进 id，所以两个角色**必然不同**，不会撞上「`reviewer_run_id == author_run_id`」那道校验；
+而且**同输入 → 同 id**——在**固定 base 与 revision** 时，重复 build 产出**逐字节一致**的
+manifest（幂等键 = `(change, stage, role, revision, base ref 的解析目标)`）。
+
+**代价**：兜底 id 是**「审阅目标的指纹」**（哪个 change 的哪个 revision 的哪个角色），
+**不代表真实 run 身份**——这跟本工具「防漂移、不防伪造」是同一条边界；兜底路径下
+`reviewer ≠ author` **结构性恒真**，那道校验因此**不证独立性**，只挡「显式把同一个值喂给两个角色」。
+
+**要 pin 真身份**：用**角色专用**变量 `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`
+**分别设**；**只设共享的 `WITNESSLOOP_RUN_ID` 会被 `build` 拒写**；兜底路径下**无需任何 export**
+（`manifest build` 会把实际采用的 id 打进输出，便于排查）。
 
 **模板目录为什么要能覆盖**：适配器默认用 `${CLAUDE_PLUGIN_ROOT}/../templates`
 （即本仓 `plugin/` 旁边的 `templates/`）。如果你只把 `plugin/` 拷到别处、

@@ -123,10 +123,15 @@ git merge-base HEAD <主干>         # base，manifest 用
 1. **环境优先**：读 `WITNESSLOOP_RUN_ID`（当前 run 的 id）。审阅者与作者是**不同的
    run**，各自的环境里这个值本就应当不同。同一进程里要同时给两个角色时，用角色
    专用变量（优先级更高）：`WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`。
-2. **取不到就生成**一个唯一 id，形态 `<stage>-<role>-<UTC 时间戳>-<短随机>`。
-   把 `role` 编进 id，是为了让生成路径下两个角色**必然不同**。
-3. **两者必须不同**：`manifest build` 对相等直接拒——那正是「忘了另开 run」的症状。
-   只设共享的 `WITNESSLOOP_RUN_ID` 会让两个角色拿到同一个值、被门禁拦下，这不是 bug。
+2. **取不到就生成**一个**确定性**兜底 id，形态 `<stage>-<role>-<anchor>`，
+   其中 `anchor` = change id + `head` 短摘要（**≥12 位**）。**同输入 → 同 id**——所以在
+   **固定 base 与 revision 时**，重复 `manifest build` 产出逐字节一致的 manifest（幂等键 =
+   `(change, stage, role, revision, base ref 的解析目标)`）。把 `role` 编进 id，是为了让兜底
+   路径下两个角色**必然不同**。代价：这个 id 是**「审阅目标的指纹」、不代表真实 run 身份**
+   ——要真实身份就设 `WITNESSLOOP_RUN_ID`。
+3. **两者必须不同**：`manifest build` 对相等直接拒。但注意：**兜底路径下两角色 id 结构性不同**，
+   所以这道校验只挡「**显式**把同一个值喂给两个角色」（如只设共享 `WITNESSLOOP_RUN_ID`），
+   **不**等于「挡忘了另开 run」——独立 run 要设 `WITNESSLOOP_RUN_ID` 才被见证。
 
 ## 产物
 

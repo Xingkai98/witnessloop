@@ -50,8 +50,13 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
 - `WITNESSLOOP_RUN_ID`：**当前 run** 的 id。把它设成你这个会话的 id；审阅者是另起的
   run，它自己环境里该有**不同**的值。同一进程要同时给两个角色时，用
   `WITNESSLOOP_REVIEWER_RUN_ID` / `WITNESSLOOP_AUTHOR_RUN_ID`（优先级更高）。
-- **不设也行**：`manifest build` 会按 `templates/grill.md` 里那套规则生成一个唯一
-  id，两个角色必然不同。设了才幂等（同一个 id 重建出同一份 manifest）。
+- **不设也行**：`manifest build` 会按 `templates/grill.md` 里那套规则生成一个
+  **确定性**兜底 id（`<stage>-<role>-<anchor>`，`anchor` = change id + `head` 短摘要 **≥12 位**），
+  两个角色必然不同、同输入同 id（**固定 base 与 revision 时**重复 build 幂等）。
+  它是**「审阅目标的指纹」、不代表真实 run 身份**——`manifest build` 会把**实际采用的 id
+  打进输出**，便于排查。**要 pin 真身份**，用**角色专用**变量 `WITNESSLOOP_REVIEWER_RUN_ID` /
+  `WITNESSLOOP_AUTHOR_RUN_ID` **分别设**；**只设共享的 `WITNESSLOOP_RUN_ID` 会被 `build` 拒写**；
+  兜底路径下**无需任何 export**。
 - `WITNESSLOOP_TEMPLATES_DIR`：覆盖模板目录。默认
   `${CLAUDE_PLUGIN_ROOT}/../templates`——把 `plugin/` 单独拷走、脱离本仓时，
   用它把模板位置指回去。
