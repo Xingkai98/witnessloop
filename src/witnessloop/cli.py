@@ -70,7 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
         dest="manifest_command", metavar="<子命令>"
     )
     p_build = manifest_sub.add_parser(
-        "build", help="产出 check 认的 review manifest（幂等、不 auto-commit）"
+        "build",
+        help="产出 check 认的 review manifest（固定 base 与 revision 时幂等；"
+        "不 auto-commit）",
     )
     p_build.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
     p_build.add_argument("--change", required=True, help="change id")
@@ -84,12 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--reviewer-run-id",
         default=None,
         help="审阅者的 run id；缺省走 agentenv 的策略（WITNESSLOOP_REVIEWER_RUN_ID → "
-        "WITNESSLOOP_RUN_ID → 生成）。给了才幂等",
+        "WITNESSLOOP_RUN_ID → **确定性兜底**）。兜底同样幂等（固定 base 与 revision 时），"
+        "只是那个 id 是「审阅目标的指纹」、不代表真实 run 身份",
     )
     p_build.add_argument(
         "--author-run-id",
         default=None,
-        help="作者的 run id；缺省同上（..._AUTHOR_RUN_ID → WITNESSLOOP_RUN_ID → 生成）",
+        help="作者的 run id；缺省同上（..._AUTHOR_RUN_ID → WITNESSLOOP_RUN_ID → "
+        "确定性兜底）",
     )
     p_build.add_argument(
         "--base",

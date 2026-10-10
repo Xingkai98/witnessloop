@@ -189,6 +189,83 @@ def test_run_ids_default_to_distinct_generated_ids(repo: Path, cli):
     assert doc["author_run_id"].startswith("building-author-")
 
 
+def test_rebuild_without_explicit_ids_is_byte_identical(repo: Path, cli):
+    """#3 的验收：确定性兜底 → 同输入重复 build 产出**字节一致**的 manifest。
+
+    原来兜底是 `<stage>-<role>-<UTC 时间戳>-<短随机>`，两次 build 的 id 必然不同，
+    于是 manifest 字节也不同（不幂等）。
+    """
+    directory = _ready_to_build(repo, cli)
+    manifest = directory / "reviews" / "building.manifest.json"
+    # 幂等键含 base（Q2）：把 base 钉死再把 revision 也钉死（build 前不提交），
+    # 字节才可复现。
+    argv = [
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT, "--base", "main",
+    ]
+
+    assert cli(*argv)[0] == C.EXIT_PASS
+    first = manifest.read_bytes()
+    assert cli(*argv)[0] == C.EXIT_PASS
+
+    assert manifest.read_bytes() == first, "兜底不确定 → 两次 build 的 manifest 字节不同"
+
+
+def test_base_drift_does_change_the_bytes(repo: Path, cli):
+    """Q2 的**反向断言**：幂等键含 base——base 漂移**会**改字节。
+
+    只固定 run id 不足以保证字节一致：`base_sha` 与 `diff_hash` 都跟着 base 走。
+    """
+    directory = _ready_to_build(repo, cli)
+    manifest = directory / "reviews" / "building.manifest.json"
+    argv = [
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT, "--base", "main",
+    ]
+    assert cli(*argv)[0] == C.EXIT_PASS
+    first = manifest.read_bytes()
+
+    # 换一个**解析到别的提交**的 base（`main~1`）——不动工作树，避免把 change
+    # 顺手 `git add -A` 到主干上。
+    drift = [
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT, "--base", "main~1",
+    ]
+    assert cli(*drift)[0] == C.EXIT_PASS
+
+    assert manifest.read_bytes() != first, "base 漂移却没改字节 —— 幂等键漏了 base"
+
+
+def test_generated_ids_are_deterministic_across_builds(repo: Path, cli):
+    directory = _ready_to_build(repo, cli)
+    manifest = directory / "reviews" / "building.manifest.json"
+    argv = [
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT,
+    ]
+    cli(*argv)
+    first = json.loads(manifest.read_text(encoding="utf-8"))
+    cli(*argv)
+    second = json.loads(manifest.read_text(encoding="utf-8"))
+    assert first["reviewer_run_id"] == second["reviewer_run_id"]
+    assert first["author_run_id"] == second["author_run_id"]
+
+
+def test_build_prints_the_effective_run_ids(repo: Path, cli):
+    """#3：输出里要能看到**实际采用**的 id（便于排查 + 知道该 export 什么）。"""
+    directory = _ready_to_build(repo, cli)
+
+    code, out, err = cli(
+        "manifest", "build", "--root", str(repo), "--change", CHANGE,
+        "--stage", "building", "--report", REPORT,
+    )
+
+    assert code == C.EXIT_PASS, err
+    doc = json.loads((directory / "reviews" / "building.manifest.json").read_text("utf-8"))
+    assert doc["reviewer_run_id"] in out
+    assert doc["author_run_id"] in out
+
+
 def test_run_ids_come_from_the_environment_when_set(repo: Path, cli, monkeypatch):
     directory = _ready_to_build(repo, cli)
     monkeypatch.setenv("WITNESSLOOP_REVIEWER_RUN_ID", "rev-from-env")
@@ -238,10 +315,7 @@ def test_reviewer_equal_to_author_is_rejected(repo: Path, cli):
 
 
 def test_change_id_escaping_the_changes_root_is_rejected(repo: Path, cli):
-    """回归 M2 §4-1：`--change` 与 `--report` 是同一类 agent 输入，必须同款守卫。
-
-    没有这道守卫时 `--change "../../../evil"` 会把 manifest **写到仓外**（实测 exit 0）。
-    """
+    """回归 M2 §4-1：`--change` 与 `--report` 是同一类 agent 输入，必须同款守卫。"""
     _ready_to_build(repo, cli)
     outside = repo.parent / "evilwl_changes"  # 仓外
     (outside / "reviews").mkdir(parents=True, exist_ok=True)
@@ -249,7 +323,7 @@ def test_change_id_escaping_the_changes_root_is_rejected(repo: Path, cli):
     code, _, err = _build(cli, repo, change="../../../evilwl_changes")
 
     assert code == C.EXIT_FAIL
-    assert "逃逸" in err  # 因越界被拒，而不是因其它校验碰巧失败
+    assert "逃逸" in err
     assert not (outside / "reviews" / "building.manifest.json").exists()
 
 
@@ -262,7 +336,7 @@ def test_absolute_change_id_is_rejected(repo: Path, cli):
     code, _, err = _build(cli, repo, change=str(outside))
 
     assert code == C.EXIT_FAIL
-    assert "逃逸" in err  # 因为越界被拒，而不是因为「报告不存在」之类的巧合
+    assert "逃逸" in err
     assert not (outside / "reviews" / "building.manifest.json").exists()
 
 

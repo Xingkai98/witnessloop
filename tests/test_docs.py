@@ -44,3 +44,29 @@ def test_docs_name_all_four_verbs(relpath: str):
     text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
     for verb in ("init", "check", "uninit", "manifest build"):
         assert verb in text, f"{relpath} 没提到动词 {verb}"
+
+
+#: 讲 run id 取值的地方——兜底从「时间戳 + 随机」改成确定性锚（#3）之后，这些地方
+#: 都不该再承诺一个**非确定性**的 id，否则读者会以为重复 build 幂等不了。
+RUN_ID_DOCS = (
+    "docs/design.md",
+    "templates/grill.md",
+    "templates/review-loop.md",
+    "plugin/README.md",
+    "plugin/commands/grill.md",
+    "plugin/commands/review-loop.md",
+    # `--help` 也是文档：不留神就会把「给了才幂等」这种**现在为假**的说法
+    # 静默留在用户最先看到的地方。
+    "src/witnessloop/cli.py",
+)
+
+STALE_FALLBACK_CLAIMS = ("短随机", "UTC 时间戳", "-<utc>-<随机>")
+
+
+@pytest.mark.parametrize("relpath", RUN_ID_DOCS)
+def test_docs_promise_a_deterministic_fallback(relpath: str):
+    """#3：文档里不得再写「时间戳 / 短随机」那种非确定性兜底。"""
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    for stale in STALE_FALLBACK_CLAIMS:
+        assert stale not in text, f"{relpath} 仍写「{stale}」——兜底已改成确定性锚"
+    assert "确定性" in text, f"{relpath} 没写明兜底是确定性的"

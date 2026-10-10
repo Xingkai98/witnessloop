@@ -81,17 +81,6 @@ def run_build(args: argparse.Namespace) -> int:
     if not report_file.is_file():
         return _fail(f"报告不存在：{args.report}")
 
-    # 没给就走交互层那套取值策略（环境优先、生成兜底）。
-    reviewer_run_id = args.reviewer_run_id or agentenv.resolve_run_id(
-        args.stage, "reviewer"
-    )
-    author_run_id = args.author_run_id or agentenv.resolve_run_id(args.stage, "author")
-    if reviewer_run_id == author_run_id:
-        return _fail(
-            "reviewer_run_id 与 author_run_id 相同：审阅者必须独立于作者"
-            "（挡「忘了另开 run」）。没有写出任何文件。"
-        )
-
     # 与 check 同一张表、同一个哈希函数——这是「两边不漂移」的结构性保证。
     hashes: dict[str, str] = {}
     for field, artifact in C.HASHED_ARTIFACTS:
@@ -108,6 +97,23 @@ def run_build(args: argparse.Namespace) -> int:
     base_sha = gitutil.rev_parse(root, base_ref)
     if base_sha is None:
         return _fail(f"无法解析 base ref：{base_ref}")
+
+    # run id：环境优先、**确定性兜底**（#3）——锚取自 change + revision。
+    # 幂等键的**完整**形式是 (change, stage, role, revision, base 的解析目标)：
+    # 固定 base 与 revision 时，重复 build 得到同一个 id、**逐字节一致**的 manifest；
+    # base 漂移会改 base_sha/diff_hash，字节也就不一样了（Q2）。
+    anchor = agentenv.default_run_anchor(change_id, head_sha)
+    reviewer_run_id = args.reviewer_run_id or agentenv.resolve_run_id(
+        args.stage, "reviewer", anchor=anchor
+    )
+    author_run_id = args.author_run_id or agentenv.resolve_run_id(
+        args.stage, "author", anchor=anchor
+    )
+    if reviewer_run_id == author_run_id:
+        return _fail(
+            "reviewer_run_id 与 author_run_id 相同：审阅者必须独立于作者"
+            "（挡「忘了另开 run」）。没有写出任何文件。"
+        )
 
     try:
         diff_hash = sha256_bytes(gitutil.diff_text(root, base_sha, head_sha).encode())
