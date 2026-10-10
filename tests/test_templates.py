@@ -139,6 +139,14 @@ def test_grill_integrates_must_fixes_back_into_the_design():
     assert "必须修改" in text
 
 
+def test_grill_template_requires_one_manifest_per_report():
+    """#1：每个审阅报告**各自**配一份 manifest（各跑一次 `manifest build`）。"""
+    text = GRILL.read_text(encoding="utf-8")
+    assert "每个审阅报告" in text
+    assert "各配一份 manifest" in text
+    assert "grill-adversarial.manifest.json" in text
+
+
 def test_grill_runs_an_adversarial_verification_before_stopping():
     """G3：grill 产出后、停轮前，另起独立审阅者默认设计有错、逐条证伪。"""
     text = GRILL.read_text(encoding="utf-8")

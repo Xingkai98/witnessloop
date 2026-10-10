@@ -142,6 +142,14 @@ def test_grill_adapter_stops_for_the_user_only_after_convergence():
     assert "Pre-Implementation Review" in text
 
 
+def test_grill_adapter_builds_one_manifest_per_report():
+    """#1 落在适配器上的部分：两份报告各跑一次 `manifest build`。"""
+    text = (PLUGIN / "commands" / "grill.md").read_text(encoding="utf-8")
+    assert "各跑一次" in text
+    assert "reviews/grill-adversarial.md" in text
+    assert "孤儿报告" in text
+
+
 def test_grill_adapter_does_not_hold_a_round_for_a_fact_lookup():
     """事实在查时不要整体卡住本轮——只有它下游的问题顺延。"""
     text = (PLUGIN / "commands" / "grill.md").read_text(encoding="utf-8")

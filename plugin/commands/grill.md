@@ -29,15 +29,21 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
    `## User Confirmation` 没写齐之前，**不要开始实现**。
 7. **整合回 `design.md`**：把对抗验证的必须修改项落进 Decision，并更新
    `design.md` 的 `## Pre-Implementation Review` 节。
-8. 收尾落证据（内容提交之后、证据提交之前）：
+8. 收尾落证据（内容提交之后、证据提交之前）：**每个审阅报告各跑一次**
+   `manifest build`——本阶段有两份报告，别只绑一份：
 
    ```
    witnessloop manifest build --root . --change <change-id> --stage grill \
      --report reviews/grill-review.md \
      --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
+
+   witnessloop manifest build --root . --change <change-id> --stage grill-adversarial \
+     --report reviews/grill-adversarial.md \
+     --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
    ```
 
-   然后把报告 + manifest **单独一个提交**（`docs/gate.md §3.1`）。
+   然后把报告 + manifest **单独一个提交**（`docs/gate.md §3.1`）。漏绑的报告会成为
+   **孤儿报告**，`witnessloop check` 会拦下。
 
 ## 环境（CC 侧怎么取 run id / 模板）
 

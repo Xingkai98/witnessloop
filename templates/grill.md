@@ -170,7 +170,22 @@ grilling pass（审阅者独立求完备，用户不参与）
   User Confirmation）。
 - `<change-dir>/reviews/grill-adversarial.md`：对抗验证报告。
 - `design.md` 的 `## Pre-Implementation Review` 节：必须修改已整合。
-- 随后用 `witnessloop manifest build` 把它们落成 manifest（报告 + manifest 成对）。
+
+**每个审阅报告各配一份 manifest**——`manifest build` 要**对每个报告各跑一次**，
+不是「跑一次绑一份、另一份晾着」：
+
+```
+witnessloop manifest build --change <id> --stage grill \
+  --report reviews/grill-review.md …
+        → reviews/grill.manifest.json
+
+witnessloop manifest build --change <id> --stage grill-adversarial \
+  --report reviews/grill-adversarial.md …
+        → reviews/grill-adversarial.manifest.json
+```
+
+实现后的审阅阶段同理：`reviews/building-review.md → reviews/building.manifest.json`。
+**没被任何 manifest 绑定的报告就是孤儿报告**，门禁会拦下（见 `docs/gate.md §3`）。
 
 ## 硬约束
 
