@@ -250,7 +250,9 @@ def _validate_one(
             Finding(manifest_rel, f"manifest.change_id={doc['change_id']!r} 与目录不符")
         )
 
-    # D4：强制 reviewer ≠ author（挡「忘了另开 run」，不挡蓄意伪造）。
+    # D4：强制 reviewer ≠ author。注意口径（#3 Q3）：**兜底路径下两者结构性不同**，
+    # 所以这道校验只挡「**显式**把同一个值喂给两个角色」（如只设共享的
+    # WITNESSLOOP_RUN_ID），**不证独立 run**，也不挡蓄意伪造。
     if doc["reviewer_run_id"] == doc["author_run_id"]:
         findings.append(
             Finding(

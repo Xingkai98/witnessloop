@@ -60,7 +60,11 @@ RUN_ID_DOCS = (
     "src/witnessloop/cli.py",
 )
 
-STALE_FALLBACK_CLAIMS = ("短随机", "UTC 时间戳", "-<utc>-<随机>")
+STALE_FALLBACK_CLAIMS = (
+    "短随机",
+    "UTC 时间戳",
+    "-<utc>-<随机>",
+)
 
 
 @pytest.mark.parametrize("relpath", RUN_ID_DOCS)
@@ -70,3 +74,27 @@ def test_docs_promise_a_deterministic_fallback(relpath: str):
     for stale in STALE_FALLBACK_CLAIMS:
         assert stale not in text, f"{relpath} 仍写「{stale}」——兜底已改成确定性锚"
     assert "确定性" in text, f"{relpath} 没写明兜底是确定性的"
+
+
+#: Q3 定稿：兜底路径下 `reviewer ≠ author` **结构性恒真**，那道校验只挡
+#: 「**显式**把同一个值喂给两个角色」——不能再写成「挡忘了另开 run」，那是被证伪的旧口径。
+#:
+#: 判据用**精确字面量**：正确的写法是 `**不**等于「挡忘了另开 run」`（整句被「」包住），
+#: 被否定的旧写法是 `挡「忘了另开 run」`（`挡` 紧跟 `「忘了`）。两者形态不同，
+#: 所以一个字面量就能把旧的挑出来，不会误伤新写法。
+STALE_Q3_CLAIM = "挡「忘了另开 run」"
+
+#: 会写 run id 口径的地方（含**用户可见**的报错文案与源码注释）。
+Q3_DOCS = RUN_ID_DOCS + (
+    "src/witnessloop/manifestcmd.py",
+    "src/witnessloop/contract.py",
+)
+
+
+@pytest.mark.parametrize("relpath", Q3_DOCS)
+def test_docs_use_the_settled_identity_wording(relpath: str):
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    assert STALE_Q3_CLAIM not in text, (
+        f"{relpath} 仍写「{STALE_Q3_CLAIM}」——Q3 定稿是"
+        "「兜底路径下结构性恒真，只挡显式把同一个值喂给两个角色」"
+    )

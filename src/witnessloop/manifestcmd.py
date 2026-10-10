@@ -122,7 +122,8 @@ def run_build(args: argparse.Namespace) -> int:
     if reviewer_run_id == author_run_id:
         return _fail(
             "reviewer_run_id 与 author_run_id 相同：审阅者必须独立于作者"
-            "（挡「忘了另开 run」）。没有写出任何文件。"
+            "（兜底路径下两角色结构性不同，这道校验只挡「显式把同一个值喂给"
+            "两个角色」）。没有写出任何文件。"
         )
 
     try:

@@ -13,8 +13,9 @@
 ## 参与者
 
 - **作者 run**：写实现、写 change 的那个 run。
-- **审阅者 run**：**必须另起**。强制 `reviewer_run_id != author_run_id`
-  （挡「忘了另开 run」，不挡蓄意伪造）。
+- **审阅者 run**：**必须另起**。强制 `reviewer_run_id != author_run_id`——但注意
+  **兜底路径下两者结构性不同**，所以这道校验只挡「**显式**把同一个值喂给两个角色」，
+  **不证独立 run**（详见本文「怎么取 run id」），也不挡蓄意伪造。
 
 ## 输入
 
@@ -141,7 +142,9 @@ git merge-base HEAD <主干>         # base，manifest 用
 
 ## 硬约束
 
-- `reviewer_run_id != author_run_id`；审阅者必须独立于作者。
+- `reviewer_run_id != author_run_id` 是**机械校验**——兜底路径下它**结构性恒真**，
+  只挡「显式把同一个值喂给两个角色」。**审阅者必须独立于作者**是**流程要求**，
+  上一行不代你保证它（要见证真身份就设 `WITNESSLOOP_RUN_ID`）。
 - **verdict 三态**：`BLOCKED` 时停下报告、**不自行修复**。
 - **批次 aware**：`tasks.md` 标「后续批」的 `[ ]` 不是缺陷。
 - **manifest 是权威证据**：审阅结论以它为准，报告与它成对。
