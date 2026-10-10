@@ -75,7 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
         "不 auto-commit）",
     )
     p_build.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
-    p_build.add_argument("--change", required=True, help="change id")
+    p_build.add_argument(
+        "--change",
+        required=True,
+        help="change id——`changes/<id>/` 的**单段**目录名，不能含 `/`",
+    )
     p_build.add_argument("--stage", required=True, help="审阅阶段名（如 grill / building）")
     p_build.add_argument(
         "--report",

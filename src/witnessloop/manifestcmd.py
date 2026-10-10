@@ -47,6 +47,16 @@ def run_build(args: argparse.Namespace) -> int:
         )
 
     change_id = args.change
+    # change id 是 `changes/<id>/` 的**单段**目录名；`check` 从路径推 change id 是
+    # 取**首段**（`split("/", 1)[0]`）。build 若放行 `foo/bar`，manifest 会写进
+    # `changes/foo/bar/` 而 `check` 只认 `changes/foo/`——两边口径不一致，所以
+    # fail-closed（#3①）。
+    if "/" in change_id or "\\" in change_id:
+        return _fail(
+            f"change={change_id!r} 不能含 `/`：change id 是 `{pol.changes_root}/<id>/` 的"
+            "**单段**目录名。没有写出任何文件。"
+        )
+
     changes_root = root / pol.changes_root
     directory = changes_root / change_id
     # 与 --report 同款守卫：change id 与 report path 是同一类 agent 输入，

@@ -189,6 +189,39 @@ def test_run_ids_default_to_distinct_generated_ids(repo: Path, cli):
     assert doc["author_run_id"].startswith("building-author-")
 
 
+def test_nested_change_id_is_rejected(repo: Path, cli):
+    """#3①：含 `/` 的 change id 一律拒——它是 `changes/<id>/` 的**单段**目录名。
+
+    `check` 从路径推 change id 是取**首段**（`split("/", 1)[0]`），build 若放行
+    `foo/bar`，manifest 会写进 `changes/foo/bar/`，而 `check` 只认 `changes/foo/`
+    ——两边口径不一致。所以 fail-closed：报错、**不写文件**。
+
+    这里特意把 `changes/foo/bar/` 造成**契约合法**的目录，否则会被「change 目录
+    不存在」挡掉，测不出真正的口径分歧。
+    """
+    cli("init", "--root", str(repo))
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_content(repo, "foo/bar")
+    nested = change_dir(repo, "foo/bar")
+    (nested / "reviews").mkdir(parents=True, exist_ok=True)
+    (nested / "reviews" / "grill-review.md").write_text("PASS\n", encoding="utf-8")
+
+    code, _, err = _build(
+        cli, repo, change="foo/bar", report="reviews/grill-review.md"
+    )
+
+    assert code == C.EXIT_FAIL
+    assert "单段" in err
+    assert not (nested / "reviews" / "grill.manifest.json").exists()
+
+
+def test_single_segment_change_id_still_works(repo: Path, cli):
+    """对照：正常的单段 change id 照常。"""
+    _ready_to_build(repo, cli)
+    assert _build(cli, repo)[0] == C.EXIT_PASS
+
+
 def test_rebuild_without_explicit_ids_is_byte_identical(repo: Path, cli):
     """#3 的验收：确定性兜底 → 同输入重复 build 产出**字节一致**的 manifest。
 
@@ -314,8 +347,12 @@ def test_reviewer_equal_to_author_is_rejected(repo: Path, cli):
     assert not (directory / "reviews" / "building.manifest.json").exists()
 
 
-def test_change_id_escaping_the_changes_root_is_rejected(repo: Path, cli):
-    """回归 M2 §4-1：`--change` 与 `--report` 是同一类 agent 输入，必须同款守卫。"""
+def test_change_id_with_a_slash_cannot_escape_the_changes_root(repo: Path, cli):
+    """回归 M2 §4-1 + #3①：越界的 `--change` 必须被拒、且不写到仓外。
+
+    含 `/` 的写法现在由**单段校验**先拦下（消息更具体）；它同时也覆盖了
+    `../../../evil` 这类外逃——两道守卫各管一类，见下一条。
+    """
     _ready_to_build(repo, cli)
     outside = repo.parent / "evilwl_changes"  # 仓外
     (outside / "reviews").mkdir(parents=True, exist_ok=True)
@@ -323,7 +360,7 @@ def test_change_id_escaping_the_changes_root_is_rejected(repo: Path, cli):
     code, _, err = _build(cli, repo, change="../../../evilwl_changes")
 
     assert code == C.EXIT_FAIL
-    assert "逃逸" in err
+    assert "单段" in err
     assert not (outside / "reviews" / "building.manifest.json").exists()
 
 
@@ -336,8 +373,22 @@ def test_absolute_change_id_is_rejected(repo: Path, cli):
     code, _, err = _build(cli, repo, change=str(outside))
 
     assert code == C.EXIT_FAIL
-    assert "逃逸" in err
+    assert "单段" in err
     assert not (outside / "reviews" / "building.manifest.json").exists()
+
+
+def test_dotdot_change_id_is_still_caught_by_the_containment_guard(repo: Path, cli):
+    """`..` 是**单段**、不含 `/`，要靠 containment 守卫拦——别把两道守卫做成一道。
+
+    （先写过一版测试用 `../../../evil` 断言「逃逸」，加了单段校验后那条会先命中
+    「不能含 `/`」，于是「守卫是否还在」就没人测了。）
+    """
+    _ready_to_build(repo, cli)
+
+    code, _, err = _build(cli, repo, change="..")
+
+    assert code == C.EXIT_FAIL
+    assert "逃逸" in err
 
 
 def test_missing_required_artifacts_is_rejected(repo: Path, cli):
