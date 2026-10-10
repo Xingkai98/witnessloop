@@ -52,7 +52,11 @@ def test_missing_required_field_is_reported(gated: Path, cli):
 
 
 def test_reviewer_equal_to_author_is_rejected(gated: Path, cli):
-    """D4：同一个 run 既写又审 → 必须拦下（挡「忘了另开 run」）。"""
+    """D4：把同一个值喂给两个角色 → 必须拦下。
+
+    （口径见 #3 Q3：兜底路径下两角色结构性地不同，这道校验只挡「**显式**把同一个值
+    喂给两个角色」，不证独立 run。）
+    """
     _stage(gated)
     write_review(
         gated, "add-x", reviewer_run_id="same-run", author_run_id="same-run"

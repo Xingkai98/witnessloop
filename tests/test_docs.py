@@ -92,10 +92,12 @@ def test_docs_promise_a_deterministic_fallback(relpath: str):
 #: 所以一个字面量就能把旧的挑出来，不会误伤新写法。
 STALE_Q3_CLAIM = "挡「忘了另开 run」"
 
-#: 会写 run id 口径的地方（含**用户可见**的报错文案与源码注释）。
+#: 会写 run id 口径的地方（含**用户可见**的报错文案、源码注释、以及测试 docstring
+#: ——R2 N4：测试里的口径也是口径，同样会漂）。
 Q3_DOCS = RUN_ID_DOCS + (
     "src/witnessloop/manifestcmd.py",
     "src/witnessloop/contract.py",
+    "tests/test_check_manifest.py",
 )
 
 
