@@ -4,12 +4,15 @@
 
 流程：**设计先行 → 设计对抗式追问（grill）→ 实现 → 独立审阅闭环**，全程由**机械门禁 + 证据绑定**强制——而不是靠模型自觉。
 
-> **状态：M1「门禁层」+ M2「交互层」已实现。**
+> **状态：MVP 完成**（M1 门禁层 + M2 交互层 + M3 第二仓 acid test 全绿）。
 > 动词面 = 3 个门禁动词（`init` / `uninit` / `check`，fail-closed）
 > + 1 个证据产出动词（`manifest build`）；
 > 交互层是 Claude Code plugin（`grill` / `review-loop`，只接线、只读、无状态）。
+> 全流程已在**第二个真实仓**端到端跑通（`init → change → grill`（设计阶段对抗验证收敛）
+> `→ 用户确认 → TDD → review-loop → check 绿`），见
+> [docs/reviews/m3-acid-test.md](docs/reviews/m3-acid-test.md)。
 > 设计见 [docs/design.md](docs/design.md)，任务见 [docs/tasks.md](docs/tasks.md)，
-> 门禁层数据契约见 [docs/gate.md](docs/gate.md)。
+> 门禁层数据契约见 [docs/gate.md](docs/gate.md)；已知待办见仓库 Issues。
 
 ## 用法
 

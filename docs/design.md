@@ -1,6 +1,7 @@
 # witnessloop 设计 v0.2
 
 > 状态：**设计已定**（经 grill + 独立对抗验证 + 用户逐项确认）。
+> **实现状态：MVP 完成**（M1+M2+M3，全流程在第二仓跑通，见 `docs/tasks.md` 与 `docs/reviews/m3-acid-test.md`）。
 > v0.1：2026-10-09 起草；v0.2：2026-10-09 收敛；其后增补 §4.1（分发与可见性，acid test 实测）。
 > 证据见 [`docs/reviews/grill-design.md`](reviews/grill-design.md)、[`docs/reviews/grill-adversarial.md`](reviews/grill-adversarial.md)、[`docs/reviews/m1-acid-test.md`](reviews/m1-acid-test.md)。
 
