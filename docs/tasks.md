@@ -50,18 +50,18 @@
 
 ## F. 验收（acid test，见 design §7）
 
-- [ ] F1 第二个**非 asterwynd** 仓库端到端跑通：`init` → change → grill → 实现 → review-loop → `check` 绿
-- [ ] F2 负例 (a)：手写一行放行事件提交，`check` 行为符合预期（默认不拦 + 文档注明不防伪造）
-- [ ] F3 负例 (b)：交互层状态与 manifest 故意漂移 → 报错而非双绿
-- [ ] F4 负例 (c)：不跑 `init` → `check` 报「未接入」
-- [ ] F5 负例 (d)：`init` → `uninit` 回滚往返
+- [x] F1 第二个**非 asterwynd** 仓库端到端跑通：`init` → change → grill → 实现 → review-loop → `check` 绿（见 `docs/reviews/m3-acid-test.md`）
+- [x] F2 负例 (a)：手写一行放行事件提交，`check` 行为符合预期（默认不拦 + 文档注明不防伪造）
+- [x] F3 负例 (b)：交互层状态与 manifest 故意漂移 → 报错而非双绿
+- [x] F4 负例 (c)：不跑 `init` → `check` 报「未接入」
+- [x] F5 负例 (d)：`init` → `uninit` 回滚往返
 
 ## 里程碑
 
 - **M1**：A + B + C + D（门禁层可跑，`check` 能在第二仓拦下缺证据 PR）——**已完成**（分支 `mvp-m1/2026-10-09`）
 - **M2**：E（交互层 CC plugin 可用）——**已完成**（分支 `mvp-m2/2026-10-09`，
   含支撑动词 `manifest build`）
-- **M3**：F（第二仓 acid test 全绿，含负例）
+- **M3**：F（第二仓 acid test 全绿，含负例）——**已完成**（`wl-test`，见 `docs/reviews/m3-acid-test.md`）
 
 ## 明确不做（v1）
 

@@ -89,6 +89,23 @@ EXIT=1
 ```
 **符合预期**：两条独立机制都命中（hash 绑定 + stale revision），确实是报错而非双绿。
 
-## F1 — 全流程（交互式，待记）
+## F1 — 全流程 ✓
 
-`init → change → grill → 实现 → review-loop → check 绿`。`grill` 需人对设计问题拍板 → 用真实 CC 会话跑，结果另补。
+在 `wl-test` 分支 `acid/f1` 上端到端跑通（发布 tag 装工具）：
+
+```
+init → change(add-greeting) → grill（grilling pass + 设计阶段对抗验证 3 轮收敛 PASS）
+  → 用户逐条确认 Q1–Q7 → 整合 design → TDD 实现（13 tests）→ review-loop（1 轮 PASS）
+  → 先内容后证据两段提交 → manifest build ×2 → check
+$ witnessloop check --base main --head HEAD
+check：基线 main...HEAD，14 个变更文件，1 个 change 目录
+  change：add-greeting
+check：通过 ✓                       EXIT=0
+```
+
+证据：`reviews/{grill-review.md, grill-adversarial.md, building-review.md, grill.manifest.json, building.manifest.json}`。
+
+**过程要点**：
+- grill 时序 = **先对抗收敛、后用户确认**（`v1.3.0`）。对抗验证跑了 **3 轮**（CHANGES_REQUESTED×2 → PASS），期间逮到一个**真事实错误**（`greet(b"Alice")` 其实不抛异常、会静默产脏值）与一处**与已提交 spec 的冲突**——**都在用户看到之前被拦下**。这就是「收敛后才停轮」的价值。
+- review-loop **1 轮 PASS**（三态 verdict；审阅者逐条读代码核实 `tasks.md` 的 `[x]`）。
+
