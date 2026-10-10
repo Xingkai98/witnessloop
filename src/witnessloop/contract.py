@@ -135,61 +135,78 @@ def validate_review_manifests(
         ]
 
     findings: list[Finding] = []
-    bound: set[str] = set()
-    bindings_reliable = True
+    bound: set[Path] = set()
     for manifest_path in manifests:
         findings.extend(_validate_one(root, directory, rel, manifest_path, scope))
         report = _bound_report(directory, manifest_path)
-        if report is None:
-            # 有一份 manifest 解析不出 report_path——绑定集合不可靠，
-            # 不报孤儿（那份 manifest 自己已经被 `_validate_one` 报错了）。
-            bindings_reliable = False
-        else:
+        if report is not None:
             bound.add(report)
 
-    if bindings_reliable:
-        findings.extend(_check_orphan_reports(directory, rel, bound))
+    # **逐 manifest** 处理：某份 manifest 贡献不了绑定，就只是它自己少一条——
+    # **绝不**因此跳过整条孤儿规则。整体跳过会成为「一份特制 manifest 关掉规则」的
+    # 开关（回归审阅 §3.2/§4），原则是**宁多报不漏报**。
+    findings.extend(_check_orphan_reports(directory, rel, bound))
     return findings
 
 
-def _bound_report(directory: Path, manifest_path: Path) -> str | None:
-    """这份 manifest 绑定了哪个报告（change 目录内相对路径）；取不到则 None。
+def resolve_report_path(directory: Path, raw) -> Path | None:
+    """把 manifest 的 `report_path` 解析成 change 目录内的**规范**路径。
 
-    与 `_check_hashes` 同口径：报告必须落在 change 目录内，逃逸/绝对路径一律不算绑定。
+    `check` 的 hash 校验、孤儿绑定、以及 `manifest build` 的落盘**共用这一个实现**。
+    口径分歧会同时造成两类 bug——**漏报**（一边认、一边不认 → 规则被跳过）与
+    **假阳性**（`build` 接受 `reviews/./x.md`、`check` 认不出 → 误报孤儿），两条都踩过。
+
+    返回 None = 不能作为有效的报告引用（空 / 逃逸出 change 目录）。
     """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    base = directory.resolve()
+    candidate = (base / text).resolve()
+    if not pathutil.is_within(candidate, base):
+        return None
+    return candidate
+
+
+def _bound_report(directory: Path, manifest_path: Path) -> Path | None:
+    """这份 manifest 绑定了哪个报告（**解析后**的绝对路径）；取不到则 None。"""
     try:
         doc = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(doc, dict):
         return None
-    raw = str(doc.get("report_path") or "").strip()
-    if not raw:
-        return None
-    normalized = pathutil.normalize(raw)
-    if not pathutil.is_within(directory / normalized, directory):
-        return None
-    return normalized
+    return resolve_report_path(directory, doc.get("report_path"))
 
 
 def _check_orphan_reports(
-    directory: Path, rel_change: str, bound: set[str]
+    directory: Path, rel_change: str, bound: set[Path]
 ) -> list[Finding]:
     """`reviews/**/*.md` 里每个报告都必须被某份 manifest 的 `report_path` 引用。
 
     否则会出现「只绑一份、把另一份晾着」的缺口——那份报告可以随便漂移而门禁不管。
 
-    **只做文件名交叉引用**，不解析报告正文。多份 manifest 指向同一个报告不额外报错
-    （保持简单）；`reviews/` 下没有 `.md` 报告时不报孤儿。
+    **只做文件名交叉引用**，不解析报告正文。两侧都取**解析后**的路径来比：
+    这样 `./` / `//` / `..` / 反斜杠字面名 / 符号链接都不会造成误判。
+    多份 manifest 指向同一个报告不额外报错（保持简单）；
+    `reviews/` 下没有 `.md` 报告时不报孤儿。
     """
     reviews = directory / "reviews"
     if not reviews.is_dir():
         return []
 
-    findings: list[Finding] = []
+    # 目录名以 `.md` 结尾不算报告（回归审阅 §3.4）；链接与目标解析到同一条目（§3.5）。
+    reports: dict[Path, str] = {}
     for report in sorted(reviews.rglob("*.md")):
-        rel_report = report.relative_to(directory).as_posix()
-        if rel_report in bound:
+        if not report.is_file():
+            continue
+        reports.setdefault(report.resolve(), report.relative_to(directory).as_posix())
+
+    findings: list[Finding] = []
+    for resolved, rel_report in reports.items():
+        if resolved in bound:
             continue
         findings.append(
             Finding(
@@ -336,8 +353,9 @@ def _check_git_span(
 def _check_hashes(directory: Path, manifest_rel: str, doc: dict) -> list[Finding]:
     findings: list[Finding] = []
 
-    report_path = (directory / str(doc["report_path"])).resolve()
-    if not pathutil.is_within(report_path, directory):
+    # 与孤儿绑定、`manifest build` 共用同一个解析器——口径分歧会让规则被绕过。
+    report_path = resolve_report_path(directory, doc["report_path"])
+    if report_path is None:
         findings.append(
             Finding(
                 manifest_rel,

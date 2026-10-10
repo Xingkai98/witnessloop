@@ -64,10 +64,13 @@ def run_build(args: argparse.Namespace) -> int:
         detail = "\n  ".join(f"{f.path}：{f.message}" for f in contract_findings)
         return _fail(f"change 目录不合契约（与 check 同一套判定）：\n  {detail}")
 
-    report_rel = pathutil.normalize(args.report)
-    report_file = directory / report_rel
-    if not pathutil.is_within(report_file, directory):
+    # 与 `check` 的 hash 校验、孤儿绑定**共用同一个解析器**——口径分歧会让
+    # 「build 说 OK、check 反手判孤儿」（回归审阅 §3.3）。
+    report_file = contract.resolve_report_path(directory, args.report)
+    if report_file is None:
         return _fail(f"report_path={args.report!r} 逃逸出 change 目录")
+    # 落盘写**规范**路径：别把 `reviews/./x.md` 这种写法写进证据里。
+    report_rel = report_file.relative_to(directory.resolve()).as_posix()
     if not pathutil.matches(report_rel, f"{REPORT_PREFIX}**"):
         # 在 build 时就拦下：报告放在 reviews/ 外虽然能算哈希，但 check 的 stale
         # 判定不把它当证据，会在 CI 里报一条像误报的「旧 revision」（gate.md §3）。

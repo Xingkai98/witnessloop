@@ -118,11 +118,17 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
     --report reviews/grill-adversarial.md …     # → reviews/grill-adversarial.manifest.json
   ```
 
-  判定**只做文件名交叉引用**（`report_path` 解析后的相对路径 vs `reviews/**/*.md`），
-  **不解析报告正文**。多份 manifest 指向同一个报告不额外报错（保持简单）；
-  `reviews/` 下没有 `.md` 报告时不报孤儿（那种情况由「报告不存在」管）。
-  若某份 manifest 解析不出 `report_path`，绑定集合不可靠 → 孤儿判定整体跳过
-  （那份 manifest 自己已经报错了）。
+  判定**只做文件名交叉引用**，**不解析报告正文**。两侧都按**解析后**的路径比对
+  （`resolve()` 之后再比），所以 `./`、`//`、`..`、反斜杠字面名、符号链接都不会
+  造成误判；`report_path` 的解析/规范化只有**一处实现**
+  （`contract.resolve_report_path`，`check` 的 hash 校验、孤儿绑定、`manifest build`
+  三处共用）——口径分歧会同时造成漏报与假阳性。多份 manifest 指向同一个报告不额外
+  报错（保持简单）；`reviews/` 下没有 `.md` 报告时不报孤儿（那种情况由「报告不存在」
+  管）；目录名恰好以 `.md` 结尾**不算报告**。
+
+  **某份 manifest 贡献不了绑定（解析不出 `report_path` / 逃逸），只是它自己少一条**
+  ——孤儿判定**照常对其余报告执行**，绝不整体跳过。整体跳过等于给出一份特制 manifest
+  就能关掉整条规则的开关（回归审阅 §3.2/§4）。原则：**宁多报，不漏报**。
 - `report_path` 解析后必须落在 change 目录内（禁 `../` 逃逸）。
 - ⚠️ **报告必须放在 `reviews/` 下**（`gate.md §1` 的布局约定）。放在 change 目录
   根（如 `report_path: "my-report.md"`）虽然能通过 hash 校验，但**不匹配证据
