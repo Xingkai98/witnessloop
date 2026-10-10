@@ -64,6 +64,9 @@ STALE_FALLBACK_CLAIMS = (
     "短随机",
     "UTC 时间戳",
     "-<utc>-<随机>",
+    # CD8 点名的那一类**假说法**：兜底路径下幂等同样成立，跟「给不给显式 id」无关。
+    # 正确的措辞是「固定 base 与 revision **时**幂等」，不是「**给了才**幂等」。
+    "才幂等",
 )
 
 
@@ -98,3 +101,26 @@ def test_docs_use_the_settled_identity_wording(relpath: str):
         f"{relpath} 仍写「{STALE_Q3_CLAIM}」——Q3 定稿是"
         "「兜底路径下结构性恒真，只挡显式把同一个值喂给两个角色」"
     )
+
+
+#: 讲 `manifest build` 幂等的地方（比 RUN_ID_DOCS 多一份门禁契约文档）。
+IDEMPOTENCY_DOCS = RUN_ID_DOCS + ("docs/gate.md",)
+
+
+@pytest.mark.parametrize("relpath", IDEMPOTENCY_DOCS)
+def test_manifest_build_idempotency_claims_carry_the_qualifier(relpath: str):
+    """Q2：讲 `manifest build` 幂等就得带「固定 base 与 revision 时」的限定。
+
+    按**行**判、且只在上下文提到 `manifest build` 时才管——`init` 的幂等
+    （「幂等、只增不改、不 auto-commit」）没有 base/revision 可言，不归这条管。
+    """
+    lines = (REPO_ROOT / relpath).read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if "幂等" not in line:
+            continue
+        window = "\n".join(lines[max(0, index - 3) : index + 4])
+        if "manifest build" not in window:
+            continue
+        assert "固定 base 与 revision" in window, (
+            f"{relpath}:{index + 1} 讲了 manifest build 幂等却没带限定：{line.strip()}"
+        )

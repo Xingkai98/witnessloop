@@ -180,7 +180,8 @@ witnessloop manifest build \
 - `base_sha` = 给定 `--base`（缺省与 `check` 用同一套解析）的 sha。
 - `tasks_hash` / `spec_hash` / `report_hash` 由 build 算出；`diff_hash` 是
   informational（如实算 `base..head` 的 diff 文本 sha256，`check` 不校验）。
-- 写 `reviews/<stage>.manifest.json`。**幂等**（同输入覆盖同一文件）、**不 auto-commit**。
+- 写 `reviews/<stage>.manifest.json`。**固定 base 与 revision 时**逐字节可复现
+  （同输入覆盖同一文件）、**不 auto-commit**。
 - 不合格就**不写出文件**、直接报错：`reviewer_run_id == author_run_id`、
   `report_path` 逃逸出 change 目录、报告不在 `reviews/` 下（把这个坑从
   「CI 里像误报的 stale」变成清楚的即时错误）、缺 `tasks.md`、change 目录不存在、

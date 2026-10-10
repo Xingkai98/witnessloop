@@ -76,7 +76,8 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 - `manifest build`：产出 `check` 认的 review manifest。**与 `check` 共用同一张
   字段↔artifact 绑定表和同一个哈希函数**（`constants.HASHED_ARTIFACTS` +
   `hashing.sha256_tree`），杜绝「产出的 manifest」与「校验的期望」两边漂移。
-  幂等、不 auto-commit；不合格直接报错不写文件。
+  **固定 base 与 revision 时**幂等（幂等键 = `(change, stage, role, revision,`
+  `base ref 的解析目标)`）、不 auto-commit；不合格直接报错不写文件。
 
 **不变集**：witnessloop 自身的输入（policy 文件、manifest）**恒受保护、不可由 repo policy 移除**，封顶 ~5 条常量。
 
