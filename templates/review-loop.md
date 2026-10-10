@@ -22,33 +22,98 @@
 - 实际的代码改动（本次 PR 的 diff）
 - `<change-dir>/reviews/` 下已有的证据
 
-## 步骤
+## 审阅维度
 
-1. **审阅**：审阅者零记忆地读 `tasks.md` / `design.md` 与 diff，判断：
-   声称做的事是否真的做了、有没有做多余的事、tests 是否真的覆盖了改动、
-   有没有偷偷放宽口径（例如把断言改弱以让测试变绿）。
-2. **给结论**（二选一，不许模糊）：
-   - `PASS`：证据齐、实现与 tasks/design 一致、没有未解释的偏离。
-   - `CHANGES_REQUESTED`：逐条列出**具体**问题——文件与行、为什么是问题、
-     期望变成什么样。笼统的「建议优化」不算 CHANGES_REQUESTED。
-3. **修复**：作者按条目修，并且**每个修复都要补一条能变红的回归测试**：
-   先让它红（证明它真的在测那个问题），再改实现让它绿。
-   改不动、或认为审阅意见不对——说出来并给出理由，别默默忽略。
-4. **再审**：回到第 1 步。轮数**封顶**（默认 3 轮）：到顶仍不通过就**停下来交人判断**，
-   不得无限循环，也不得在第 N 轮悄悄放水。
-5. **收尾**：
-   - 写报告 `<change-dir>/reviews/<stage>-review.md`：结论（PASS /
-     CHANGES_REQUESTED）、轮次、每条问题的处置、未决项。
-   - 跑 `witnessloop manifest build` 产出 manifest：
-     ```
-     witnessloop manifest build \
-       --root . --change <change-id> --stage <stage> \
-       --report reviews/<stage>-review.md \
-       --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
-     ```
-   - **先内容提交、后证据提交**（`docs/gate.md §3.1`）：内容一个提交，
-     报告 + manifest + 解释事件单独一个提交。审阅之后再落任何非证据文件，
-     `check` 会判「审阅的是旧 revision」。
+1. **任务逐项验证**：逐条对照 `tasks.md`，每个 `[x]` 都要**读代码**确认实现**真实存在**
+   ——不是看文件名、不是看 import、不是信 `[x]` 本身。
+2. **正确性**：逻辑对不对，边界条件处理了没有。
+3. **Spec 对齐**：实现是否完全覆盖 spec / tasks 的要求。
+4. **冗余度**：有没有引入与既有工具重复的代码。
+5. **测试覆盖**：关键路径有没有测试，修复有没有配回归测试。
+6. **安全性**：注入、越权、信息泄露。
+7. **可维护性**：代码清晰、模块合理、命名一致。
+8. **CI 完整性**：有没有偷偷弱化 CI 配置（删步骤、放宽断言、`continue-on-error`）。
+
+## 执行步骤
+
+### 1. 定位 change
+
+确定 `change-id` 与 change 目录。参数缺省时从上下文或当前分支推断。
+change 若已归档（`<changes_root>/archive/…`），仍可在其实现分支上审。
+
+### 2. 确定审阅基线
+
+在审阅前先把基线钉死：
+
+```
+git fetch origin <主干>            # 尽力而为
+git log <主干>..HEAD --oneline     # 确认要审的提交范围
+git merge-base HEAD <主干>         # base，manifest 用
+```
+
+若分支**落后主干**（diff 里出现「删除已合入代码」这类假象），先
+`git rebase <主干>` 并解决冲突，**再审**——否则审的是个不存在的差异。
+
+### 3. 起零记忆审阅者（第 N 轮）
+
+**另起一个 run**，零记忆、不继承开发上下文。交给它：
+
+- change 目录的绝对路径 + `change-id`；
+- 审阅对象：`git diff <base>...HEAD` + change 文档；
+- 上面 8 个**审阅维度**；
+- **任务逐项验证**：对照 `tasks.md` 每个 `[x]` 读代码确认真实存在；
+- **批次 aware**：`tasks.md` 里标了「后续批」的 `[ ]` **不算缺陷**，
+  别据此打 CHANGES_REQUESTED（只验证本批的 `[x]`）；
+- **verdict 判定规则**（见下）；
+- 跑相关测试并把结果写进报告；
+- 产出报告 `<change-dir>/reviews/<stage>-review.md`，含 Verdict / Tasks
+  Verification / Issues / Test Results / 结论。
+
+**verdict 三态**（不许模糊）：
+
+| verdict | 含义 |
+|---|---|
+| `PASS` | 所有 `[x]` 有真实实现，无未解决的中等以上问题，测试通过 |
+| `CHANGES_REQUESTED` | 有需修复的问题，但不阻塞整体 |
+| `BLOCKED` | **阻塞性缺陷**：核心功能缺失 / 安全漏洞 / 测试大面积失败 |
+
+### 4. 判定并闭环
+
+- `PASS` → 跳到第 6 步。
+- `CHANGES_REQUESTED` → 进第 5 步。
+- `BLOCKED` → **停下，向用户报告阻塞项，等指示；不自行修复**。
+  阻塞性缺陷不是「作者顺手补一下」的事——它是设计或范围出了问题。
+
+### 5. 修复并再审（**轮数封顶**，默认 3 轮）
+
+- 逐条修复审阅报告的问题，每条都给出**具体**处置：文件与行、为什么是问题、
+  改成什么样。笼统的「已优化」不算处置。
+- **每个修复都要补一条能变红的回归测试**：先让它红（证明它真的在测那个问题），
+  再改实现让它绿。
+- **同步更新 change 文档**：在 `tasks.md` 追加一节「审阅修复」，注明每条问题与
+  对应修复（审阅报告引用的行号就是修复的目标）。
+- 跑相关测试确认全绿，**提交修复**。
+- 回到第 3 步再审（第 N+1 轮）。
+
+**封顶**：到第 3 轮仍 `CHANGES_REQUESTED`，**停下**向用户报告剩余阻塞项，
+升级到人判断——不得无限循环，也不得在第 N 轮悄悄放水。
+
+### 6. 收尾
+
+- 报告已在上一步写好：`<change-dir>/reviews/<stage>-review.md`
+  （结论、轮次、每条问题的处置、未决项）。
+- 跑 `witnessloop manifest build` 产出 manifest：
+
+  ```
+  witnessloop manifest build \
+    --root . --change <change-id> --stage <stage> \
+    --report reviews/<stage>-review.md \
+    --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
+  ```
+
+- **先内容提交、后证据提交**（`docs/gate.md §3.1`）：内容一个提交，
+  报告 + manifest + 解释事件单独一个提交。审阅之后再落任何非证据文件，
+  `check` 会判「审阅的是旧 revision」。
 
 ## 怎么取 run id
 
@@ -67,10 +132,13 @@
 
 - `<change-dir>/reviews/<stage>-review.md`（报告）
 - `<change-dir>/reviews/<stage>.manifest.json`（manifest，由 `manifest build` 产出）
+- `tasks.md` 的「审阅修复」节（`CHANGES_REQUESTED` 时）
 
 ## 硬约束
 
 - `reviewer_run_id != author_run_id`；审阅者必须独立于作者。
+- **verdict 三态**：`BLOCKED` 时停下报告、**不自行修复**。
+- **批次 aware**：`tasks.md` 标「后续批」的 `[ ]` 不是缺陷。
 - **manifest 是权威证据**：审阅结论以它为准，报告与它成对。
 - 审阅者对 change 状态**只读**，**不得持有自己的状态文件**。
 - 本工具**防漂移、不防蓄意伪造**：`reviewer_run_id` 是自由文本，别当成签名。
