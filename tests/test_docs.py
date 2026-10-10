@@ -64,9 +64,14 @@ STALE_FALLBACK_CLAIMS = (
     "短随机",
     "UTC 时间戳",
     "-<utc>-<随机>",
-    # CD8 点名的那一类**假说法**：兜底路径下幂等同样成立，跟「给不给显式 id」无关。
-    # 正确的措辞是「固定 base 与 revision **时**幂等」，不是「**给了才**幂等」。
-    "才幂等",
+    # 同族假说法：「兜底 id 每次都不一样」。兜底是确定性的，重复 build 得到的是
+    # **同一个** id。（R2 N2：原来只抓裸子串「才幂等」，既漏了这一族，又会误伤
+    # 正确的「固定 base 与 revision **才**幂等」——所以改用具体措辞列举，
+    # 「给了才幂等」那一类由下面那条**正向约束**兜住。）
+    "重复 build 会得到不同",
+    "重复 build 得到不同",
+    "两次 build 会得到不同",
+    "每次 build 都不同",
 )
 
 
@@ -108,19 +113,25 @@ IDEMPOTENCY_DOCS = RUN_ID_DOCS + ("docs/gate.md",)
 
 
 @pytest.mark.parametrize("relpath", IDEMPOTENCY_DOCS)
-def test_manifest_build_idempotency_claims_carry_the_qualifier(relpath: str):
-    """Q2：讲 `manifest build` 幂等就得带「固定 base 与 revision 时」的限定。
+def test_every_idempotency_claim_is_scoped_or_qualified(relpath: str):
+    """Q2 **正向约束**：文件里**每个**「幂等」都得有出处。
 
-    按**行**判、且只在上下文提到 `manifest build` 时才管——`init` 的幂等
-    （「幂等、只增不改、不 auto-commit」）没有 base/revision 可言，不归这条管。
+    一个「幂等」要么
+    *(a)* 说的是 `init`（该行含 `init`）——init 的幂等讲的是「只增不改」，
+    跟 base/revision 无关；要么
+    *(b)* 附近（±2 行）带「固定 base 与 revision」限定。
+
+    为什么按**文件整体**扫、而不是「附近有没有 `manifest build`」的行窗口：
+    后者对 `cli.py` / `plugin/README.md` / `docs/gate.md` 是**空转**——那三句
+    「幂等」离 `manifest build` 字面量超过窗口，在 `cli.py` 那行**删掉限定词**
+    也照样全绿（R2 N1 实测）。而 `cli.py` 正是 CD9 的点名落点。
     """
     lines = (REPO_ROOT / relpath).read_text(encoding="utf-8").splitlines()
     for index, line in enumerate(lines):
-        if "幂等" not in line:
+        if "幂等" not in line or "init" in line:
             continue
-        window = "\n".join(lines[max(0, index - 3) : index + 4])
-        if "manifest build" not in window:
-            continue
+        window = "\n".join(lines[max(0, index - 2) : index + 3])
         assert "固定 base 与 revision" in window, (
-            f"{relpath}:{index + 1} 讲了 manifest build 幂等却没带限定：{line.strip()}"
+            f"{relpath}:{index + 1} 有「幂等」却既不是在讲 `init`、"
+            f"也没带「固定 base 与 revision」限定：{line.strip()}"
         )
