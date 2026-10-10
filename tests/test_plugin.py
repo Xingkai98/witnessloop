@@ -131,11 +131,12 @@ def test_review_loop_adapter_calls_manifest_build():
     assert "--reviewer-run-id" in text and "--author-run-id" in text
 
 
-def test_grill_adapter_runs_the_loop_across_turns():
-    """多轮 frontier 循环落在适配器上的部分：本轮抛完就结束，等答复再来一轮。"""
+def test_grill_adapter_stops_for_the_user_only_after_convergence():
+    """(A) 时序落在适配器上的部分：命令不再「跨多轮等用户答复」，
+    而是**审阅者跑完 + 对抗收敛之后，才**把 Open Questions 一次性交给用户。"""
     text = (PLUGIN / "commands" / "grill.md").read_text(encoding="utf-8")
-    assert "frontier" in text
-    assert "本轮" in text and "下一轮" in text
+    assert "一次性" in text
+    assert "才" in text
     # 对抗验证与整合回 design.md 也在接线里点到
     assert "grill-adversarial" in text
     assert "Pre-Implementation Review" in text

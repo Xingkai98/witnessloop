@@ -63,18 +63,42 @@ def test_templates_say_where_evidence_goes(template: Path):
 # ------------------------------------------- 保真度：grill 的多轮 frontier 循环
 
 
-def test_grill_runs_a_multi_round_frontier_loop():
-    """G1：不是「列一遍决策点」的单趟，而是每轮抛整条 frontier、等答复、重算。"""
+def test_grill_works_the_design_tree_internally():
+    """G1：不是「列一遍决策点」的单趟——审阅者按设计树/ frontier 求完备。"""
     text = GRILL.read_text(encoding="utf-8")
     assert "frontier" in text  # 术语要在，且下面几条把它定义清楚
-    # ③ 抛完停下等用户答复
-    assert "停" in text and "等" in text
-    # ④ 答复后重算 frontier
+    assert "设计树" in text or "决策树" in text
     assert "重算" in text or "重新计算" in text
-    # ⑤ 完成条件 = frontier 为空
-    assert "为空" in text
-    # ⑥ 事实派去查、不问用户
-    assert "事实" in text
+    assert "为空" in text  # 完成条件 = frontier 为空
+    assert "事实" in text  # 事实派去查、不问用户
+
+
+def test_grill_does_not_stop_for_the_user_during_the_grilling_pass():
+    """**(A) 时序**：grilling pass 由审阅者独立求完备，**此阶段不停轮给用户**。
+
+    断言用「不停轮给用户」这个完整短语——只断言「不停轮」会被 Code-Resolved
+    那句里的「不停轮」蒙混过关（试过，那是空转）。
+    """
+    text = GRILL.read_text(encoding="utf-8")
+    assert "不停轮给用户" in text
+
+
+def test_grill_stops_for_the_user_once_and_only_after_convergence():
+    """**(A) 时序**：用户只被停**一次**，且在对抗验证收敛**之后**。"""
+    text = GRILL.read_text(encoding="utf-8")
+    assert "一次性" in text
+    assert "才停轮" in text
+
+
+def test_grill_runs_the_adversarial_loop_before_the_stop_turn():
+    """真身 spec：对抗验证在**停轮之前**跑完，被证伪的决策**在停轮前**回写。
+
+    见 `…/2026-10-07-grill-flow-hardening/specs/change-documentation/spec.md:17-18`
+    与 `:71-72`。
+    """
+    text = GRILL.read_text(encoding="utf-8")
+    assert "停轮之前" in text
+    assert "回写" in text
 
 
 def test_grill_does_not_block_the_frontier_on_a_fact_finding_run():
@@ -83,18 +107,20 @@ def test_grill_does_not_block_the_frontier_on_a_fact_finding_run():
     text = GRILL.read_text(encoding="utf-8")
     assert "不要阻塞" in text
     assert "下游" in text
-    assert "照问" in text
+    # (A) 时序之后，frontier 由审阅者**内部处理**（不再逐轮问用户），
+    # 所以措辞是「照处理」而不是「照问」。
+    assert "照处理" in text
 
 
-def test_grill_puts_every_frontier_question_to_the_user_with_a_recommendation():
-    """② 整条 frontier 一次性抛出：编号 + 每条附推荐答案。"""
+def test_grill_open_questions_carry_recommendations():
+    """停轮时抛给用户的是**收敛后的 Open Questions**：编号 + 每条附推荐答案。"""
     text = GRILL.read_text(encoding="utf-8")
     assert "推荐答案" in text
     assert "编号" in text or "Q1" in text
 
 
 def test_grill_deferrs_questions_that_depend_on_open_ones():
-    """④ 依赖本轮未决问题的问归下一轮，不在同一轮里猜答案。"""
+    """依赖本轮未决问题的问归下一轮——审阅者内部按轮推进时同样成立。"""
     text = GRILL.read_text(encoding="utf-8")
     assert "下一轮" in text
 
