@@ -141,6 +141,12 @@ def test_grill_adapter_runs_the_loop_across_turns():
     assert "Pre-Implementation Review" in text
 
 
+def test_grill_adapter_does_not_hold_a_round_for_a_fact_lookup():
+    """事实在查时不要整体卡住本轮——只有它下游的问题顺延。"""
+    text = (PLUGIN / "commands" / "grill.md").read_text(encoding="utf-8")
+    assert "不要阻塞" in text or "不整体" in text
+
+
 def test_review_loop_adapter_handles_a_blocked_verdict():
     """R1 落在适配器上的部分：BLOCKED 要停、报告、不自行修复。"""
     text = (PLUGIN / "commands" / "review-loop.md").read_text(encoding="utf-8")

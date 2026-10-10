@@ -77,6 +77,15 @@ def test_grill_runs_a_multi_round_frontier_loop():
     assert "事实" in text
 
 
+def test_grill_does_not_block_the_frontier_on_a_fact_finding_run():
+    """G1⑥ 的第二层：探查中的事实是**未决前置**——**只有它下游的问题**等它，
+    **其余 frontier 现在就照问**。不写清这层，「另起 run 去查」会被误读成整体阻塞。"""
+    text = GRILL.read_text(encoding="utf-8")
+    assert "不要阻塞" in text
+    assert "下游" in text
+    assert "照问" in text
+
+
 def test_grill_puts_every_frontier_question_to_the_user_with_a_recommendation():
     """② 整条 frontier 一次性抛出：编号 + 每条附推荐答案。"""
     text = GRILL.read_text(encoding="utf-8")
