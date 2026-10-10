@@ -39,6 +39,55 @@
 `witnessloop manifest build`——这些是 design §5.2「重写，不回收」的要求。
 （上表的出处行里保留了 issue 号与原始路径，那是在**记录参照物**，不是模板内容。）
 
+## 时序修正（用户拍板 (A)）：**先收敛，后停轮**
+
+首轮回填虽然把 frontier 循环补了回来，却**把顺序做反了**：让审阅者**每轮 frontier
+都停下来问用户**（在对抗验证**之前**），对抗验证反而排到最后。真身 spec 明写的是
+「先跑完设计阶段审阅闭环，**再**停轮」：
+
+| 出处 | 原文 |
+|---|---|
+| `…/2026-10-07-grill-flow-hardening/specs/change-documentation/spec.md:17-18` | 「Following the grilling pass and **before** the stop-turn user confirmation, the change SHALL run a **design-phase review loop**」 |
+| 同上 `:71-72` | 「any refuted decision SHALL be corrected in `grill-design.md` **before** the stop-turn confirmation」 |
+| 同上 `:31-37` | Code-decidable Open Questions「SHALL NOT be carried into `## Open Questions` or the stop-turn queue」——**只有**用户取舍才进停轮队列 |
+| 同上 `:39-43` | grilling pass 在「每条残留 Open Question 都被人答过」之前不算完成 |
+
+**改后的权威时序**（`templates/grill.md` 已按此重排）：
+
+1. **grilling pass**——审阅者**独立**按设计树求完备：能由代码/规格判定的走
+   Code-Resolved（带 `文件:行号`）自行定案；**此阶段不停轮给用户**。
+   frontier / 设计树作为**审阅者求完备的方法**保留，只是不再逐轮问用户。
+2. **设计阶段对抗验证 loop**——另起独立零记忆审阅者，默认结论有错、逐条证伪 →
+   verdict → `CHANGES_REQUESTED` 则**修 `grill-review.md` 后再审**，直到 `PASS`
+   或轮数封顶；**被证伪的决策回写 `grill-review.md`**；产物 `grill-adversarial.md`。
+   这一步**在停轮之前**跑完。
+3. **才停轮**——把**收敛后**的 `## Open Questions` **一次性**交用户确认 →
+   记 `## User Confirmation`。
+4. 把对抗验证的必须修改**整合回 `design.md`**（更新 `## Pre-Implementation Review`）。
+
+**为什么这样对**：反过来会把**未经证伪**的结论先塞给用户拍板，还把用户的注意力
+浪费在审阅者自己查得到的问题上——正是 spec 里 Code-decidable 那条规定要避免的。
+
+硬约束随之改：**四件事全满足**才允许写代码——① frontier 为空 ② 对抗验证 `PASS`
+（或封顶交人）③ Open Questions 已由用户逐条确认并记入 `## User Confirmation`
+④ `Confirmed Decisions` ≥3 条且每条带 `来源:`。
+
+`plugin/commands/grill.md` 同步：命令不再声称「跨多轮等用户答复」，而是
+「审阅者跑完 + 对抗收敛 → **才**把 Open Questions 一次性交给用户」。
+
+### 核对结论：`templates/review-loop.md` **没有**同类倒置
+
+按同样的标准核对（「有没有在收敛前就停给人」）：
+
+| 停人的位置 | 性质 | 与真身一致？ |
+|---|---|---|
+| `BLOCKED` → 停下报告、不自行修复 | **终态**——阻塞性缺陷不是作者能收敛掉的 | ✅ 真身 `review-loop.md:76` 同款 |
+| 第 3 轮封顶 → 停下交人 | **收敛边界**——再循环也不会更好 | ✅ 真身 `:87`「3 轮封顶…升级到人类开发者」 |
+| 其余路径 | review → 修 → 再审，**直到 `PASS`** | ✅ 收敛后才轮到人 |
+
+即：review-loop 的正常路径**先收敛**，人只在**收敛不可能**的终态被叫到——
+与真身逐条对齐，**无需修改**。
+
 ## 审计结论：哪些是真的丢了
 
 | # | 项 | 审计判定 | 严重度 |
@@ -62,9 +111,9 @@
 
 | 项 | 回填内容 |
 |---|---|
-| G1 | 新增「多轮 frontier 循环」一步，写明 ①frontier 定义 ②每轮整条抛出（编号 + 推荐答案 + 具体例子/场景）③抛完停下等答复 ④答复后重算 frontier、依赖未决项的归下一轮 ⑤完成条件 = frontier 为空 ⑥事实另起 run 去查、不问用户 |
+| G1 | 新增「按设计树求完备」（审阅者**内部**推进 frontier，见下方「时序修正」）：frontier 定义 / 重算 / 依赖未决项的归下一轮 / 完成条件 = frontier 为空 / 事实另起 run 去查且**不阻塞**（只有下游的问题等它，其余照处理） |
 | G2 | 新增「整合回 design.md」一步：必须修改项落进 Decision、更新 `## Pre-Implementation Review`、阻塞性缺陷停下报告 |
-| G3 | 新增「对抗验证」一步：另起独立零记忆审阅者**默认结论有错、逐条证伪**、能实测就实测、verdict → 修 → 到 PASS 或封顶、产物 `grill-adversarial.md` |
+| G3 | 新增「设计阶段对抗验证 loop」：另起独立零记忆审阅者**默认结论有错、逐条证伪**、能实测就实测、verdict → 修 `grill-review.md` → 再审到 PASS 或封顶、**被证伪的决策回写**、产物 `grill-adversarial.md`。**位置在停轮之前**（见「时序修正」） |
 | G4 | frontier 段落里写明 Code-Resolved Questions：带 `文件:行号` 证据自行定案、**不进 frontier、不停轮** |
 | G5 | 决策记录格式里写明 `## Confirmed Decisions` **至少 3 条**、每条 `来源: <run id>`，并说明下游检查器按此格式解析 |
 | G6 | 报告结构补 `## Reviewer`（run id + 时间）与 `## 风险` |
@@ -134,6 +183,10 @@ frontier 的每轮格式里（与 G1② 的「推荐答案」并存，互不冲�
 | 去掉 `## Reviewer` | `test_grill_report_has_reviewer_and_risk_sections` |
 | 去掉 `触发与门禁` | `test_grill_covers_the_seven_dimensions` |
 | 去掉 `不要阻塞`（事实探查不扣下整条 frontier） | `test_grill_does_not_block_the_frontier_on_a_fact_finding_run` |
+| 去掉 `不停轮给用户`（grilling pass 阶段不惊动用户） | `test_grill_does_not_stop_for_the_user_during_the_grilling_pass` |
+| 去掉 `一次性` / `才停轮`（用户只被停一次且在收敛后） | `test_grill_stops_for_the_user_once_and_only_after_convergence` |
+| 去掉 `停轮之前` / `回写`（对抗验证必须排在停轮前） | `test_grill_runs_the_adversarial_loop_before_the_stop_turn` |
+| 适配器去掉 `一次性` | `test_grill_adapter_stops_for_the_user_only_after_convergence` |
 | `templates/review-loop.md` 去掉 `BLOCKED` | `test_review_loop_verdict_has_three_states` |
 | 去掉 `任务逐项验证` | `test_review_loop_covers_the_review_dimensions` |
 | 去掉 `后续批` | `test_review_loop_is_batch_aware` |
