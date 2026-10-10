@@ -11,11 +11,33 @@
 |---|---|
 | asterwynd `grill` 命令（`.claude/commands/grill.md`） | 7 个 grill 维度、决策记录格式（`## Reviewer` / `## Confirmed Decisions` ≥3 条带 `来源:` / `## 风险`）、「整合回 design.md」、护栏 |
 | asterwynd `review-loop` 命令（`.claude/commands/review-loop.md`） | 8 个审阅维度、verdict 三态、批次 aware、审阅基线、修复要同步改文档并提交、轮数封顶 |
-| asterwynd `grilling` skill（`~/.claude/skills/grilling/SKILL.md`） | **frontier 多轮循环**：决策树 / 每轮抛整条 frontier + 推荐答案 / 停下等答复 / 重算 frontier / 完成条件 = frontier 为空 / 事实派 subagent 查 |
+| asterwynd `grilling` skill（`~/.claude/skills/grilling/SKILL.md`） | **frontier 多轮循环**：决策树 / 每轮抛整条 frontier + 推荐答案 / 停下等答复 / 重算 frontier / 完成条件 = frontier 为空 / 事实派 subagent 查（含「**不要阻塞**」：探查中的事实是未决前置，只有它下游的问题等它） |
 
-**有意的不一致（不是缺陷，别「修」回去）**：去掉 issue 号、去掉 `.claude/` 路径、
-改写为 host 中立措辞、把 CLI 调用换成本仓的 `witnessloop manifest build`。
-这些是 design §5.2「重写，不回收」的要求。
+### ⚠️ G3 / G4 的出处不在命令文件里（别据此判为「自创」）
+
+**对抗验证（G3）与 Code-Resolved Questions（G4）的真身在 asterwynd 的
+规格与变更设计里，不在 `.claude/commands/grill.md`。** 只拿命令文件当基准会误判
+这两条是 witnessloop 自创的——它们是**规格化的既有语义**，出处如下（均已实地核对）：
+
+| 项 | 出处 | 关键原文 |
+|---|---|---|
+| G3 对抗验证闭环 | `openspec/changes/archive/2026-10-07-grill-flow-hardening/design.md:53` | 「形态（对齐 `/review-loop`）：spawn 独立零记忆审阅 subagent → **对抗分析（默认设计有错、逐条尝试证伪 Confirmed Decisions 与设计假设）** → 出 verdict（`PASS` / `CHANGES_REQUESTED`）→ `CHANGES_REQUESTED` 则修 → **再审，直到 `PASS` 或轮数封顶**」 |
+| G3 产物与命名 | 同上 `design.md:49,55` | 产物 `reviews/grill-adversarial.md`；「与 `building-review.md` 平行」；该闭环**与实现后 review-loop 同构** |
+| G3 规格化 | `openspec/specs/change-documentation/spec.md:48,53` | 「…SHALL produce a structured record at `openspec/changes/<id>/reviews/grill-adversarial.md`. This loop is **isomorphic to the implementation-phase `/review-loop`**」 |
+| G4 Code-Resolved | `.../design.md:54` | 「该闭环内，对每条 Open Question——**能由代码判定的**，由审阅者**带证据（`文件:行号`）直接答出**，**移出停轮队列**（见 D4）；只有真正的用户取舍才留在 `## Open Questions` 交停轮」 |
+| G4 规格化 | `openspec/specs/change-documentation/spec.md:59,62` | 「**Code-decidable** Open Questions SHALL be answered with evidence (`file:line`), recorded under a **`## Code-Resolved Questions`** section…and SHALL NOT be carried into `## Open Questions` or the stop-turn queue」 |
+| G3 + G4 维护口径 | `AGENTS.md:18` | 「设计阶段审阅闭环（grill-flow-hardening / issue #298）：grill 产出后、**停轮前**，必须再跑一个与…**同构**但**审设计而非代码**的闭环，产出 `…/reviews/grill-adversarial.md`…该闭环内**能由代码判定的 Open Question 用代码给出带证据（`文件:行号`）的答案**、移出 `## Open Questions`（记入 `## Code-Resolved Questions`）、**不停轮**」 |
+
+同一条还解释了 G5（`AGENTS.md:18`：「artifact checker 对完成 change 验证证据存在
+且 **≥3 条决策**」）与「每条 Open Question 必须配一个**具体例子/场景**讲解」的出处。
+**教训**：审计交互层保真度时，基准面至少要有**命令文件 + 该流程的规格/设计 +
+`AGENTS.md` 维护口径**三层——只看命令文件会把规格化的语义当成不存在。
+
+### 有意的不一致（不是缺陷，别「修」回去）
+
+去掉 issue 号、去掉 `.claude/` 路径、改写为 host 中立措辞、把 CLI 调用换成本仓的
+`witnessloop manifest build`——这些是 design §5.2「重写，不回收」的要求。
+（上表的出处行里保留了 issue 号与原始路径，那是在**记录参照物**，不是模板内容。）
 
 ## 审计结论：哪些是真的丢了
 
@@ -111,6 +133,7 @@ frontier 的每轮格式里（与 G1② 的「推荐答案」并存，互不冲�
 | 去掉 `3 条` | `test_grill_evidence_has_a_hard_format_threshold` |
 | 去掉 `## Reviewer` | `test_grill_report_has_reviewer_and_risk_sections` |
 | 去掉 `触发与门禁` | `test_grill_covers_the_seven_dimensions` |
+| 去掉 `不要阻塞`（事实探查不扣下整条 frontier） | `test_grill_does_not_block_the_frontier_on_a_fact_finding_run` |
 | `templates/review-loop.md` 去掉 `BLOCKED` | `test_review_loop_verdict_has_three_states` |
 | 去掉 `任务逐项验证` | `test_review_loop_covers_the_review_dimensions` |
 | 去掉 `后续批` | `test_review_loop_is_batch_aware` |
