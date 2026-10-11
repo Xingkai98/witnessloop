@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "dogfood-bootstrap",
+  "stage": "grill-adversarial",
+  "reviewer_run_id": "grill-adversarial-reviewer-dogfood-bootstrap-d3226a21e8d0",
+  "author_run_id": "grill-adversarial-author-dogfood-bootstrap-d3226a21e8d0",
+  "base_sha": "843b691de2f7916c4c9e3eb9d40a88480141dfbb",
+  "head_sha": "d3226a21e8d0eb49dd3685f01305d60df0f0c782",
+  "tasks_hash": "2cea26d0be999f591a6e17f960f542128a1052d1e409017662fb6460de3f59f1",
+  "spec_hash": "684b4074be0d4bfd4d9a3aef4bae5a00a06aa23994fe57682d4b5d0d91703bb9",
+  "diff_hash": "69542eabe25d11b422f7c3e486846a3783dca4e2b54a40ba2072398eeb5da984",
+  "report_hash": "d2acfd184d09c9387572ab09a97424075e57b609c1ee20e184b56db85f7f5236",
+  "report_path": "reviews/grill-adversarial.md"
+}
