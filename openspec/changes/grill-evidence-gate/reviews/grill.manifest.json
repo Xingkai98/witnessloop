@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "grill-evidence-gate",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-grill-evidence-gate-0d41b736c0fb",
+  "author_run_id": "grill-author-grill-evidence-gate-0d41b736c0fb",
+  "base_sha": "442a2f7e9a250f650ec8e16778bbfde9184037b0",
+  "head_sha": "0d41b736c0fb66bdcd61d9a4e9172ecccc0106ff",
+  "tasks_hash": "7735b533c9d1c212b725bb8ff5902ea960aec74b0cb1dff8b74cb8e88f2cd7d0",
+  "spec_hash": "a82606eaebfadc75b00acd5ee5fdbcbd356fe4d19d2c16b0b919195c81df04d5",
+  "diff_hash": "ace025c92cd9cc21426c9d42748b47cc014c440d2b26575cfa0a9e386e4365b9",
+  "report_hash": "2382bc97fe2147d9a3d197b26ad79244efbbdeb2d5d068cab0bfddf5fc95ba0a",
+  "report_path": "reviews/grill-review.md"
+}
