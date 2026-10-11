@@ -395,6 +395,7 @@ def test_report_outside_reviews_is_not_evidence(gated: Path, cli):
 def test_report_inside_reviews_is_evidence(gated: Path, cli):
     """对照：报告在 `reviews/` 下（约定的位置）→ 不算 stale。"""
     commit_content(gated, "add-x")
+    write_review(gated, "add-x", stage="grill")
     write_review(gated, "add-x")  # 默认落在 reviews/building-review.md
     commit_all(gated, "证据")
 

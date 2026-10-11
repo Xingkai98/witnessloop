@@ -42,6 +42,7 @@ def default_policy_doc() -> dict:
             "review_manifest_glob": C.DEFAULT_REVIEW_MANIFEST_GLOB,
             "events_file": C.DEFAULT_EVENTS_FILE,
             "protected_write_event_types": list(C.DEFAULT_PROTECTED_EVENT_TYPES),
+            "grill_stage": C.DEFAULT_GRILL_STAGE,
         },
     }
 
@@ -55,6 +56,7 @@ class Policy:
     review_manifest_glob: str
     events_file: str
     protected_write_event_types: tuple[str, ...]
+    grill_stage: str
 
     @property
     def archive_root(self) -> str:
@@ -107,6 +109,9 @@ class Policy:
             protected_write_event_types=tuple(
                 evidence.get("protected_write_event_types")
                 or C.DEFAULT_PROTECTED_EVENT_TYPES
+            ),
+            grill_stage=str(
+                evidence.get("grill_stage") or C.DEFAULT_GRILL_STAGE
             ),
         )
 

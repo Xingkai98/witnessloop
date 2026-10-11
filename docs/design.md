@@ -24,7 +24,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 3. **实现**：测试先行（TDD）。
 4. **独立审阅闭环**：实现完成后由独立零记忆审阅者审，PASS 或 N 轮封顶。
 5. **证据绑定**：审阅结论与 manifest（审阅者身份 + base/head sha + 各 artifact hash）成对提交。
-6. **门禁落 CI**：受保护 artifact 的写入需结构化解释事件；**强制落在 merge boundary（CI required check）**，agent hooks 只作提醒。
+6. **门禁落 CI**：受保护 artifact 的写入需结构化解释事件；**强制落在 merge boundary（CI required check）**。交互层**另有一层本地守卫**（`guard` 动词，随 plugin 以 PreToolUse hook 分发）——**写码前缺 grill 证据就拦**（change `grill-evidence-gate` 起；此前**仅提醒**）。本地守卫是「**防遗忘**」不是防对抗（可用 Bash 写文件绕过，见 §9 风险 4），**锚仍是 CI**。
 
 > **能力边界的诚实表述**：witnessloop **默认只提供「防漂移」**（防止证据文件事后被悄悄改动、防止流程被遗忘），**不提供「防蓄意伪造」**。防伪造需要外部锚（见 §5.3）——v1 不做，文档明写。
 
@@ -142,7 +142,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 1. **证据可自证／可伪造（最高危）**：门禁输入都是 agent 可写的本地文本 → 默认只防漂移。→ 话术降级 + 文档写清；防伪造列为 v2 候选。
 2. **越抽越耦合，且成本被低估**：`check_openspec_artifacts.py` 的常量参数化是主成本。
 3. **required-check 鸡生蛋**：注册 required check 需 admin，fork/新仓不跑 init 就**静默为零**。→ `check` 无 policy 时报「未接入」。
-4. **强制只在 CI 一层**：guard hook 是 PreToolUse、需手动装，CI 只跑 `check`。
+4. **本地守卫是第二层，但可绕**：`guard`（PreToolUse，随 plugin 分发）在**写码前**拦 — 但它只管 `Write|Edit`，**用 Bash 写文件、或不装 plugin 即绕过** ⇒ 它是「防遗忘」不是防对抗。**强制仍以 CI 的 `check` 为准**（change `grill-evidence-gate` 把 v1 的「**hook 仅提醒**」升为「hook 也拦」，同时明确它绕得过去）。
 5. **「独立审阅」剧场化**：`reviewer_run_id` 是自由文本，且兜底路径下 `reviewer ≠ author` **结构性恒真** ⇒ 该校验**不证独立性**，只挡「**显式**把同一个值喂给两个角色」（如只设共享 `WITNESSLOOP_RUN_ID`）。→ 文档说穿；要真身份须设 `WITNESSLOOP_RUN_ID`。
 6. **可见性错配**：私有 witnessloop 会让接入方 CI 全面失败（见 §4.1）→ v1 明确要求公开。
 7. **路径语义**：Windows 反斜杠/大小写/`~` 是已知坑，通用化须显式处理。

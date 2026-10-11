@@ -17,6 +17,7 @@
 1. **两层架构**（门禁层 host-agnostic CLI + 交互层 host 中立模板）——强制必须落在 agent 之外。
 2. **Python + uv、独立新仓、零 asterwynd import**——第二仓 acid test 是"可复用"的唯一证明。
 3. **强制落 CI required check，hooks 只作提醒**——hook 可关、本地、可绕；required check 是唯一绕不过的点。
+   > **2026-10-11 更新（change `grill-evidence-gate`）**：新增本地 `guard`（PreToolUse）作**第二层**——写码前缺 grill 证据就拦。**本条结论不变**：本地层仍可绕（Bash 写文件 / 不装 plugin），**锚仍是 CI**。
 4. **数据契约以 change 目录为核心，证据 = 报告 + manifest 成对**——`report_hash` 钉死结论文件。
 5. **manifest 必填字段集**（`reviewer_run_id` / `base_sha` / `head_sha` / `tasks_hash` / `spec_hash` / `diff_hash` / `report_hash`）——缺 `author_run_id`（见 §4）。
 6. **受保护路径用声明式策略 + 多档 governance 表达**——分档是对抽象。

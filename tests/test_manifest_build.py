@@ -14,6 +14,7 @@ from witnessloop.hashing import sha256_tree
 
 from conftest import commit_all, git
 from helpers import (
+    VALID_GRILL_REPORT,
     change_dir,
     check,
     commit_content,
@@ -65,10 +66,16 @@ def _ready_to_build(repo: Path, cli) -> Path:
 
 def test_round_trip_build_then_check_is_green(repo: Path, cli):
     """核心验收：build 产出的 manifest，check 必须认。"""
-    _ready_to_build(repo, cli)
+    directory = _ready_to_build(repo, cli)
 
-    code, out, err = _build(cli, repo)
-    assert code == C.EXIT_PASS, err
+    assert _build(cli, repo)[0] == C.EXIT_PASS
+    # grill 阶段的证据同样要有——check 现在要求存在 stage=grill 的 manifest。
+    (directory / "reviews" / "grill-review.md").write_text(
+        VALID_GRILL_REPORT, encoding="utf-8"
+    )
+    assert _build(
+        cli, repo, stage="grill", report="reviews/grill-review.md"
+    )[0] == C.EXIT_PASS
     assert (change_dir(repo, CHANGE) / "reviews" / "building.manifest.json").is_file()
 
     commit_all(repo, "证据提交")

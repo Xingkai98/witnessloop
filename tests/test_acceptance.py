@@ -61,6 +61,7 @@ def test_f2_handwritten_allow_event_is_not_blocked(repo: Path, cli):
 
     commit_content(repo, "sneaky", spec_writes=((SPEC, "# canonical spec: retry\n"),))
     # agent 自己手写一行「人类批准」——没有任何外部锚能证伪它。
+    write_review(repo, "sneaky", stage="grill")
     write_review(repo, "sneaky")
     write_event(repo, "sneaky", SPEC, approved_by="user:totally-real-human")
     commit_all(repo, "自称已获批")

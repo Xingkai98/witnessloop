@@ -137,3 +137,26 @@ def test_every_idempotency_claim_is_scoped_or_qualified(relpath: str):
             f"{relpath}:{index + 1} 有「幂等」却既不是在讲 `init`、"
             f"也没带「固定 base 与 revision」限定：{line.strip()}"
         )
+
+
+#: D7 反转后的新口径：**强制**的叙述里不得再把 hooks 说成「只作提醒 / advisory」。
+#: change `grill-evidence-gate` 把本地层从「advisory」升为「会拦」，但反转**此前没有任何守卫**
+#: 钉这处措辞（漏改不会红）——只会留下一份「本仓卖点（文档不漂移）自我打脸」的文档。
+#: 历史决策记录 `docs/reviews/grill-design.md` 不在本名单（它保留原文 + 更新注，属档案）。
+HOOK_POLICY_DOCS = ("docs/design.md", "README.md")
+STALE_HOOK_CLAIMS = (
+    "hooks 只作提醒",
+    "hook 只作提醒",
+    "hooks 只作辅助提醒",
+    "hooks 只 advisory",
+)
+
+
+@pytest.mark.parametrize("relpath", HOOK_POLICY_DOCS)
+def test_docs_no_longer_call_hooks_advisory_only(relpath: str):
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    for claim in STALE_HOOK_CLAIMS:
+        assert claim not in text, (
+            f"{relpath} 仍把 hooks 说成「{claim}」——本地层已升为会拦的守卫（D7）"
+        )
+    assert "guard" in text, f"{relpath} 没提到本地守卫 `guard`"

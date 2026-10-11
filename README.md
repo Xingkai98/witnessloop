@@ -32,6 +32,10 @@ witnessloop manifest build --change add-retry --stage building \
 # CI 入口（fail-closed）
 witnessloop check --base origin/main --head HEAD
 
+# 本地守卫：写目标命中 require_change_for 且缺 grill 证据 → 拦（exit 2）
+# 通常由 host 的 PreToolUse hook 自动调（见下），也可手动/脚本调
+witnessloop guard --path src/x.py
+
 # 精确回滚（文件被改过就拒绝删除并报 diff）
 witnessloop uninit
 ```
@@ -105,7 +109,7 @@ witnessloop 要解决的是这个：把「可信」变成**机械可验证**的�
 - **独立见证**：每个审阅者都是零记忆的独立 agent，不审自己的活，不共享上下文。
 - **证据绑定**：每次门禁通过都绑定可审计证据（审阅者 run id、base/head sha、artifact hash），而不是一句手写的 `PASS`。
 - **循环收敛**：设计与实现各走一轮「审阅 → 修复 → 再审」，有界轮数封顶。
-- **门禁落 merge boundary**：强制放在 CI required check，agent hooks 只作辅助提醒——不依赖模型自律。
+- **门禁落 merge boundary**：强制放在 CI required check。交互层另有一层**本地守卫**（写码前缺 grill 证据就拦），但它是「**防遗忘**」不是防对抗——用 Bash 写文件、或不装 plugin 就能绕过，**真正的锚仍是 CI**。
 
 ## 名字
 

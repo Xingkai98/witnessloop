@@ -43,6 +43,10 @@ DEFAULT_REVIEW_MANIFEST_GLOB = "reviews/*.manifest.json"
 DEFAULT_EVENTS_FILE = "workflow-events.jsonl"
 DEFAULT_PROTECTED_EVENT_TYPES = ("protected_path_write",)
 
+# 承载 grill 决策记录的审阅阶段名（policy.evidence.grill_stage 可覆写）。
+# `check` 校验「该 stage 的 manifest 所绑定报告」的正文完备性（见 evidence.py）。
+DEFAULT_GRILL_STAGE = "grill"
+
 # 数据契约 schema 标签（写入各 json 的 `schema` 字段，便于人工识别）。
 SCHEMA_POLICY = "witnessloop/policy@v1"
 SCHEMA_INIT_MANIFEST = "witnessloop/init-manifest@v1"
@@ -58,7 +62,10 @@ HASHED_ARTIFACTS = (
 )
 
 # review manifest 必填字段（design §5.3）。`diff_hash` 是 informational，不在此列。
+# `stage` 纳入必填（change grill-evidence-gate D2b）：它此前「写而不校」，而 `check`
+# 靠它定位 grill 报告——不校验则 stage 拼错会静默失效。
 REVIEW_MANIFEST_REQUIRED_FIELDS = (
+    "stage",
     "reviewer_run_id",
     "author_run_id",
     "base_sha",
@@ -74,3 +81,8 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_NOT_ONBOARDED = 3
+
+# `guard` 的「被守卫拦住」。数值与 EXIT_USAGE 相同（2），但**语义不同**：
+# CC 的 PreToolUse hook 用 exit 2 表示 block。同一数字在两个动词里语义相反，
+# docs/gate.md §6 的退出码表**按动词分开写**（change grill-evidence-gate D5/R10）。
+EXIT_BLOCKED = 2
