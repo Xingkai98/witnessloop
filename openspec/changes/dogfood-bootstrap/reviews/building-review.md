@@ -175,3 +175,40 @@
 - I1 已消矛盾（spec + proposal + design 三处对齐、且补正向 Scenario 有测试背书）、I2 勾选如实、I3 去重与
   gate_ref 沿用台账**均落实且实测通过**，无引入新问题 ⇒ **verdict = PASS**，可进 §6 收尾
   （`manifest build` × 3 → `check` 绿）。
+
+## 第 3 轮审阅（首次 PR 暴露的 N1 修复）
+
+- 时间: 2026-10-11T08:01:58Z
+- 裁定: **PASS**
+- 审阅对象: `git diff d3226a2..8935970`（commit `8935970` 相对 R2 已审 `d3226a2` 的 delta）
+- **根因核验：成立（实测复现）**。`gitutil.resolve_base`（`src/witnessloop/gitutil.py:60-71`）
+  在无 `--base`／无 `WITNESSLOOP_BASE_REF` 时读 `GITHUB_BASE_REF`（`:65-67`）并返回 `origin/<base>`；
+  测试仓由 `repo` fixture（`tests/conftest.py:33-44`）用 `git init -q -b main` 建成，**从未 `git remote add`**
+  ⇒ 无 remote。`manifestcmd.run_build` 据此 `rev_parse(root, "origin/main")` 恒 None，命中
+  `src/witnessloop/manifestcmd.py:106-109` 的 `_fail("无法解析 base ref：origin/main")` → exit 1。
+  该分支（`GITHUB_BASE_REF`）在 `d3226a2` 已存在、本次 delta **未动 `gitutil.py`** ⇒ 确属**先前潜伏**、
+  首次走 `pull_request` 才暴露，与 change 功能无关。
+- **修法核验：恰到好处**。`_AMBIENT_ENV`（`tests/conftest.py:88-96`）清 7 个变量，恰为**代码实际读取的全集**：
+  `GITHUB_BASE_REF`＋`WITNESSLOOP_BASE_REF`（gitutil）、`WITNESSLOOP_HEAD_REF`（checkcmd:45）、
+  `WITNESSLOOP_RUN_ID`＋角色专用 `..._REVIEWER_/..._AUTHOR_RUN_ID`（agentenv:74）、`WITNESSLOOP_TEMPLATES_DIR`
+  （agentenv:88）。对 `src/`＋`tests/` 穷举 `os.environ`／`os.getenv`（仅 gitutil/checkcmd/agentenv 共 5 处）
+  确认**无第 8 个**环境入口 ⇒ **无漏清**。
+  **无清过头**：autouse 于 setup 先 `delenv`，测试体内的 `monkeypatch.setenv` 在其后执行、覆盖之，
+  故 `test_manifest_build.py:302`（角色 id 环境优先）与 `test_check_onboarding.py:72`（`WITNESSLOOP_BASE_REF`）
+  仍实测到「环境优先」语义、未被架空；且**无任何测试**依赖宿主 `GITHUB_BASE_REF`（无测试直接测该分支）。
+  `monkeypatch` 为同一函数级实例，undo 逆序执行、无泄漏。
+- **实测**（`export PATH=/home/happy/.local/bin:$PATH`，本机 shell 未设任何 `GITHUB_*`／`WITNESSLOOP_*`）：
+  1. `GITHUB_BASE_REF=main uv run pytest -q`（PR 等价）→ **356 passed**；
+  2. `uv run pytest -q`（本地）→ **356 passed**；
+  3. **反向验证**：将 `tests/conftest.py` 临时换成 `d3226a2:tests/conftest.py`（无 fixture）后
+     `GITHUB_BASE_REF=main uv run pytest tests/test_manifest_build.py -q` → **14 failed, 15 passed**，
+     逐条正是「不带 `--base` 调 `_build`」的那 14 条（带 `--base main` 者与更早失败者不受累）——**证明确由此修好**；
+     随后已**逐字节复原** `conftest.py`（`git show HEAD:tests/conftest.py | diff -` 通过），只读边界未破。
+- **文档**：`design.md` §3 文件清单补 `tests/conftest.py` 一行、R10（`:123`）如实记录新影响面
+  （CI 设 `GITHUB_BASE_REF=main` → `origin/main` 恒解析不出 → 14 条红、修法、验证方式）；`tasks.md` A9
+  勾选与「`GITHUB_BASE_REF=main` 全量 356 passed」断言与本轮实测**逐数吻合**。均如实。
+- 新问题: **无阻塞项**。一处**观察性 nit**（不影响裁定）：该 fixture 无**随仓的回归测试**守卫——
+  本地不设 `GITHUB_BASE_REF`，删掉 fixture 本地仍绿，只有 CI 的 `pull_request` 环境能抓；此为该类
+  环境污染 bug 的固有性质，且 CI 即有效守卫，非缺陷。
+- 结论: 根因成立、修法变量集恰为代码读取全集（无漏清/无清过头）、两环境全绿且反向验证 14 条确红、
+  文档如实 ⇒ **verdict = PASS**。
