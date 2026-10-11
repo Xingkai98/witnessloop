@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "dogfood-bootstrap",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-dogfood-bootstrap-8935970bcf5f",
+  "author_run_id": "grill-author-dogfood-bootstrap-8935970bcf5f",
+  "base_sha": "843b691de2f7916c4c9e3eb9d40a88480141dfbb",
+  "head_sha": "8935970bcf5ff89ba50dea971895a921744d2df4",
+  "tasks_hash": "cc8f01eadf021571d7ebf61f3be2e7776db4d70708944a584844b51dd3a17db2",
+  "spec_hash": "684b4074be0d4bfd4d9a3aef4bae5a00a06aa23994fe57682d4b5d0d91703bb9",
+  "diff_hash": "b9080a76e31ff802342dd8d5f9bd08db9b0243fd765837b7dc03900759414c83",
+  "report_hash": "59de832bf4a5674595b86503aec1246930e4f59e2dab660462bd57fa12f6f87f",
+  "report_path": "reviews/grill-review.md"
+}
