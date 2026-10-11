@@ -105,6 +105,35 @@ def render_diff(rel: str, current: str, desired: str) -> str:
     )
 
 
+def conflicting_files(root: Path, desired: dict[str, str]) -> list[tuple[str, str, str]]:
+    """``desired`` 里「磁盘已存在且内容不同」的文件 → ``(rel, 当前内容, 期望内容)``。
+
+    init 的两处冲突判定（未接入时目标文件已存在、已接入时本次请求与已落地不同）
+    共用这一处——两处各写一遍会漂（回归审阅 I3）。
+    """
+    out: list[tuple[str, str, str]] = []
+    for rel, want in desired.items():
+        path = root / rel
+        if path.exists():
+            current = path.read_text(encoding="utf-8")
+            if current != want:
+                out.append((rel, current, want))
+    return out
+
+
+def ledger_gate_ref(manifest_path: Path) -> str | None:
+    """台账里记录的 ``gate_ref``（重跑 ``init`` 时的缺省来源）；坏台账/不存在 → None。
+
+    不读它的话，曾以非默认 ``--gate-ref`` 接入的仓，之后跑不带该 flag 的 `init`
+    会因 caller workflow 内容不同被误判「冲突」——行为 fail-closed 但反直觉（回归审阅 I3）。
+    """
+    try:
+        doc = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return doc.get("gate_ref") if isinstance(doc, dict) else None
+
+
 def run(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     if not root.is_dir():
@@ -120,19 +149,18 @@ def run(args: argparse.Namespace) -> int:
             print(f"init：{exc}", file=sys.stderr)
             return C.EXIT_FAIL
 
-    desired = desired_files(args.gate_ref, policy_doc)
     manifest_path = root / C.INIT_MANIFEST_PATH
+    # gate_ref 的缺省：已接入的仓沿用**台账**里的值（否则曾以非默认 --gate-ref 接入的仓，
+    # 之后跑不带该 flag 的 init 会因 caller 内容不同被误判「冲突」）；未接入用出厂默认。
+    # 显式传 --gate-ref 始终优先。
+    gate_ref = args.gate_ref or ledger_gate_ref(manifest_path) or C.DEFAULT_GATE_REF
+    desired = desired_files(gate_ref, policy_doc)
 
     if manifest_path.is_file():
         return _already_initialized(root, desired, manifest_path)
 
     # 只增不改：目标文件已存在且内容不同 → 冲突，报 diff 并拒绝。
-    conflicts = [
-        (rel, (root / rel).read_text(encoding="utf-8"), content)
-        for rel, content in desired.items()
-        if (root / rel).exists()
-        and (root / rel).read_text(encoding="utf-8") != content
-    ]
+    conflicts = conflicting_files(root, desired)
     if conflicts:
         print("init：检测到冲突（只增不改，拒绝覆盖已有文件）：", file=sys.stderr)
         for rel, current, want in conflicts:
@@ -151,7 +179,7 @@ def run(args: argparse.Namespace) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     manifest_path.write_text(
-        policy.dumps(build_manifest(root, desired, args.gate_ref)), encoding="utf-8"
+        policy.dumps(build_manifest(root, desired, gate_ref)), encoding="utf-8"
     )
 
     print("init：已接入 witnessloop（文件未 commit，请人工审阅后提交）：")
@@ -206,12 +234,7 @@ def _already_initialized(
     # 是不是另一份」（如 ``--policy`` 换了内容、``--gate-ref`` 换了）。
     # 早先只看台账 hash，于是「已接入后再 init --policy <不同>」会被判幂等并 exit 0
     # ——用户的 policy 被悄悄忽略（change dogfood-bootstrap 对抗验证 CRQ-B / R2）。
-    conflicts = [
-        (rel, (root / rel).read_text(encoding="utf-8"), want)
-        for rel, want in desired.items()
-        if (root / rel).exists()
-        and (root / rel).read_text(encoding="utf-8") != want
-    ]
+    conflicts = conflicting_files(root, desired)
     if conflicts:
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"

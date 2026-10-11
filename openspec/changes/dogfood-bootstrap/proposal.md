@@ -49,5 +49,5 @@ witnessloop 的核心主张是「机械强制、不靠自觉」。但开发**它
 ## 测试策略
 
 - `init --policy` 走 TDD：单测覆盖「指定 policy → 内容/台账一致 → `uninit` 能回滚」、
-  「policy 非法/路径逃逸 → 拒」、幂等。
+  「policy 缺失/非法 JSON/非对象 → 拒」、幂等；**仓外路径允许**（seed 不入库，见 Q5）。
 - 端到端：A 自己的 change 目录通过 `check`（本仓首个真实 dogfood 样本）。

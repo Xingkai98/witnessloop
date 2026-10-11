@@ -60,9 +60,9 @@
 
 > 本仓**自己接入自己**：详见 change 目录 `openspec/changes/dogfood-bootstrap/`。
 
-- [ ] G1 `init --policy <file>`（含「已接入后给不同 policy 须报冲突」的 R2 修复）
-- [ ] G2 本仓接入：`.witnessloop/{policy.json,init-manifest.json}` + `.github/workflows/witnessloop.yml`
-- [ ] G3 文档同步（README / docs/gate.md / docs/design.md / 本文件）+ 漂移守卫测试
+- [x] G1 `init --policy <file>`（含「已接入后给不同 policy 须报冲突」的 R2 修复）
+- [x] G2 本仓接入：`.witnessloop/{policy.json,init-manifest.json}` + `.github/workflows/witnessloop.yml`
+- [x] G3 文档同步（README / docs/gate.md / docs/design.md / 本文件）+ 漂移守卫测试
 - [ ] G4 端到端证据链：两段提交 + `manifest build` × 3 + `check` 绿
 - [ ] G5（**需用户**）`main` 开 branch protection：**require PR** + required check
 

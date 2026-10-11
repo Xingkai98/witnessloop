@@ -122,9 +122,9 @@
 
 ## 5. 测试策略
 
-- **单测（TDD）**：`init --policy` —— 指定内容落盘且与台账一致；幂等；`uninit` 往返；非法 JSON / 非对象 /
-  路径逃逸 → 拒且不写；与 `--dry-run` 组合；**已初始化后给不同 policy → 冲突**（⚠️ 现状是 no-op，
-  这条测试会先红，正是 R2 的驱动）。
+- **单测（TDD）**：`init --policy` —— 指定内容落盘且与台账一致；幂等；`uninit` 往返；
+  非法 JSON / 非对象 → 拒且不写；**仓外路径允许**（seed 不入库，Q5）；与 `--dry-run` 组合；
+  **已初始化后给不同 policy → 冲突**（⚠️ 现状是 no-op，这条测试会先红，正是 R2 的驱动）。
 - **端到端（本仓）**：A 自己的 change 目录 + 两段提交 + `manifest build` × 3 + `check` 绿。
 - **负例**：改 `.witnessloop/policy.json` 不写事件 → `check` 拦；删某份 manifest → `check` 拦（孤儿/缺失）。
 

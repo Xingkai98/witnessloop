@@ -140,3 +140,24 @@ def test_init_policy_after_initialized_same_policy_is_idempotent(
     code, out, _ = cli("init", "--root", str(repo), "--policy", str(seed))
     assert code == C.EXIT_PASS
     assert "幂等" in out
+
+
+def test_rerun_without_gate_ref_after_custom_is_idempotent(repo: Path, cli, read_json):
+    # 回归审阅 I3：曾以非默认 --gate-ref 接入的仓，之后**不带**该 flag 重跑 init
+    # 不得误判「冲突」——gate_ref 缺省应沿用台账里的值。
+    custom = "acme/wl/.github/workflows/gate.yml@v9"
+    cli("init", "--root", str(repo), "--gate-ref", custom)
+    code, out, _ = cli("init", "--root", str(repo))
+    assert code == C.EXIT_PASS
+    assert "幂等" in out
+    assert read_json(repo / C.INIT_MANIFEST_PATH)["gate_ref"] == custom
+
+
+def test_rerun_with_explicit_different_gate_ref_conflicts(repo: Path, cli):
+    # 显式传**不同**的 --gate-ref 是「要求换内容」→ 冲突（与 --policy 同语义）。
+    cli("init", "--root", str(repo))
+    code, _, err = cli(
+        "init", "--root", str(repo), "--gate-ref", "acme/wl/.github/workflows/gate.yml@v9"
+    )
+    assert code == C.EXIT_FAIL
+    assert "冲突" in err

@@ -31,6 +31,11 @@ witnessloop 仓库自身的非平凡改动 SHALL 落在 `openspec/changes/<id>/`
 - **Then** 报冲突并非零退出，**不得**静默忽略
 
 ### Scenario: 非法 policy 输入
-- **Given** `--policy` 指向缺失 / 非法 JSON / 非对象 / 逃逸路径的文件
+- **Given** `--policy` 指向缺失 / 非法 JSON / 非对象 的文件
 - **When** 运行 `init --policy`
 - **Then** 报错并非零退出，**不写出任何文件**
+
+### Scenario: seed 在仓外（允许）
+- **Given** `--policy` 指向**仓外**路径（定制 seed 不入库，常在仓外）
+- **When** 运行 `init --policy`
+- **Then** 正常接入——**不**因「逃逸」报错（仓外只是输入来源，不是写入目标）

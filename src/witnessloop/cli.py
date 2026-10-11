@@ -42,8 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.add_argument(
         "--gate-ref",
-        default=DEFAULT_GATE_REF,
-        help=f"caller workflow 引用的 reusable workflow（默认 {DEFAULT_GATE_REF}）",
+        default=None,
+        help=f"caller workflow 引用的 reusable workflow；缺省时：已接入的仓沿用台账里的值，"
+        f"否则用出厂默认 {DEFAULT_GATE_REF}",
     )
     p_init.add_argument(
         "--policy",
