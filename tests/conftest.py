@@ -77,3 +77,26 @@ def read_json():
         return json.loads(Path(path).read_text(encoding="utf-8"))
 
     return _read
+
+
+#: 会**污染**测试的宿主环境变量。
+#:
+#: CI 在 `pull_request` 事件下会设 `GITHUB_BASE_REF`，而测试仓是**无 remote 的 tmp 仓**
+#: ——`gitutil.resolve_base` 一旦据此返回 `origin/<base>`，`rev-parse` 必然失败。
+#: 首次 PR 实测：`test_manifest_build.py` 14 条一起红（此前从没走过 PR，故从未暴露）。
+#: 测试必须对宿主环境免疫；**某条环境语义**由测试自己 `monkeypatch.setenv` 精确构造。
+_AMBIENT_ENV = (
+    "GITHUB_BASE_REF",
+    "WITNESSLOOP_BASE_REF",
+    "WITNESSLOOP_HEAD_REF",
+    "WITNESSLOOP_RUN_ID",
+    "WITNESSLOOP_REVIEWER_RUN_ID",
+    "WITNESSLOOP_AUTHOR_RUN_ID",
+    "WITNESSLOOP_TEMPLATES_DIR",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_env(monkeypatch):
+    for name in _AMBIENT_ENV:
+        monkeypatch.delenv(name, raising=False)

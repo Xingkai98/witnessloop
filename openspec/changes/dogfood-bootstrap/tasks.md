@@ -14,6 +14,9 @@
 - [x] A6 **单测（先红，R2 驱动）**：已接入后再 `init --policy <与已落地不同>` → **报冲突非零退出**（现状是静默 no-op）
 - [x] A7 实现：`cli.py` 的 `init` 加 `--policy`；`initcmd.desired_files` 接受外部 policy 文本；`run` 读取+轻校验
 - [x] A8 实现：`_already_initialized` 新增「desired 与已落地不同 ⇒ 冲突」分支（兑现 A6）
+- [x] A9 **首次 PR 暴露的修复（R10）**：`tests/conftest.py` 加 autouse fixture 清宿主环境变量
+      （`GITHUB_BASE_REF` 等）——此前 `pull_request` 环境下 `test_manifest_build.py` 14 条红。
+      验证：`GITHUB_BASE_REF=main uv run pytest -q` → 356 passed
 
 ## B. 本仓接入（D1/D3/D5）——**已完成**
 

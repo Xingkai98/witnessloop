@@ -104,6 +104,7 @@
   **新增**「已初始化后 desired 不同 ⇒ 冲突」分支（D2 R2）。
 - `.witnessloop/policy.json`（本仓）：默认 + `require_change_for` 补 `templates/**`、`plugin/**`。
 - `.github/workflows/witnessloop.yml`：init 产出的 caller。
+- `tests/conftest.py`：autouse fixture 清宿主环境变量（测试 **hermetic**，见 R10）。
 - `README.md` / `docs/gate.md` / `docs/design.md` / `docs/tasks.md`：文档同步。
 
 ## 4. 风险
@@ -119,6 +120,7 @@
 7. **R7**：`gh` 两项现状断言无法从仓内核实，实现期实仓复核。
 8. **R8**：change 目录必须在**整条 PR 生命周期**里持续完整；两段提交须在补齐后才开始。
 9. **R9（诚实边界）**：本 change **不修**「写代码前的设计 grill 本地无执行体」——那是 #7 的 B 轨；也不修「报告正文校验」——那是本仓 #2。
+10. **R10（首次 PR 暴露，本 change 内修）**：`tests/` **非 hermetic**——CI 在 `pull_request` 下设 `GITHUB_BASE_REF=main`，`gitutil.resolve_base` 据此返回 `origin/main`，而测试仓是**无 remote 的 tmp 仓**，`origin/main` 恒解析不出 ⇒ `test_manifest_build.py` **14 条一起红**（此前零 PR，从未暴露）。修法：`tests/conftest.py` 加 autouse fixture 清宿主环境变量（`GITHUB_BASE_REF` / `WITNESSLOOP_*`），并**用 `GITHUB_BASE_REF=main` 跑全量**验证。
 
 ## 5. 测试策略
 
