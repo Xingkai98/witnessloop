@@ -22,6 +22,7 @@ uv tool install git+https://github.com/Xingkai98/witnessloop@v1
 # 接入目标仓：幂等、只增不改、不 auto-commit
 cd your-repo && witnessloop init --dry-run   # 先看要写什么
 witnessloop init                             # 落盘，然后**人工审阅并提交**
+witnessloop init --policy /path/to/policy.json   # 需要非默认 policy 时（见下「本仓自身接入」）
 
 # 审阅跑完，落证据（复用 check 同一套哈希；幂等、不 auto-commit）
 witnessloop manifest build --change add-retry --stage building \
@@ -44,9 +45,27 @@ claude --plugin-dir /path/to/witnessloop/plugin
 
 分发按设计走 **git / 本地目录，不上 marketplace**（design §4）。
 
+### 本仓自身接入（dogfood）
+
+witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`，非平凡改动落在
+`openspec/changes/<id>/` 下、内容与证据分离提交，PR 由 required check 拦。本仓的
+`require_change_for` 比出厂默认多收 `templates/**`、`plugin/**`（交互层也是产品面）。
+
+本仓**需要定制 policy**，所以接入用 `init --policy <seed>` 一次写成（seed 是仓外的临时
+文件、**不入库**；`.witnessloop/policy.json` 是唯一权威）——这样 policy 是「新增」而非
+「修改」，免解释事件、台账自洽、`uninit` 可回滚。
+
+> **诚实前提**：**接入本身**只能靠**本地** `witnessloop check` + 人工 review 兜一次——
+> 因为它才引入 caller workflow、`main` 的 required check 那时尚未勾选；**接入之后**的 PR
+> 才被机械拦。这是自举的固有鸡生蛋，不是遗漏。
+>
+> 另：`init --policy` 是接入期新增的动词选项，**尚未随 `@v1` 发布**——自己接入时跑源码版
+> （`uv run witnessloop …`），公众要等**新 tag**。
+
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
 
-`init` 写一份默认 policy，目标仓按需改：
+`init` 写一份默认 policy。要定制就用 `init --policy <file>` **一次写成**（事后手改会打破
+init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)）：
 
 - `protected_paths`：写入需结构化解释事件（默认 `openspec/specs/**`、`.witnessloop/**`）。
 - `require_change_for`：命中这些 glob 的改动**必须**挂一个 change 目录。默认覆盖常见

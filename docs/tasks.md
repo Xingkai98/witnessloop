@@ -56,12 +56,23 @@
 - [x] F4 负例 (c)：不跑 `init` → `check` 报「未接入」
 - [x] F5 负例 (d)：`init` → `uninit` 回滚往返
 
+## G. dogfood-bootstrap（本仓自举接入）
+
+> 本仓**自己接入自己**：详见 change 目录 `openspec/changes/dogfood-bootstrap/`。
+
+- [ ] G1 `init --policy <file>`（含「已接入后给不同 policy 须报冲突」的 R2 修复）
+- [ ] G2 本仓接入：`.witnessloop/{policy.json,init-manifest.json}` + `.github/workflows/witnessloop.yml`
+- [ ] G3 文档同步（README / docs/gate.md / docs/design.md / 本文件）+ 漂移守卫测试
+- [ ] G4 端到端证据链：两段提交 + `manifest build` × 3 + `check` 绿
+- [ ] G5（**需用户**）`main` 开 branch protection：**require PR** + required check
+
 ## 里程碑
 
 - **M1**：A + B + C + D（门禁层可跑，`check` 能在第二仓拦下缺证据 PR）——**已完成**（分支 `mvp-m1/2026-10-09`）
 - **M2**：E（交互层 CC plugin 可用）——**已完成**（分支 `mvp-m2/2026-10-09`，
   含支撑动词 `manifest build`）
 - **M3**：F（第二仓 acid test 全绿，含负例）——**已完成**（`wl-test`，见 `docs/reviews/m3-acid-test.md`）
+- **M4**：G（本仓自举接入 / dogfood）——**进行中**（`openspec/changes/dogfood-bootstrap/`）
 
 ## 明确不做（v1）
 

@@ -1,0 +1,27 @@
+{
+  "schema": "witnessloop/policy@v1",
+  "changes_root": "openspec/changes",
+  "protected_paths": [
+    "openspec/specs/**",
+    ".witnessloop/**"
+  ],
+  "require_change_for": [
+    "src/**",
+    "templates/**",
+    "plugin/**"
+  ],
+  "required_artifacts": [
+    "proposal.md",
+    "design.md",
+    "tasks.md",
+    "specs",
+    "reviews"
+  ],
+  "evidence": {
+    "review_manifest_glob": "reviews/*.manifest.json",
+    "events_file": "workflow-events.jsonl",
+    "protected_write_event_types": [
+      "protected_path_write"
+    ]
+  }
+}

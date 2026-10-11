@@ -30,6 +30,19 @@ openspec/changes/<change-id>/
   workflow-events.jsonl           # 结构化解释事件（可选，受保护写入时需要）
 ```
 
+### 1.1 `init --policy <file>`（自定义 policy）
+
+默认 `init` 只写出厂 policy；目标仓常需定制（例如把交互层目录纳入 `require_change_for`）。
+`init --policy <file>` 用**给定文件的内容**作为 policy，其余不变——`init` 仍幂等、只增不改、
+不 auto-commit、支持 `--dry-run`。一次写成正确内容 ⇒ policy 是「**新增**」而非「修改」，
+天然免解释事件、台账自洽、`uninit` 可回滚（反之，先 `init` 再手改会打破 init-manifest 台账，
+`uninit` 因 hash 不符**整批拒删**）。
+
+- **轻校验**：只要求「文件存在 + JSON 根是对象」；schema/字段的**语义**合法性由 `check` 的
+  `Policy.from_doc` 兜底——两处各造一套判定会引入漂移面。`--policy` **允许指向仓外路径**
+  （定制 seed 不入库，见 README「本仓自身接入」）。
+- 已接入后再 `init --policy <与已落地不同>` → **报冲突**并以非零退出（**不**静默忽略）。
+
 ## 2. `policy.json`
 
 ```json

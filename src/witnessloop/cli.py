@@ -45,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_GATE_REF,
         help=f"caller workflow 引用的 reusable workflow（默认 {DEFAULT_GATE_REF}）",
     )
+    p_init.add_argument(
+        "--policy",
+        default=None,
+        help="用给定 JSON 文件的内容作为 policy（替换出厂默认）；缺省用出厂默认 policy。"
+        "轻校验（仅要求可解析为 JSON 对象），语义合法性由 `check` 兜底",
+    )
 
     p_uninit = sub.add_parser(
         "uninit", help="依 init-manifest.json 精确回滚 witnessloop 的接入"

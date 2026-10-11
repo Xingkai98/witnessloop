@@ -2,6 +2,7 @@
 
 > 状态：**设计已定**（经 grill + 独立对抗验证 + 用户逐项确认）。
 > **实现状态：MVP 完成**（M1+M2+M3，全流程在第二仓跑通，见 `docs/tasks.md` 与 `docs/reviews/m3-acid-test.md`）。
+> **本仓已自举接入（dogfood）**：`.witnessloop/` + `openspec/changes/` 契约 + `init --policy`；见 README「本仓自身接入」。
 > v0.1：2026-10-09 起草；v0.2：2026-10-09 收敛；其后增补 §4.1（分发与可见性，acid test 实测）。
 > 证据见 [`docs/reviews/grill-design.md`](reviews/grill-design.md)、[`docs/reviews/grill-adversarial.md`](reviews/grill-adversarial.md)、[`docs/reviews/m1-acid-test.md`](reviews/m1-acid-test.md)。
 
@@ -64,7 +65,9 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 **v1 交付 3 个门禁动词 + 1 个证据产出动词**：
 
-- `init`：把 witnessloop 接入目标仓。**幂等、只增不改、不 auto-commit、支持 `--dry-run`**。写入：
+- `init`：把 witnessloop 接入目标仓。**幂等、只增不改、不 auto-commit、支持 `--dry-run`**。
+  `--policy <file>` 用**给定文件的内容**作 policy（替换出厂默认；**轻校验**，语义合法性由
+  `check` 兜底）——供需要定制的仓一次写成，避免「先 init 再手改」打破 init-manifest 台账。写入：
   - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式 + `require_change_for`）
   - `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
   - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
@@ -148,6 +151,6 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 
 **在第二个真实仓库里，用机械门禁把「设计与实现的证据」绑进 CI required check。**
 
-**做**：单二进制 + 3 个门禁动词（`init` / `check` / `uninit`）+ 支撑动词 `manifest build` · policy（受保护路径 + 必需 artifact + `require_change_for` + 证据格式）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
+**做**：单二进制 + 3 个门禁动词（`init` / `check` / `uninit`）+ 支撑动词 `manifest build` · policy（受保护路径 + 必需 artifact + `require_change_for` + 证据格式；`init --policy` 定制）· manifest（含 `author_run_id`）· CC plugin 的 `grill` / `review-loop`（重写、只读、无状态）。
 
 **不做**：签名/密钥 · marketplace · spec 适配器抽象 · 状态机/projection/replay · platform-gate 自动注册 · `policy upgrade` · 证据分档机制 · 多 host · 7 动词 · schema 冻结 · 私有仓接入。
