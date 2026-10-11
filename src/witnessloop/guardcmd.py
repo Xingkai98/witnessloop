@@ -2,7 +2,12 @@
 
 hook 属**交互层**（host 特定，见 `plugin/hooks/`），但本动词本身 **host 中立**——
 任何宿主都能调：给一组**写目标路径**，命中 `policy.require_change_for` 且当前 change
-的 grill 证据不完备 ⇒ exit 2（拦）。
+的 grill 证据不完备 ⇒ 拦（`EXIT_FAIL` = 1）。
+
+**退出码**（与 `check` 同形状）：0 放行 / **1 拦住** / 2 用法错误 / 3 未接入（放行）。
+**为什么不直接用 CC 的 2**：2 与「argparse 用法错误」同值 ⇒ **旧版 CLI 不认识 `guard`**
+时 argparse 退 2，会被宿主当成 block，把 fail-open 反转成 fail-closed（回归审阅 Issue 3）。
+由 `plugin/hooks/guard.sh` 把 1 映射成 host 的 block 约定。
 
 **诚实边界**：本动词是「**防遗忘**」，**不是防对抗**——agent 可以改用 Bash 写文件
 （`Write|Edit` matcher 不覆盖它）、也可以不装插件。真正的锚仍是 CI required check。
@@ -121,4 +126,4 @@ def run(args: argparse.Namespace) -> int:
         f"确有需要，设 {SKIP_ENV}=1 跳过。",
         file=sys.stderr,
     )
-    return C.EXIT_BLOCKED
+    return C.EXIT_FAIL

@@ -265,15 +265,19 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 
-`guard`（本地守卫，见 §8）：
+`guard`（本地守卫，见 §8）——**与 `check` 同形状**：
 
 | 码 | 含义 |
 |---|---|
 | 0 | **放行**（含：写文档豁免 / 推不出 change / 未给路径） |
-| 2 | **拦住**——命中 `require_change_for` 且当前 change 的 grill 证据不完备。也是 host hook 的 block 约定 |
+| 1 | **拦住**——命中 `require_change_for` 且当前 change 的 grill 证据不完备 |
+| 2 | 用法错误（argparse） |
 | 3 | **未接入**——不拦（本地守卫对未接入的仓无意见） |
 
-⚠️ `2` 在 `check` 是「用法错误」、在 `guard` 是「拦住」；`3` 在 `check` 是「不放行」、在 `guard` 是「放行」。
+⚠️ **`guard` 的「拦住」是 1，不是 2**：2 与「argparse 用法错误」同值 ⇒ **旧版 CLI 不认识
+`guard` 子命令**时 argparse 退 2，会被宿主当成 block，把**每个 `Write|Edit` 都拦下**
+（fail-open 反转成 fail-closed）。由 `plugin/hooks/guard.sh` 把 **1 → host 的 block（CC 的 2）**。
+`3` 在两动词里仍相反：`check` 是「不放行」、`guard` 是「放行」。
 
 `base` 解析顺序：`--base` → `WITNESSLOOP_BASE_REF` → `GITHUB_BASE_REF`（→ `origin/<ref>`）
 → `origin/main` \| `main` \| `origin/master` \| `master`。
@@ -303,11 +307,13 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 ⚠️ **对**接入方**是行为变更**：历史无 grill manifest 的 change 会新增一条红。
 
 **`guard` 侧**：`witnessloop guard --root R --path P [--path P2] [--change ID]`
-——写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ **2（拦）**。
+——写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ **1（拦）**。
 
 - 当前 change：`--change` → `WITNESSLOOP_CHANGE` → **分支名首段**；**推得的 id 必须命中现存
   **active** change 目录**，否则按「推不出」处理（`fix/login-timeout` 这类分支的首段不是 change 目录）。
 - **推不出 / 未给路径 / 写文档 / 未接入 ⇒ 放行**（fail-open）；写文档豁免是**死锁防线**（否则永远产不出证据）。
+- **`--path` 传的是文件**（host hook 给的是 `file_path`）。传**目录**（如 `--path src`）不命中 `src/**`
+  ⇒ 静默放行（声明的 fail-open 边界）；大小写**不折叠**同理（见 §2 的归一化边界）。
 - 逃生口：`WITNESSLOOP_SKIP_GUARD=1`。
 - CC hook 随 plugin 分发（`plugin/hooks/`）；**装了 plugin 还要装 CLI**，否则命令非 2 退出 = CC 视为不阻塞 = fail-open。
 - **诚实边界**：本地 guard 是「**防遗忘**」不是防对抗——用 **Bash 写文件**（`matcher` 只覆盖 `Write|Edit`）

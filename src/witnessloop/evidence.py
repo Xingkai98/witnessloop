@@ -109,7 +109,12 @@ def _is_unconfirmed(raw: str) -> bool:
 def grill_evidence_findings(
     text: str, *, report_path: str = "reviews/grill-review.md"
 ) -> list[Finding]:
-    """判一份 grill 决策记录是否完备（D1）。空列表 = 合格。"""
+    """判一份 grill 决策记录是否完备（D1）。空列表 = 合格。
+
+    **已知宽松面**（属「防漂移不防伪造」的既定边界，非缺陷）：`## Open Questions`
+    为空时**无 Qn 可确认** ⇒ 该条判据**空真**通过；占位启发式是短答复子串匹配
+    （`待确认（稍后）` 这类「短、非精确实例」会被当实质确认）。
+    """
     sections = _sections(text)
     findings: list[Finding] = []
 

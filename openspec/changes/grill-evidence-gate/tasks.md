@@ -59,6 +59,18 @@
 - [ ] G2 独立 `review-loop`（PASS 或 3 轮封顶）
 - [ ] G3 PR（本仓 branch protection 已开：require PR + required check `gate / check`）
 
+## H. R1 审阅修复（building-review CHANGES_REQUESTED → 逐条）
+
+- [x] **H1（Issue 1）** 补 `check` 侧三条**能变红**的测试：`tests/test_check_grill_evidence.py`
+      （不合格正文 → 红；缺 `stage` → 红；`stage=grills` → 红且点名「现有 stage：grills」）
+- [x] **H2（Issue 2）** 补 `WITNESSLOOP_CHANGE` env 覆盖分支名的用例（`tests/test_guard.py`）
+- [x] **H3（Issue 3，真误拦）** `guard` 的「拦」由 **2 改 1**（2 = argparse 用法错误；旧版 CLI 不认识
+      `guard` 时退 2，直传会被 CC 当 block ⇒ 每个 `Write|Edit` 全被拦）；`plugin/hooks/guard.sh`
+      把 **1 → CC 的 2**；补 shim 退出码映射的回归测试（退 2 / 二进制缺失 ⇒ 放行）
+- [x] **H4（Issue 4/6）** 文档点明边界：`--path` 传目录静默放行、大小写不折叠、空 `## Open Questions` 空真通过
+- [x] **H5（Issue 7）** `README.md` 补「对**接入方**是行为变更」
+- [x] **H6（Issue 8）** 本地审阅基线假象：本地 `main` ref 落后于 #8 合入 ⇒ 跑 `check` 用 `--base origin/main`
+
 ## 明确不做（本 change）
 
 git-hook 适配器（Q5 延后）· 签名 / 防伪造 · 其余动名词 · 收紧 `--stage` 值域 · 私有仓（#6）。

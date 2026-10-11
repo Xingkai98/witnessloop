@@ -82,7 +82,8 @@ EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_NOT_ONBOARDED = 3
 
-# `guard` 的「被守卫拦住」。数值与 EXIT_USAGE 相同（2），但**语义不同**：
-# CC 的 PreToolUse hook 用 exit 2 表示 block。同一数字在两个动词里语义相反，
-# docs/gate.md §6 的退出码表**按动词分开写**（change grill-evidence-gate D5/R10）。
-EXIT_BLOCKED = 2
+# 注意（回归审阅 Issue 3 修复）：`guard` 的「拦住」用 EXIT_FAIL(1)，**不是** 2。
+# 早先用 2（= EXIT_USAGE）同值 ⇒ 任何 argparse 用法错误都被 CC 当成 block——
+# 尤其**旧版 CLI 不认识 `guard` 子命令**时 argparse 退 2 ⇒ 每个 Write/Edit 全被拦
+# （fail-open 反转成 fail-closed）。改由 `plugin/hooks/guard.sh` 把 1 映射成 CC 的 exit 2。
+# ⇒ `guard` 的退出码形状与 `check` 一致：0 通过 / 1 未通过(拦) / 2 用法 / 3 未接入。

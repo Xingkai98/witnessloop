@@ -91,6 +91,20 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 > 访问级别默认 `none`；私有包安装报 `could not read Username`）。已实测，见
 > [docs/design.md §4.1](docs/design.md)。私有接入需额外配 token，不在 v1 范围。
 
+### 本地守卫与行为变更
+
+交互层带一个 **PreToolUse 本地守卫**：`Write|Edit` 之前调 `witnessloop guard`——当前 change 的
+grill 证据不完备就不许写代码路径（**写文档豁免**，否则永远产不出证据）。它与 `check` **共用同一个**
+判定。装 plugin 时**同时要装 CLI**，否则命令找不到、守卫静默失效（fail-open）。
+
+它是「**防遗忘**」不是防对抗：**用 Bash 写文件**（`matcher` 只覆盖 `Write|Edit`）**或不装 plugin
+即绕过**。真正的锚仍是 CI required check。
+
+⚠️ **对**接入方**是行为变更**：`check` 现在要求每个 change 有一个 **`stage=grill`** 的 manifest，
+且该报告正文合格（`Confirmed Decisions` ≥3 且每条带 `来源:`、`Open Questions` 都经用户确认）——
+**此前没有这道校验**；历史 change 若缺 `stage=grill` manifest 会**新增一条红**。详见
+[docs/gate.md §8](docs/gate.md)。
+
 ### 能力边界（别被「机械可验证」误导）
 
 默认**只防漂移，不防蓄意伪造**：hash 绑定能证明证据之间没漂移，

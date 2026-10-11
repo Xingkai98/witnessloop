@@ -51,7 +51,9 @@
 ## Requirement: 写代码前缺 grill 证据即拦（本地 guard）
 
 系统 SHALL 提供 `witnessloop guard` 动词：给定**写目标路径**，若该路径命中 `policy.require_change_for`
-且**当前 change 的 grill 证据不完备**，则拦截（非零退出 2 + 理由），否则放行。
+且**当前 change 的 grill 证据不完备**，则拦截（退出码 **1** + 理由），否则放行。
+（宿主 hook 负责把 1 映射成该 host 的 block 约定——CC 的 2。**不用 2**：2 是 argparse 用法错误，
+旧版 CLI 不认识 `guard` 时会退 2，直传会把每个 `Write|Edit` 都拦下。）
 
 判定「当前 change」SHALL 以**分支名首段**为主、`WITNESSLOOP_CHANGE` 为覆盖；**推得的 id 必须命中一个现存
 的 active change 目录**，否则视为「推不出」。
@@ -59,7 +61,7 @@
 ### Scenario: 缺证据写代码被拦
 - **Given** 当前分支推得一个现存 change 目录，其 grill 证据不完备
 - **When** `guard --path src/x.py`（命中 `require_change_for`）
-- **Then** 拦截（exit 2）并给出理由
+- **Then** 拦截（exit 1）并给出理由
 
 ### Scenario: 写文档不拦（死锁防线）
 - **Given** 同一 change 证据尚不完备

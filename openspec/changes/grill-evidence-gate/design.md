@@ -75,12 +75,15 @@
 - **豁免文档是死锁防线**：写 `design.md`/`grill-review.md` 时证据尚不存在，不豁免就永远产不出证据。
   asterwynd 同款：`_is_change_doc_write`（`workflow_guard.py:517-531`）。
 
-### D5 `guard` 动词的接口（host 中立）+ **退出码按动词分表**
+### D5 `guard` 动词的接口（host 中立）
 
 - 形态：`witnessloop guard --root <r> [--path <p>]... [--change <id>]`（宿主适配器抽 path）。
-- 退出码：**0 = 放行**；**2 = 拦**（理由到 stderr）；**3 = 未接入 → 放行 + 提示**（本地不该拦未接入的仓）。
-- **⚠️ 退出码语义按动词相反**：`guard` 的 `2=拦` 而 `check` 的 `2=用法错误`（`constants.py:75`）；
-  `guard` 的 `3=放行` 而 `check` 的 `3=不放行`（`checkcmd.py:42`）。`docs/gate.md §6` 的退出码表**须按动词分开写**。
+- 退出码（**与 `check` 同形状**）：**0 放行 / 1 拦住 / 2 用法错误 / 3 未接入（放行）**。
+- **⚠️ R1 修复（回归审阅 Issue 3）**：原稿让「拦」= **2**（对齐 CC 的 block 约定）。但 2 与
+  `EXIT_USAGE` **同值** ⇒ **旧版 CLI 不认识 `guard` 子命令**时 argparse 退 2，被宿主当成 block
+  ⇒ **每个 `Write|Edit` 全被拦**（fail-open 反转成 fail-closed；实测复现）。改为「**拦 = 1**」，
+  由 `plugin/hooks/guard.sh` 把 **1 → host 的 block（CC 的 2）**。
+- `3` 在两动词里仍相反（`check` = 不放行 / `guard` = 放行）；`docs/gate.md §6` **按动词分表**。
 
 ### D6 CC hook 分发 / 安装
 
