@@ -68,9 +68,25 @@ manifest（幂等键 = `(change, stage, role, revision, base ref 的解析目标
 
 交互层对 change 状态**只读**，**不得持有自己的状态文件**——状态一律以
 `reviews/*.manifest.json`（门禁的权威证据）为准。这两个命令不会写 `.cache`、
-`state.json` 之类的东西；`plugin/` 目录里只有四个文件——plugin manifest、
-两条命令、以及**本 README**（`tests/test_plugin.py::test_plugin_file_inventory_is_exactly_expected`
+`state.json` 之类的东西；`plugin/` 目录里只有六个文件——plugin manifest、
+两条命令、hook 配置 + shim、以及**本 README**
+（`tests/test_plugin.py::test_plugin_file_inventory_is_exactly_expected`
 把这份清单钉死了：多出任何文件都会变红）。
+
+## 本地守卫（hook）
+
+除了两条命令，plugin 还带一个 **PreToolUse 守卫**（`hooks/hooks.json` + `hooks/guard.sh`）：
+`Write|Edit` 之前调 host-agnostic 的 `witnessloop guard`——**当前 change 的 grill 证据不完备
+就不许写代码路径**（写文档豁免，否则会锁死证据产出）。
+
+**装了 plugin 必须还要装 CLI**（`uv tool install …`）。plugin **不带**二进制：`witnessloop`
+不在 `PATH` 时命令以非 2 退出 ⇒ Claude Code 视为**不阻塞** ⇒ 守卫**静默 fail-open**
+（装了个寂寞）。hook 是**交互层**产物（host 特定），判定与 `check` **共用同一个**
+`evidence.py`——不会两边漂移。
+
+**诚实边界**：本地守卫是「**防遗忘**」，**不是防对抗**——它拦的是 `Write|Edit`，用 **Bash 写文件
+不受它管**（`matcher` 没覆盖 Bash），也可以干脆不装 plugin。真正的锚仍是远端 **CI required
+check**（那一层的同判据无法本地绕过）。按需可用 `WITNESSLOOP_SKIP_GUARD=1` 放行。
 
 ## 能力边界
 

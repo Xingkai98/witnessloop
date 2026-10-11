@@ -18,7 +18,14 @@ from witnessloop import constants as C
 from witnessloop.hashing import sha256_tree
 
 from conftest import commit_all, git
-from helpers import change_dir, check, commit_content, write_artifact, write_review
+from helpers import (
+    VALID_GRILL_REPORT,
+    change_dir,
+    check,
+    commit_content,
+    write_artifact,
+    write_review,
+)
 
 CHANGE = "add-retry"
 REVIEWS = f"openspec/changes/{CHANGE}/reviews"
@@ -113,7 +120,8 @@ def test_two_manifests_binding_the_same_report_is_not_an_error(gated: Path, cli)
     commit_content(gated, CHANGE)
     write_review(gated, CHANGE, stage="grill")
     write_review(
-        gated, CHANGE, stage="grill-copy", report_rel=GRILL_REPORT
+        gated, CHANGE, stage="grill-copy", report_rel=GRILL_REPORT,
+        report_body=VALID_GRILL_REPORT,
     )
     commit_all(gated, "证据")
 
@@ -217,7 +225,7 @@ def test_build_then_check_agree_on_noncanonical_report_paths(repo: Path, cli, va
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(repo, CHANGE)
     _reports_dir(repo).mkdir(parents=True, exist_ok=True)
-    (_reports_dir(repo) / "grill-review.md").write_text("PASS\n", encoding="utf-8")
+    (_reports_dir(repo) / "grill-review.md").write_text(VALID_GRILL_REPORT, encoding="utf-8")
 
     code, _, err = _build(cli, repo, "grill", variant)
     assert code == C.EXIT_PASS, f"build 接受了 {variant!r}，却：{err}"
@@ -234,7 +242,7 @@ def test_build_stores_a_canonical_report_path(repo: Path, cli):
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(repo, CHANGE)
     _reports_dir(repo).mkdir(parents=True, exist_ok=True)
-    (_reports_dir(repo) / "grill-review.md").write_text("PASS\n", encoding="utf-8")
+    (_reports_dir(repo) / "grill-review.md").write_text(VALID_GRILL_REPORT, encoding="utf-8")
 
     assert _build(cli, repo, "grill", "reviews/../reviews/./grill-review.md")[0] == C.EXIT_PASS
 
@@ -268,12 +276,12 @@ def test_symlinked_report_is_not_an_orphan(gated: Path, cli):
     同一个文件，按**解析后**的路径比对就不会误判。
     """
     _reports_dir(gated).mkdir(parents=True, exist_ok=True)
-    (_reports_dir(gated) / "grill-review.md").write_text("PASS\n", encoding="utf-8")
+    (_reports_dir(gated) / "grill-review.md").write_text(VALID_GRILL_REPORT, encoding="utf-8")
     commit_content(gated, CHANGE)
 
     (link := _reports_dir(gated) / "alias.md").symlink_to("grill-review.md")
     assert link.is_file()
-    write_review(gated, CHANGE, stage="alias", report_rel="reviews/alias.md")
+    write_review(gated, CHANGE, stage="grill", report_rel="reviews/alias.md")
     commit_all(gated, "证据：只绑链接")
 
     code, out, err = check(gated, cli)
@@ -299,7 +307,7 @@ def test_round_trip_then_orphan_when_a_manifest_is_removed(repo: Path, cli):
 
     directory = _reports_dir(repo)
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "grill-review.md").write_text("PASS\n", encoding="utf-8")
+    (directory / "grill-review.md").write_text(VALID_GRILL_REPORT, encoding="utf-8")
     (directory / "grill-adversarial.md").write_text("PASS\n", encoding="utf-8")
 
     for stage, report in (("grill", GRILL_REPORT), ("grill-adversarial", ADVERSARIAL_REPORT)):

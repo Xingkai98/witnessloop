@@ -21,6 +21,8 @@ EXPECTED_FILES = {
     ".claude-plugin/plugin.json",
     "commands/grill.md",
     "commands/review-loop.md",
+    "hooks/guard.sh",
+    "hooks/hooks.json",
     "README.md",
 }
 
@@ -207,3 +209,33 @@ def test_readme_accounts_for_itself_in_the_inventory():
     """回归 M2 §4-7：自述说「只有 manifest 和两条命令」，漏了自己这个 README。"""
     text = (PLUGIN / "README.md").read_text(encoding="utf-8")
     assert "README" in text
+
+
+# ---------------------------------------------------------------- D6 本地守卫 hook
+
+
+def test_hooks_config_wires_pretooluse_to_the_guard_shim():
+    """D6：hook **随 plugin 分发**——`Write|Edit` 的 PreToolUse 调 guard shim。"""
+    doc = json.loads((PLUGIN / "hooks/hooks.json").read_text(encoding="utf-8"))
+    entries = doc["hooks"]["PreToolUse"]
+    assert entries and entries[0]["matcher"] == "Write|Edit"
+    commands = [handler["command"] for handler in entries[0]["hooks"]]
+    assert any(
+        "guard.sh" in command and "${CLAUDE_PLUGIN_ROOT}" in command
+        for command in commands
+    )
+
+
+def test_guard_shim_only_wires_to_the_host_neutral_verb():
+    """shim 只接线：判定在 `witnessloop guard` 里，不在这里重写。"""
+    text = (PLUGIN / "hooks/guard.sh").read_text(encoding="utf-8")
+    assert "witnessloop guard" in text
+    assert "--path" in text
+
+
+def test_readme_covers_the_hook_and_the_missing_binary_caveat():
+    """R8：plugin **不带**二进制 ⇒ 装了 plugin 还要装 CLI，否则静默 fail-open。"""
+    text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+    assert "hooks" in text
+    assert "guard" in text
+    assert "CLI" in text

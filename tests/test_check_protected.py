@@ -179,6 +179,7 @@ def test_renaming_with_an_event_is_allowed(repo: Path, cli):
     (repo / "src").mkdir()
     git(repo, "mv", SPEC, "src/moved-spec.md")
     commit_all(repo, "内容：把 spec 改名搬走")
+    write_review(repo, "move-retry-spec", stage="grill")
     write_review(repo, "move-retry-spec")
     write_event(repo, "move-retry-spec", SPEC)  # 解释的是**旧路径**
     commit_all(repo, "证据")

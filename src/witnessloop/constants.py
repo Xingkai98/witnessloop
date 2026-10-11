@@ -43,6 +43,10 @@ DEFAULT_REVIEW_MANIFEST_GLOB = "reviews/*.manifest.json"
 DEFAULT_EVENTS_FILE = "workflow-events.jsonl"
 DEFAULT_PROTECTED_EVENT_TYPES = ("protected_path_write",)
 
+# 承载 grill 决策记录的审阅阶段名（policy.evidence.grill_stage 可覆写）。
+# `check` 校验「该 stage 的 manifest 所绑定报告」的正文完备性（见 evidence.py）。
+DEFAULT_GRILL_STAGE = "grill"
+
 # 数据契约 schema 标签（写入各 json 的 `schema` 字段，便于人工识别）。
 SCHEMA_POLICY = "witnessloop/policy@v1"
 SCHEMA_INIT_MANIFEST = "witnessloop/init-manifest@v1"
@@ -58,7 +62,10 @@ HASHED_ARTIFACTS = (
 )
 
 # review manifest 必填字段（design §5.3）。`diff_hash` 是 informational，不在此列。
+# `stage` 纳入必填（change grill-evidence-gate D2b）：它此前「写而不校」，而 `check`
+# 靠它定位 grill 报告——不校验则 stage 拼错会静默失效。
 REVIEW_MANIFEST_REQUIRED_FIELDS = (
+    "stage",
     "reviewer_run_id",
     "author_run_id",
     "base_sha",
@@ -74,3 +81,9 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_NOT_ONBOARDED = 3
+
+# 注意（回归审阅 Issue 3 修复）：`guard` 的「拦住」用 EXIT_FAIL(1)，**不是** 2。
+# 早先用 2（= EXIT_USAGE）同值 ⇒ 任何 argparse 用法错误都被 CC 当成 block——
+# 尤其**旧版 CLI 不认识 `guard` 子命令**时 argparse 退 2 ⇒ 每个 Write/Edit 全被拦
+# （fail-open 反转成 fail-closed）。改由 `plugin/hooks/guard.sh` 把 1 映射成 CC 的 exit 2。
+# ⇒ `guard` 的退出码形状与 `check` 一致：0 通过 / 1 未通过(拦) / 2 用法 / 3 未接入。

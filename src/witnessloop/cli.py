@@ -58,6 +58,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_uninit.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
 
+    p_guard = sub.add_parser(
+        "guard",
+        help="写代码前缺 grill 证据就拦（本地守卫；由 host 的 PreToolUse hook 调用）",
+    )
+    p_guard.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
+    p_guard.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="写目标路径（可重复）；命中 require_change_for 才可能被拦",
+    )
+    p_guard.add_argument(
+        "--change",
+        default=None,
+        help="当前 change id；缺省从 WITNESSLOOP_CHANGE / 分支名首段推（且须命中现存 change 目录）",
+    )
+
     p_check = sub.add_parser(
         "check", help="CI 入口：校验 change 契约 / 审阅证据 / 受保护写入（fail-closed）"
     )
@@ -133,6 +150,10 @@ def main(argv: list[str] | None = None) -> int:
         from witnessloop import uninitcmd
 
         return uninitcmd.run(args)
+    if args.command == "guard":
+        from witnessloop import guardcmd
+
+        return guardcmd.run(args)
     if args.command == "check":
         from witnessloop import checkcmd
 

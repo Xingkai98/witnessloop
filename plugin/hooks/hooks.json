@@ -1,0 +1,16 @@
+{
+  "description": "witnessloop 本地守卫：写代码前缺 grill 证据就拦（PreToolUse → witnessloop guard）。判定全在 host-agnostic 的 guard 动词里，本文件只做接线。",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

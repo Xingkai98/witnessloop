@@ -19,6 +19,7 @@ from pathlib import Path
 from witnessloop import constants as C
 from witnessloop import contract, gitutil
 from witnessloop import events as events_mod
+from witnessloop import evidence as evidence_mod
 from witnessloop import paths as pathutil
 from witnessloop import policy as policy_mod
 
@@ -73,6 +74,13 @@ def run(args: argparse.Namespace) -> int:
         findings += contract.validate_change_dir(root, pol, change_id)
         findings += contract.validate_review_manifests(
             root, pol, change_id, scope=scope
+        )
+        # D9/#2：报告正文的**完备性**——与本地 `guard` 共用同一个判定（evidence.py）。
+        findings += evidence_mod.grill_evidence_findings_in_change(
+            contract.change_dir(root, pol, change_id),
+            grill_stage=pol.grill_stage,
+            manifest_glob=pol.review_manifest_glob,
+            label=f"{pol.changes_root.rstrip('/')}/{change_id}",
         )
     findings += _require_change(pol, changes, change_ids)
     findings += _protected_writes(root, pol, changes)

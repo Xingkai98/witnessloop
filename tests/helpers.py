@@ -18,6 +18,38 @@ from conftest import commit_all, git
 
 CHANGES_ROOT = C.DEFAULT_CHANGES_ROOT
 
+#: 一份**合格**的 grill 决策记录（满足 `evidence.grill_evidence_findings` 的全部判据）。
+#: 造 change 的测试默认用它当 `stage=grill` 的报告——`check` 现在会校验它。
+VALID_GRILL_REPORT = (
+    "# Grill: add-x 设计追问\n"
+    "\n"
+    "## Reviewer\n"
+    "- run id: `grill-reviewer-1`\n"
+    "\n"
+    "## Confirmed Decisions\n"
+    "\n"
+    "- **决策（D1）**：甲。\n"
+    "  理由：因为甲；来源: `grill-reviewer-1`\n"
+    "\n"
+    "- **决策（D2）**：乙。\n"
+    "  理由：因为乙；来源: `grill-reviewer-1`\n"
+    "\n"
+    "- **决策（D3）**：丙。\n"
+    "  理由：因为丙；来源: `grill-reviewer-1`\n"
+    "\n"
+    "## Open Questions\n"
+    "\n"
+    "- **Q1** 选甲还是乙？\n"
+    "  - ➡️ **推荐答案**：甲。\n"
+    "\n"
+    "## User Confirmation\n"
+    "\n"
+    "- **Q1**: 用户答复：甲；确认时间: 2026-01-01\n"
+)
+
+#: 非 grill 阶段的报告正文（正文本身不参与 `check` 的完备性判定）。
+_DEFAULT_REPORT_BODY = "PASS\n\n审阅通过。\n"
+
 
 def change_dir(repo: str | Path, change_id: str) -> Path:
     return Path(repo) / CHANGES_ROOT / change_id
@@ -82,15 +114,18 @@ def write_review(
     change_id: str,
     *,
     stage: str = "building",
-    report_body: str = "PASS\n\n审阅通过。\n",
+    report_body: str | None = None,
     report_rel: str | None = None,
     doc_overrides: dict | None = None,
     **overrides,
 ) -> Path:
     """写「报告 + manifest」成对证据；``overrides`` / ``doc_overrides`` 注入错误字段。
 
-    ``report_rel`` 可把报告放到别处（默认 ``reviews/<stage>-review.md``）。
+    ``report_body=None``（默认）时按 stage 取默认正文：``grill`` 用**合格**决策记录
+    （`check` 会校验它），其余用一句 PASS。``report_rel`` 可把报告放到别处。
     """
+    if report_body is None:
+        report_body = VALID_GRILL_REPORT if stage == "grill" else _DEFAULT_REPORT_BODY
     directory = change_dir(repo, change_id)
     (directory / "reviews").mkdir(parents=True, exist_ok=True)
     report_rel = report_rel or f"reviews/{stage}-review.md"
@@ -176,7 +211,7 @@ def commit_evidence(
     repo: str | Path,
     change_id: str,
     *,
-    stages: tuple[str, ...] = ("building",),
+    stages: tuple[str, ...] = ("grill", "building"),
     events: tuple[str, ...] = (),
     message: str = "证据",
     **review_kwargs,

@@ -254,14 +254,30 @@ OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifes
 id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在」）；`archive/**` 同时
 进 `stale_exempt_paths`（归档不改内容，不该触发「审阅的是旧 revision」）。
 
-## 6. `check` 的退出码
+## 6. 退出码（**按动词分表**——同一数字语义相反）
+
+`check`：
 
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / 受保护写入无解释 / base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / 受保护写入无解释 / base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
+
+`guard`（本地守卫，见 §8）——**与 `check` 同形状**：
+
+| 码 | 含义 |
+|---|---|
+| 0 | **放行**（含：写文档豁免 / 推不出 change / 未给路径） |
+| 1 | **拦住**——命中 `require_change_for` 且当前 change 的 grill 证据不完备 |
+| 2 | 用法错误（argparse） |
+| 3 | **未接入**——不拦（本地守卫对未接入的仓无意见） |
+
+⚠️ **`guard` 的「拦住」是 1，不是 2**：2 与「argparse 用法错误」同值 ⇒ **旧版 CLI 不认识
+`guard` 子命令**时 argparse 退 2，会被宿主当成 block，把**每个 `Write|Edit` 都拦下**
+（fail-open 反转成 fail-closed）。由 `plugin/hooks/guard.sh` 把 **1 → host 的 block（CC 的 2）**。
+`3` 在两动词里仍相反：`check` 是「不放行」、`guard` 是「放行」。
 
 `base` 解析顺序：`--base` → `WITNESSLOOP_BASE_REF` → `GITHUB_BASE_REF`（→ `origin/<ref>`）
 → `origin/main` \| `main` \| `origin/master` \| `master`。
@@ -274,3 +290,31 @@ v1 不做语义绑定、**不造签名**。因此：**默认只防漂移，不�
 agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写的边界，
 `tests/test_acceptance.py::test_f2_handwritten_allow_event_is_not_blocked`
 把它钉成了契约）。真正的锚是远端 branch protection + required check。
+
+## 8. grill 证据的正文校验（`check`）与本地守卫（`guard`）
+
+**一侧判定、两处接线**——同一个纯函数 `evidence.py`，`check`（事后 / CI）与 `guard`（事前 / 本地）共用
+（分两份实现必然漂移：本仓已因 `check` / `manifest build` 各写一套踩过坑，故共用 `constants.HASHED_ARTIFACTS`）。
+
+**判据**（`src/witnessloop/evidence.py`）：`## Confirmed Decisions` **顶层 bullet（含其续行）≥ 3 条**、
+**每条块内含 `来源:`**；`## Open Questions` 每条的 `Q<n>` 都要在 `## User Confirmation` 有对应确认；
+占位文本（`待确认` 等；**短答复才查强占位**）不算确认。
+**块级**——`来源:` 允许只出现在续行（实测：本仓 dogfood 的 `来源:` **全在续行**，任何行级口径命中 0）。
+
+**`check` 侧**：每个 change 必须有一个 **`stage=<grill_stage>`**（默认 `grill`，`policy.evidence.grill_stage`
+可覆写）的 manifest，且其报告正文合格；缺则**红**并点名**现有** stage（拼错可诊断）。
+`stage` 因此纳入 manifest **必填字段**（此前「写而不校」）。
+⚠️ **对**接入方**是行为变更**：历史无 grill manifest 的 change 会新增一条红。
+
+**`guard` 侧**：`witnessloop guard --root R --path P [--path P2] [--change ID]`
+——写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ **1（拦）**。
+
+- 当前 change：`--change` → `WITNESSLOOP_CHANGE` → **分支名首段**；**推得的 id 必须命中现存
+  **active** change 目录**，否则按「推不出」处理（`fix/login-timeout` 这类分支的首段不是 change 目录）。
+- **推不出 / 未给路径 / 写文档 / 未接入 ⇒ 放行**（fail-open）；写文档豁免是**死锁防线**（否则永远产不出证据）。
+- **`--path` 传的是文件**（host hook 给的是 `file_path`）。传**目录**（如 `--path src`）不命中 `src/**`
+  ⇒ 静默放行（声明的 fail-open 边界）；大小写**不折叠**同理（见 §2 的归一化边界）。
+- 逃生口：`WITNESSLOOP_SKIP_GUARD=1`。
+- CC hook 随 plugin 分发（`plugin/hooks/`）；**装了 plugin 还要装 CLI**，否则命令非 2 退出 = CC 视为不阻塞 = fail-open。
+- **诚实边界**：本地 guard 是「**防遗忘**」不是防对抗——用 **Bash 写文件**（`matcher` 只覆盖 `Write|Edit`）
+  或不装 plugin 即绕过；锚仍是 §7 的 CI。
