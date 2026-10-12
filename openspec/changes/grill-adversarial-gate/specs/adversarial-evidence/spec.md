@@ -27,10 +27,17 @@
 - **When** 运行 `check`
 - **Then** 该条判定通过
 
-### Scenario: 未触发时不误伤
+### Scenario: 未触发时不误伤（⚠️ `Given` 待 Q1 定案替换——现写法是**循环定义**）
 - **Given** 本次 diff **不满足**触发条件
+  （定案后 MUST 替换成具体条件：乙 = 只改文档 / 只动 change 目录；grill 实测指出「不满足触发条件」是同义反复）
 - **When** 运行 `check`
 - **Then** **不**要求对抗轮证据
+
+### Scenario: 多 change 同 PR —— 触发面内的**每个** change 都被要求（**刻意的行为**）
+- **Given** 本次 diff 触及触发面，且同时触及**另一个** change 目录（该 change 自身无实现）
+- **When** 运行 `check`
+- **Then** **每个** change **都**被要求对抗轮证据——本门禁沿用「**一个 PR 推进一个 change**」前提：
+  要免除就把 change 拆到单独 PR。**不提供** `adversarial_exempt_changes` 之类的豁免名单（豁免名单 = 新的绕过面）。
 
 ### Scenario: stage 拼错可诊断
 - **Given** 用 `--stage grill-adversariall` 产出的 manifest，仓里没有 `stage=grill-adversarial` 的 manifest
@@ -105,5 +112,8 @@ grill / building / grill-adversarial 三条判定 SHALL 共用它——分两份
    （兜底路径下两角色 id **结构性不同**）⇒ 一个 agent 可自造 manifest 满足本门禁。
    本工具**防漂移、不防蓄意伪造**。
 3. **无法机械证明「对抗轮发生在 grill 之后、且针对同一份 design」**：`design.md` 的**内容**未被任何
-   manifest 哈希绑定（`constants.HASHED_ARTIFACTS` 只含 `tasks.md` / `specs`）。本门禁保证的是
-   「存在一份可绑定的对抗轮证据」，**不是**「它证伪了这份 design」。本 change **不**为此新增 `design_hash`。
+   manifest 哈希绑定（`constants.HASHED_ARTIFACTS` 只含 `tasks.md` / `specs`），且 `_check_git_span`
+   **不做两份 manifest 的先后比较**（实测：在证据提交**之前**把 `design.md` 整段替换掉再落证据 ⇒ `check` 退 **0**；
+   同样手法改 `specs/` ⇒ 报 `spec_hash 不匹配`）。⇒ 改动落在 manifest 的 `head_sha` **之后**才有 stale 信号，
+   落在**之前**则**完全无痕**。本门禁保证的是「存在一份可绑定的对抗轮证据」，**不是**「它证伪了这份 design」，
+   也**不是**「对抗轮发生在写码之前」。本 change **不**为此新增 `design_hash`。
