@@ -14,7 +14,7 @@
       写入 `evidence.grill_adversarial_stage`（与既有两条 stage 轴**同形**）
 - [ ] A3 `checkcmd.py`：change 循环里加一条 `evidence_mod.stage_manifest_findings_in_change(...)`，
       `stage=pol.grill_adversarial_stage`、`verify_body=False`、`reason` 点明「设计阶段对抗验证轮」；
-      **触发面按 Q1 定案**（甲=与 grill 那条并列、无条件；乙=放进既有的 `if code_hits:` 块）
+      **触发面 = Q1 定案「乙」** ⇒ 放进既有的 `if code_hits:` 块（与 building 那条并列）
       ——**不写第二份判定实现**
 - [ ] A4 单测（先红，`tests/test_grill_adversarial_gate.py`，与 `test_building_gate.py` 同构）：
       1. 触发 + 只有 grill/building 证据 ⇒ 红，文案点名 `stage=grill-adversarial`
@@ -33,7 +33,8 @@
 - [ ] B2 改**自造证据集**的既有用例（甲乙共同的硬核）：`tests/test_building_gate.py::test_green_when_building_evidence_present`、
       `::test_code_change_after_the_review_is_stale`、`::test_building_stage_is_configurable`、
       `tests/test_check_protected.py::test_renaming_with_an_event_is_allowed`（共 4 条，乙口径实测）
-- [ ] B3 若 Q1 选**甲**：再改**13 条**（实测 17 − 4）。**完整清单**（对抗轮 R1 实测，逐条点名的出处：
+- [x] ~~B3 若 Q1 选甲~~ —— **Q1 定案「乙」⇒ 本条不适用**（保留下方清单作为「甲为什么被否」的证据）。
+      若日后真有仓选甲，完整清单（对抗轮 R1 实测，逐条点名的出处：
       `reviews/grill-adversarial.md` 的 N-1）：
       ① `tests/test_orphan_reports.py` **8 项** = `test_build_then_check_agree_on_noncanonical_report_paths`
       的 **4 个参数化项** + `test_directory_named_like_a_report_is_not_an_orphan` +
@@ -52,13 +53,11 @@
       其余：改这些用例时**不得**放松它们原本要钉的东西（孤儿规则 / 往返 / 端到端），只补证据。
 - [ ] B4 ~~非目标登记~~（**已做**）：design D8 已列非目标（archive 门禁 / `ChangeType` / verdict / `guard` /
       `require_change_for=[]` warning / 签名）
-- [ ] B5 **实现前必做**：把 `specs/adversarial-evidence/spec.md` 里**所有挂 Q1/Q2 待定标记的段落**
-      按定案替换（「两处」是**下限不是全集**——对抗轮 R1 实测至少 5 处挂标记）。至少含：
-      ① 触发条件本身（正文 + 各 Scenario 的 `Given`）；
-      ② 「未触发时不误伤」Scenario 的 `Given` 目前是**循环定义**（「不满足触发条件」）⇒ 换成具体条件；
-      ③ **「多 change 同 PR」Scenario 的 `Given`**（对抗轮补）——它现在写「另一个 change 自身**无实现**」，
-      这在**乙**口径下**永远构造不出来**（无实现的 change 目录不可能命中 `code_hits`）⇒ 现在编码的是**甲**的语义；
-      ④ 若 Q2 选乙：`Requirement: verdict 文本不参与判定（选甲时）` 整节要换掉
+- [x] B5 **已做（2026-10-12，随停轮定案）**：`spec.md` 里所有挂 Q1/Q2 待定标记的段落已按定案替换——
+      ① 触发条件正文改为「触及 `require_change_for` + 复用 `checkcmd._code_hits` 同一口径」；
+      ② 「未触发时不误伤」的 `Given` 由循环定义换成具体条件（只改文档 / 只动 change 目录）；
+      ③ 「多 change 同 PR」的 `Given` 改为乙口径（落实现 + 同时触及另一个 change 目录）；
+      ④ verdict 那条 Requirement 去掉「（选甲时）」限定并删掉「若 Q2 选乙」分支
 - [ ] B6 ⚠️ **实测配方纪律**（R7，本次 grill 已踩到；对抗轮 R1 又补了一条）：
       本仓 worktree 的 `.git` 是**文件**（`gitdir: <主仓>/.git/worktrees/<id>`）⇒ `cp -a` 出的副本
       **共用原 worktree 的 gitdir/index**，副本里的 `git checkout -b`/`git commit` 会**落到被审 worktree**。

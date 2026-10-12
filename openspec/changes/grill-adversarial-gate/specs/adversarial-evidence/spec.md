@@ -13,12 +13,15 @@
 该触发条件 SHALL 是**客观的 git 事实**；SHALL NOT 由「`tasks.md` 是否勾选」之类的**自声明**触发——
 不勾选即可绕过。
 
-> ⚠️ **触发面待 Q1 裁定后钉死**（甲=与 grill 条同形，每个被触及的 change 都要求；
-> 乙=与 building 条同形，本次 diff 触及 `policy.require_change_for` 时要求）。
-> 实现开始前 MUST 用定案替换本节括注——spec 是 manifest 哈希绑定的 artifact，实现后再改会让证据 stale。
+**触发条件（Q1 定案 = 与 building 门禁同形）**：本次 diff **触及 `policy.require_change_for` 下的路径**
+（即**落了实现**）时，**每一个**被本次 diff 触及的 change 都要满足本节要求。
+
+该判定 SHALL 复用 `checkcmd._code_hits`（`checkcmd.py:106-122`）的**同一口径**——
+SHALL NOT 引入第二套「什么算代码」的定义。⇒ `require_change_for` 为空或没覆盖真实代码路径时，
+本门禁与 building 门禁、`_require_change` **一起静默失效**（既有逃生面，见文末边界声明 1）。
 
 ### Scenario: 未跑设计对抗轮
-- **Given** 触发条件满足，该 change 只有 `stage=grill` 与 `stage=building` 的证据
+- **Given** 本次 diff 改了 `src/**`（命中 `require_change_for`），该 change 只有 `stage=grill` 与 `stage=building` 的证据
 - **When** 运行 `check`
 - **Then** 报错并非零退出，且点名缺 `stage=grill-adversarial` 的审阅证据
 
@@ -27,18 +30,16 @@
 - **When** 运行 `check`
 - **Then** 该条判定通过
 
-### Scenario: 未触发时不误伤（⚠️ `Given` 待 Q1 定案替换——现写法是**循环定义**）
-- **Given** 本次 diff **不满足**触发条件
-  （定案后 MUST 替换成具体条件：乙 = 只改文档 / 只动 change 目录；grill 实测指出「不满足触发条件」是同义反复）
+### Scenario: 未触发时不误伤
+- **Given** 本次 diff **未**触及 `require_change_for` 下的路径（只改文档 / 只动 change 目录——例如某个
+  in-flight change 的提案期 PR）
 - **When** 运行 `check`
-- **Then** **不**要求对抗轮证据
+- **Then** **不**要求对抗轮证据（否则每个 in-flight change 都会被红——这是选乙的**主要理由**）
 
 ### Scenario: 多 change 同 PR —— 触发面内的**每个** change 都被要求（**刻意的行为**）
-- **Given** 本次 diff 触及触发面，且同时触及**另一个** change 目录
-  （⚠️ 原稿写「该 change 自身无实现」——**那是甲的语义**：乙口径下「无实现」的 change 目录不可能满足
-  `code_hits` ⇒ 这条 `Given` 在乙口径下**永远构造不出来**，定案后 MUST 按 Q1 重写）
+- **Given** 本次 diff 触及 `require_change_for` 下的路径（落了实现），且**同时**触及**另一个** change 目录
 - **When** 运行 `check`
-- **Then** **每个** change **都**被要求对抗轮证据——本门禁沿用「**一个 PR 推进一个 change**」前提：
+- **Then** **两个** change **都**被要求对抗轮证据——本门禁沿用「**一个 PR 推进一个 change**」前提：
   要免除就把 change 拆到单独 PR。**不提供** `adversarial_exempt_changes` 之类的豁免名单（豁免名单 = 新的绕过面）。
 
 ### Scenario: stage 拼错可诊断
@@ -86,20 +87,22 @@ grill / building / grill-adversarial 三条判定 SHALL 共用它——分两份
 ⚠️ **随之而来的缺口（刻意接受，须显式声明）**：`templates/grill.md` 的写码前硬条件 #2
 （「对抗验证已到 PASS 或轮数封顶交人」）在**本地守卫侧仍无强制**——`guard` 只查 grill 决策记录。
 理由是守卫可绕过（未装 plugin / 用 Bash 写文件）、真正的锚是 CI required check。
-**这不是「守卫已覆盖」，而是已知缺口。**
+**这不是「守卫已覆盖」，而是已知缺口。**（Q3 定案：用户已明确**接受**该缺口，见 `reviews/grill-review.md`
+的 `## User Confirmation`。）
 
 ### Scenario: guard 不要求对抗轮证据
 - **Given** 一个 change 的 grill 证据完备、但没有 `stage=grill-adversarial` 的 manifest
 - **When** `guard --path src/x.py`
 - **Then** **放行**（守卫不新增本条条件）
 
-## Requirement: verdict 文本不参与判定（选甲时）
+## Requirement: verdict 文本不参与判定
 
 `check` SHALL NOT 解析对抗验证报告里的 verdict 文本（`PASS` / `CHANGES_REQUESTED`）——
-本门禁保证的是「**该 change 存在一份可绑定的对抗轮证据**」。
+本门禁保证的是「**该 change 存在一份可绑定的对抗轮证据**」，**不是**「它的结论是 `PASS`」，
+也**不是**「它至少有内容」（见边界声明 4）。
 
-> 若 Q2 选乙，本 Requirement 换成「最终裁定必须为 `PASS`」并须同时规定多轮报告的可判定形态与
-> 「轮数封顶交人」的出路；甲是本 change 的推荐口径。
+理由：非 `PASS` 收尾本身是 `templates/grill.md` 的**规定行为**（轮数封顶 → 交人判断），
+机械判据区分不了「封顶后交人」与「跑一轮就收工」；且与既有 `building` 门禁口径一致。
 
 ### Scenario: 结论是 CHANGES_REQUESTED 也能通过
 - **Given** 一份 `stage=grill-adversarial` 的 manifest 绑定着最终裁定为 `CHANGES_REQUESTED` 的报告

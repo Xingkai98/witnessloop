@@ -79,3 +79,14 @@
 - 全部实测都在 `/tmp` 副本里：`/tmp/gag-probe`（基线 420 passed）、`/tmp/gag-jia-a|b`、`/tmp/gag-yi-a|b`（四组 churn）、`/tmp/gag-d6`（机制探针：R4 / D6 / D1 / spec 哈希 / 孤儿）、`/tmp/gag-sim`（自伤全链路模拟）。**未在被审仓做任何实验**；本文件是唯一的仓库写入。
 - ⚠️ **一次污染与完整复原（须记录）**：本仓 worktree 的 `.git` 是**文件**（`gitdir: /home/happy/witnessloop/.git/worktrees/grill-adversarial-gate`），`cp -a` 出的副本因此**共用原 worktree 的 gitdir 与 index** ⇒ `/tmp/gag-sim` 里的 `git checkout -b sim` 与两次 `git commit`（`1e4e4a8`、`8fb5c6d`）落到了**原 worktree**。已复原：`git checkout -f grill-adversarial-gate/2026-10-12` + `git branch -D sim`。复核结果：`git status --short` 为空、`git diff HEAD --stat` 为空、`design.md`/`proposal.md`/`tasks.md` 字节数 = **16915 / 4417 / 5253**（与开工快照逐字节一致）、`git worktree list` 各 worktree 分支不变、主 worktree `/home/happy/witnessloop` 仍为 clean `main`；两个游离提交已无任何分支引用。
 - **实测数字不受污染影响**：pytest 一律在 `tmp_path` 里 `git init` 独立仓（不与本仓 gitdir 相干）；自伤模拟用的是 `git diff <base>..<head>`（与工作树无关），且证据提交内含乙补丁（`src/witnessloop/checkcmd.py` +7 行、含 `grill_adversarial_stage`），触发面成立。但方法论教训已记入 R-new-5。
+
+## User Confirmation
+
+> 停轮：收敛后的 Open Questions 一次性交用户裁定（用户在获得「每条附推荐答案 + 本 change 真实场景例子」后逐条选择）。
+> 用户的答复是**唯一**的确认来源；本文件此前写的一切推荐答案都只是推荐。
+
+- **Q1**: 用户答复：**乙**——触发面 =「本次 diff 命中 `policy.require_change_for`（= 落了实现）」时才要求对抗轮证据，与 building 门禁同一条判定；并**明确否掉甲**（甲=每个 change 都要）：拒绝理由与实测数据一并给出（甲 17 条既有用例、且「只动 change 目录」场景只能被空正文报告满足 ⇒ 门形同虚设）；确认时间: 2026-10-12
+- **Q2**: 用户答复：**甲**——**不解析** verdict 文本（`PASS` / `CHANGES_REQUESTED` 都合格），与 #13 已裁定的 building 口径一致；接受随之而来的诚实边界（含「报告正文不校验、空文件亦合格」）；确认时间: 2026-10-12
+- **Q3**: 用户答复：**接受缺口**——本 change **只改 `check`**，不给本地 `guard` 增加对抗轮条件（守卫可绕过、且与「停轮确认 → 才写码」时序纠缠）；该缺口在 spec 的边界声明里显式写出；确认时间: 2026-10-12
+- **Q4**: 用户答复：**只写文档**——对既有接入方的行为变更靠 `README.md` + `docs/gate.md` 声明，**不加**过渡开关（开关=静默绕过面）；确认时间: 2026-10-12
+- **Q5**: 用户答复：**采纳 E0b**——定案（Q1..Q5 落进 spec/design/tasks）之后**重跑一轮设计对抗**（同一路径覆盖 + 重建 manifest；若给 `CHANGES_REQUESTED` 则重跑到 PASS 或 3 轮封顶），使对抗证据针对**定稿后**的设计；确认时间: 2026-10-12
