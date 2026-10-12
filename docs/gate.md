@@ -284,7 +284,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 若不兜底，`guard` 一崩就会被宿主当成 block ⇒ **误拦每个 `Write|Edit`**。故**进程入口**
 （`src/witnessloop/entry.py`，console script 与 `python -m witnessloop` 都走它）捕获未预期异常：
 verb 是 `guard` ⇒ **4**（fail-open）；其余 verb ⇒ **1**（`check` = 未通过 = fail-closed；`init`/`uninit`/
-`manifest` = 失败）。入口刻意**不 import `witnessloop` 任何模块**——这样连「`witnessloop.cli` 自身
+`manifest` = 失败）。**该保证只对两个声明入口成立**（console script 与 `python -m witnessloop`）——直接跑 `python -m witnessloop.cli` 绕开兜底，不属承诺入口。入口刻意**不 import `witnessloop` 任何模块**——这样连「`witnessloop.cli` 自身
 导入失败」（安装破损）也兜得住。⇒ 「拦」(1) 成为**只由显式判定产生**的退出码。
 
 `base` 解析顺序：`--base` → `WITNESSLOOP_BASE_REF` → `GITHUB_BASE_REF`（→ `origin/<ref>`）

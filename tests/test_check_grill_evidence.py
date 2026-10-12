@@ -72,13 +72,39 @@ def test_check_names_a_byte_bad_manifest_and_does_not_crash(gated: Path, cli):
 
 
 def test_check_stays_fail_closed_on_an_undecodable_report(gated: Path, cli):
-    """spec「崩溃兜底不改变 `check` 的退出码语义」：报告读不出 ⇒ 仍**非 0**（CI 锚 fail-closed）。"""
+    """spec「崩溃兜底不改变 `check` 的退出码语义」：报告读不出 ⇒ **干净红**（非 0 且不是崩到入口）。
+
+    ⚠️ 审阅 R1 指出原版是**弱测试**：只断言 `code != EXIT_PASS`，而那个非 0 可能来自
+    `contract._check_hashes` 的 hash 不匹配（改了报告却没重建 manifest）或**入口兜底**——
+    两种都**走不到** `evidence.py` 的报告读点。故这里**先按坏字节重建 manifest**（让 `report_hash`
+    与坏字节一致、越过 hash 检查），真正打到读点，再断言**是那条 finding**、且**不是**入口的「内部错误」。
+    """
     commit_content(gated, CHANGE)
     write_review(gated, CHANGE, stage="grill")
-    (gated / "openspec" / "changes" / CHANGE / "reviews" / "grill-review.md").write_bytes(
-        b"# Grill\n\xff\xfe"
+    report = gated / "openspec" / "changes" / CHANGE / "reviews" / "grill-review.md"
+    report.write_bytes(b"# Grill\n\xff\xfe")
+    build_code, _, build_err = cli(
+        "manifest",
+        "build",
+        "--root",
+        str(gated),
+        "--base",
+        "main",
+        "--change",
+        CHANGE,
+        "--stage",
+        "grill",
+        "--report",
+        "reviews/grill-review.md",
+        "--reviewer-run-id",
+        "run-reviewer-1",
+        "--author-run-id",
+        "run-author-1",
     )
-    commit_all(gated, "证据：报告字节坏")
+    assert build_code == C.EXIT_PASS, build_err
+    commit_all(gated, "证据：坏报告 + 按坏字节重建 manifest")
 
-    code, _, _ = check(gated, cli)
-    assert code != C.EXIT_PASS
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "报告无法解码" in err
+    assert "内部错误" not in err  # 崩到入口兜底 = 不是「干净的红」，用例须排除

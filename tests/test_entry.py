@@ -10,6 +10,7 @@ issue #9：`guard` 崩溃退 **1** 而 1 是宿主的 block 码（`plugin/hooks/
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -17,8 +18,30 @@ import witnessloop
 from witnessloop import constants as C
 from witnessloop import entry
 
-#: 与 `constants.EXIT_INTERNAL` 必须同值（入口不可 import witnessloop ⇒ 用车字面量）。
+#: 与 `constants.EXIT_INTERNAL` 必须同值（入口不可 import witnessloop ⇒ 用字面量）。
 LITERAL_INTERNAL = 4
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC = REPO_ROOT / "src" / "witnessloop"
+
+
+def test_production_wiring_points_at_the_entry_guard():
+    """**接线是承重的**（审阅发现）：把 `pyproject` 的 console script 回退成 `witnessloop.cli:main`
+    会**静默拆掉 issue #9 的修复本体**——而 fixture 与其它用例都直接 import `entry`，
+    整套 suite 仍会全绿（CI 冒烟只验 `--version`，也照过）。故用文本断言把接线钉住。
+    """
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'witnessloop = "witnessloop.entry:main"' in pyproject
+    assert "witnessloop.cli:main" not in pyproject
+
+    main_py = (SRC / "__main__.py").read_text(encoding="utf-8")
+    assert "from witnessloop.entry import main" in main_py
+
+
+def test_test_harness_goes_through_the_real_entry():
+    """测试脚手架也必须走真实入口——否则 B 组用例验的不是生产路径。"""
+    conftest = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+    assert "from witnessloop.entry import main" in conftest
 
 
 def test_entry_internal_code_matches_the_documented_constant():
