@@ -1,89 +1,102 @@
 # adopter-test-job — 接入方的测试要有一个真的执行点
 
-> 本 change 的能力增量：接入方能拿到**一个可用的测试执行点**（不再只有 `witnessloop check`），
-> 且这个执行点**能被勾成 required 拦住合并**。交付形态**优先是「约定正确的 workflow 模板 + 复制配方」**，
-> 而不是改动 witnessloop 的 `workflow_call` 接口。
+> 本 change 的能力增量：接入方能拿到**一个可用的测试执行点**（不再只有 `witnessloop check`）。
+> 交付形态**优先是「约定正确的 workflow 模板 + 复制配方」**（零接口、零 ref 耦合、对存量接入方当天可达）。
+>
+> ⚠️ **诚实前提（对抗轮 B-1 要求写进交付物）**：**本 change 是「零机械强制」的**——
+> 它交付文档 + 模板；接入方不拷、不勾，什么都不会发生。**不得**以「机械门禁项目」之名把它说得像有强制力。
 
 ## Requirement: 交付一个可用的测试执行点
 
 本 change SHALL 交付一条**接入方可直接采用**的测试执行路径，使接入方自己的测试在 PR 上自动执行。
 
-该路径 SHALL 对**已接入的仓**同样可达（存量接入方 SHALL NOT 需要改动 `init` 生成的任何文件——
-实测那是死锁，见下面的 Requirement）。
+该路径 SHALL 对**已接入的仓**同样可达，且 SHALL NOT 要求接入方改动 `init` 生成的任何文件
+（实测那是死锁：`init` 与 `uninit` 同时 exit 1，见下一条 Requirement）。
 
-> ⚠️ 具体形态（模板 + 文档 / `init` 种一份 + 模板 / `gate.yml` 加 input）由本 change 的 **Q1** 定案后
-> 钉死在此；实现开始前 MUST 替换本括注。
+交付物 SHALL 自述「**本 change 零机械强制**」（不拷不勾则什么都不发生）。
 
-### Scenario: 新接入方拿到执行点
-- **Given** 一个刚 `witnessloop init` 的仓（Python、用 `pytest`）
-- **When** 按 README 的配方采用测试工作流并把它勾成 required
-- **Then** 该仓的 PR 会自动跑测试；测试失败 ⇒ 合并被拦
+> ⚠️ 具体形态（模板 + 文档 / 模板 + 增量①②③（推荐）／`gate.yml` 加 input）由 **Q1** 定案后钉死在此；
+> 实现开始前 MUST 替换本括注，并**删掉未选分支**。
 
-### Scenario: **存量**接入方拿到执行点（R11：原稿没覆盖的节点）
-- **Given** 一个**已经接入**的仓（`init` 产物不许动）
-- **When** 按 README 的配方采用测试工作流
-- **Then** 它**无需**改动任何 `init` 生成的文件即可获得执行点
+### Scenario: 采用模板后的**内容**断言（结构式，可机械验证）
+- **Given** 交付的模板文件
+- **When** 用 YAML 解析它（先例与理由见 `tests/test_gate_workflow.py:32-34`）
+- **Then** 它含三态分支：占位符未替换 ⇒ `::error::` + 非零；显式空 ⇒ `::notice::`；非空 ⇒ 回显命令
+  （⚠️ **不写**「PR 触发后日志里有一行」这种**行为式** Scenario——本仓没有任何测试能验证 GitHub 的日志，见 N5）
+
+### Scenario: 存量接入方不改 `init` 产物即可拿到执行点
+- **Given** 一个**已经接入**的仓
+- **When** 按配方采用测试 workflow（配方 SHALL 给**可达 ref + 可直接执行的获取命令**）
+- **Then** 它**无需**改动任何 `init` 生成的文件；且配方里的 ref 上**确实存在**该文件（不会 404）
+
+## Requirement: 三态语义（未声明 / 占位符没填 / 已声明）
+
+交付物 SHALL 区分三种状态：**占位符未替换 ⇒ 失败**（`::error::` + 非零）；**显式空 ⇒ 跳过**（不失败）
+并留下 `::notice::`；**非空 ⇒ 执行并回显实际命令**。
+SHALL NOT 自行**探测**约定命令（猜 `pytest` / `npm test`）。
+
+理由：模板路线的最大失败模式是「**拷了但没填**」——若那是绿 job，就等于工具亲手种下
+「**看起来在保护你**的绿勾」。这一条正是把该风险从「大概率」压到「必须显式确认」。
+
+### Scenario: 占位符没填会红
+- **Given** 接入方原样拷了模板、没替换占位符
+- **When** PR 触发
+- **Then** 该 job **失败**（不是绿）
+
+### Scenario: 显式空 ⇒ 跳过但可见
+- **Given** 模板已采用、命令显式留空
+- **When** PR 触发
+- **Then** 该 job **成功**，日志里有一行 `::notice::` 明说「未声明测试命令」
 
 ## Requirement: SHALL NOT 要求接入方手改 `init` 的产物
 
-文档与 `init` 的输出 SHALL NOT 教接入方去修改 `init` 生成的文件来配置测试命令——
-实测（本机复现）：改了之后 `init` **exit 1**、`uninit` **exit 1**、**删台账再 `init` 也 exit 1**
-（「只增不改，拒绝覆盖已有文件」），且没有任何 flag 能表达「我确认」。
+文档与 `init` 的输出 SHALL NOT 教接入方修改 `init` 生成的文件来配置测试命令
+（实测：改后 `init` 与 `uninit` **同时** exit 1，`--dry-run`/`--policy`/`--gate-ref` 都不是出口；
+有效的出口是**文件级**的：恢复原字节 / 删掉该文件 / 改台账 sha 仅对 `uninit` 有效
+——「删台账」**既不必要也不充分**）。
 
-文档 SHALL 同时写明：**不要**用「先 `uninit` 再 `init`」做升级——`uninit` 会删掉台账里的**每一个**条目
-（含 `.witnessloop/policy.json`），会**静默丢定制 policy**。
+文档 SHALL 同时写明：**不要**用「先 `uninit` 再 `init`」做升级——它会删掉台账里的**每一个**条目
+（含 `.witnessloop/policy.json`），**静默丢定制 policy**。
 
-### Scenario: 文档不提供死锁路径
-- **Given** README 的接入/升级配方
-- **When** 逐条读它教接入方做的事
-- **Then** **没有**任何一条是「手改 `init` 产物」或「先 `uninit` 再 `init`」
-
-## Requirement: 空命令 ⇒ 跳过，但必须留下可见信号
-
-测试命令未声明时，执行路径 SHALL **跳过**测试（不失败）——SHALL NOT 自行**探测**约定命令。
-同时 SHALL 输出**运行时可观测的信号**（如日志里一行 `::notice::`「未声明测试命令」），
-并在有命令时**回显实际执行的命令**。
-
-理由：空=跳过 + required 绿 = 「**看起来在保护你**的绿勾」；`pytest --collect-only` 这类粘贴失误
-（收集 N 个、跑 0 个、exit 0）会让门禁**永远绿**。
-
-### Scenario: 空命令可见
-- **Given** 采用测试工作流但未声明命令
-- **When** PR 触发
-- **Then** 该 job **成功**，且日志里有一行明说「未声明测试命令」（不是静默成功）
-
-### Scenario: 不做探测
-- **Given** 一个只用 `pytest` 的仓（没声明命令）
-- **When** 触发
-- **Then** SHALL NOT 自行推断并运行 `pytest`
+### Scenario: 文档不含两条死路（机械可验证）
+- **Given** `README.md` / `docs/gate.md`
+- **When** 用 `tests/test_docs.py` 的范式断言（禁语 + 必含限定）
+- **Then** 文档里**不出现**「手改 `init` 产物」或「先 `uninit` 再 `init`」的教法
 
 ## Requirement: 不得过度承诺（能力边界）
 
-文档 SHALL 写明本能力**只在「本次 PR 未修改自己的 CI 配置」的前提下**成立——
-`.github/workflows/**` 不在保护路径、branch protection 实测 `required_approving_review_count: 0`
-⇒ 一个 PR 可以删掉自己的测试步骤（或写成 `|| true`）而 required check 依旧绿。
-文档 SHALL NOT 承诺「测试失败一定拦住合并」这种无限定条件的说法。
+文档 SHALL 在每一处「拦住合并」的表述上带限定：**在本次 PR 未修改自己 CI 配置的前提下**
+（`.github/workflows/**` 不在保护路径、`required_approving_review_count: 0`
+⇒ 一个 PR 可以删掉自己的测试步骤而 required check 依旧绿）。
 
-### Scenario: 承诺带限定
-- **Given** README / `docs/gate.md` 里关于本能力的表述
-- **When** 逐句检查
-- **Then** 每一处「拦住合并」都带「在你自己的 CI 配置未被本次 PR 修改的前提下」这一限定
+### Scenario: 每处承诺都有作用域（机械可验证）
+- **Given** README / `docs/gate.md`
+- **When** 按 `tests/test_docs.py::test_every_idempotency_claim_is_scoped_or_qualified` 的范式（±2 行窗口）扫描
+- **Then** 每一处「拦住合并」都带限定，没有无限定条件的裸承诺
 
 ## Requirement: `check` 不执行测试
 
 `witnessloop check` SHALL NOT 执行接入方的测试命令——它只判**流程证据**；
-跑测试是 CI 侧 job 的职责，本 change SHALL NOT 改变 `check` 的语义与耗时，SHALL NOT 让它依赖测试产物。
+本 change SHALL NOT 改变 `check` 的语义与耗时。（⚠️ 论据**不是**「`check` 也被 guard 调用」——那为假。）
 
 ### Scenario: 本地 check 不跑测试
-- **Given** 仓里已采用测试工作流
+- **Given** 仓里已采用测试 workflow
 - **When** 本地运行 `witnessloop check`
 - **Then** SHALL NOT 执行任何测试命令
 
 ## Requirement: 不新增运行时依赖
 
-实现 SHALL NOT 给 `witnessloop` 增加运行时依赖（`pyproject.toml` 的 `dependencies` 保持 `[]`）。
+实现 SHALL NOT 给 `witnessloop` 增加运行时依赖（`pyproject.toml` 的 `dependencies` 保持 `[]`）；
+该约束 SHALL 有一条测试钉住（现状：`tests/` 里零落点）。
 
-### Scenario: 依赖不变
-- **Given** 本 change 后的 wheel
-- **When** 检查 METADATA
-- **Then** SHALL NOT 出现新的 `Requires-Dist`
+### Scenario: 依赖为空
+- **Given** 本 change 后的 `pyproject.toml`
+- **When** 解析它
+- **Then** `dependencies == []`
+
+## 边界声明（必须写进文档）
+
+1. 测试命令（若采用）是**任意代码**，会在每个 PR（含 **fork PR**）的 runner 上执行。
+2. **本 change 零机械强制**：交付物是文档 + 模板，**不新增任何门禁**；且**本 change 自己的 PR**
+   由 **`@v1` 的 CLI** 把关（v1 **不含** #13/#16 的新门禁）——文档 SHALL 写清**哪条规则在哪个 ref 上生效**。
+3. 本仓自己的 `test` job 目前**不是** required（⇒ 本仓可带红测试合入）；本 change SHALL 把它写成一条**人工交付项**。

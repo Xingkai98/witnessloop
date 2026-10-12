@@ -86,6 +86,13 @@
   既有的 grill-adversarial 机械要求（`README.md:105-113` 那条「对**接入方**是行为变更」正是这条）。
   来源: `grill-reviewer-adopter-test-gate-2026-10-12T154359Z`
 
+> ⚠️ **【对抗轮 R1 回写（B1）】上一条的「必须」被证伪**：**本 change 自己**的 PR 由 **`v1` CLI** 把关
+> （`.github/workflows/witnessloop.yml:14` 引 `@v1` + `gate.yml:19-23` 的 `witnessloop-ref` 默认 `v1`），
+> 而 v1 **没有 `evidence` 模块**、`REVIEW_MANIFEST_REQUIRED_FIELDS` **不含 `stage`** ⇒ 实测同一个
+> 「落了实现」的 diff：**v1 报 1 条、main 报 4 条**。⇒ 「必须有三份 manifest，否则红」**只在 `main`
+> 及其后的 ref 上成立**，对本 PR 与最近 6 个 change 的 CI **不成立**。
+> 详见 `reviews/grill-adversarial.md` 的 B1/CRQ-F；作者已按此订正 `design.md §1`/§7-6 与 `tasks.md`。
+
 ## Code-Resolved Questions
 
 - **CRQ-1｜「改了 caller 会怎样」——`init` 与 `uninit` 同时 fail-closed，且没有出口**（这是任务书要求回答、
