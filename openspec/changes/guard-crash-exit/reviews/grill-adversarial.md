@@ -163,3 +163,171 @@ doc-sync 清单**漏了 `docs/adr/0001`**，而前一轮「README 不含 guard �
 7. **自锁复现**：本仓 `uv run witnessloop guard --root . --path src/witnessloop/cli.py` ⇒ **exit 1**「无 stage=grill 的 manifest」。
 8. **check 侧**：`main(["check",…])` 在非法 UTF-8 报告上抛 `UnicodeDecodeError`（真实 CLI 退 1，fail-closed）。
 9. **BaseException 归位**：`raise KeyboardInterrupt` ⇒ CPython **信号结束**（`returncode=-2`，shell 见 130）⇒ shim 放行，非误拦。
+
+---
+
+# 第 2 轮（R2）
+
+> 立场：同 R1——**默认修订稿仍有错**，逐条证伪。先核验 R1 的 5 条必须修改**是否真被整合**（读文件、不信声明），
+> 再对**修订后**设计找**新**洞。隔离副本在 `/tmp/r2`（未在仓库留文件）；仅改本文件，未 commit。
+
+## Reviewer
+- run id: grill-adversarial-reviewer-guard-crash-exit-2026-10-12-r2
+- 时间: 2026-10-12T00:12:29Z
+
+## Verdict
+
+**CHANGES_REQUESTED**
+
+R1 的 5 条**整合到位**（逐条见下，均有 `文件:行号` 核对）。但修订稿仍有一处**同类 over-claim 未消**，
+且其根因正是 R1 自己**也没枚举全**的读点——只是换了模块：
+
+- **N1（阻塞）**：`check` 遇**字节坏 manifest** 仍**崩**（traceback），而 **JSON 坏**给干净 finding——
+  二者**不同归**。design D4-2 / spec Req2 声称的「manifest 解码失败 ⇒ `check` 红（**与 JSON 坏一致**）」
+  **未被实现**，因为修复接线（`tasks.md` C3）只碰 `evidence.py`，而 `check` 在 `contract.py:_validate_one`
+  **先崩**、**根本走不到** `evidence.py`。实测复现（甲副本）。
+- **N2（阻塞·论证）**：甲案**否乙的理由**「乙会让 `check` 变绿 ⇒ 失去 fail-closed」**被证伪**（常见场景下
+  `check` 仍红，靠 `report_hash` **独立**抓获）；且乙可**干净实现**（共享函数加一个带默认值的调用者参数）。
+  甲案**可能**仍是对的选择，但**理由必须重写**——否则会误导用户对 Q1（**未决**）的裁定。
+
+## R1 必须修改的整合核验（逐条）
+
+1. **D3 over-claim 收窄** → **整合到位**。`design.md:30-32` 列为「修完仍存的边界」；`design.md:56-57`
+   明写「**不覆盖**：`cli.py:14-15` 的**模块级** import 失败」；`spec.md:15-16` Requ1 加了「已知边界
+   （不在本要求内）」；`design.md:136` R2 + `design.md:185-186` Q2。**实测边界仍在**：坏 `constants.py`
+   ⇒ `guard` **退 1**（见「实测」6）。声明与实现一致，无 over-claim 残留。
+2. **读点归一（policy/manifest/报告 三读点）** → **整合到位、但不完整**。`design.md:66-79` D4（policy⇒放、
+   manifest⇒拦/红、报告⇒甲拦）与 `spec.md:38-41` Req2 **逐点一致**；`design.md:82-86` D5 与
+   `spec.md:55-56` 的 policy 归一同口径。**无相互矛盾**。**但**三读点**只覆盖 `evidence.py`/`policy.py`**——
+   `check` 侧另有 `contract.py:176,230` 两个 manifest 读点**未纳入**（N1）。
+3. **文档漂移订正** → **整合到位**。`tasks.md:44`（F3）与 `design.md:98-102`（D7）**都**纳入
+   `README.md:35` **与** `docs/adr/0001-local-guard-hook.md:16`。**实测两处当前文本**均写「拦（exit 2）」
+   （`README.md:35` = 「…缺 grill 证据 → 拦（exit 2）」；ADR:16 =「…⇒ 拦（exit 2）」），而代码
+   `guardcmd.py:129` = `C.EXIT_FAIL` = **1**（`constants.py:81`）⇒ **确为漂移**，订正方向正确。
+4. **顺序约束 F0** → **整合到位、且正确**。`tasks.md:49-50`（G0）补了「先 `manifest build --stage grill`
+   放行 `src/**` 写入 → 内容提交后**重跑覆盖**」。**约束本身对**：`guard` 放行条件是「grill 证据完备」
+   （`guardcmd.py:108-114`）、非「目录在场」；`src/**` 在本仓 policy 的 `require_change_for` 内
+   （`.witnessloop/policy.json`：`src/**`/`templates/**`/`plugin/**`）。**实测**：本仓
+   `guard --path src/witnessloop/cli.py` ⇒ **退 1**「无 stage=grill 的 manifest」（「实测」5）；
+   **且 F0 流程端到端可跑通**（「实测」7）。
+5. **spec 的 `check` Scenario 补用例** → **整合到位**。`tasks.md:27`（C6）补
+   `test_check_stays_fail_closed_on_an_undecodable_report`，对应 `spec.md:81-85` Req4 Scenario。
+   ⇒ 原「写了但不可验证」**已消**。
+
+## 逐条对抗结论（对**修订后**设计的新证伪）
+
+### N1（阻塞）`check` + 字节坏 manifest 仍崩——「与 JSON 坏同归」不成立
+
+- **design/spec 的声明**：`design.md:69-71` D4-2「manifest 解码失败 ⇒ 可诊断 Finding ⇒ **拦 / 红**……
+  **这修掉对抗验证实测出的裂缝**（字节坏 manifest 放 vs JSON 坏拦）」；`spec.md:39-40` Req2「`check`
+  **红**（与 **manifest 缺失 / JSON 语法坏一致**）」；`spec.md:48-51` Scenario「字节坏与 JSON 坏的同级
+  失败同归」。
+- **实测（甲副本，「实测」3）**：把 `reviews/grill.manifest.json` 覆写为非法 UTF-8（字节坏）⇒ `check`
+  **退 1 且带 traceback**（崩在 `contract.py:230`）；把同一文件覆写为**非法 JSON** ⇒ `check` **退 1 且
+  干净**（`manifest 无法解析：…` + 孤儿 + 无 stage）。⇒ **同级失败在 `check` 侧仍不同归**——正是 design
+  声称「已修掉」的那条裂缝**在 `check` 侧原样存在**。
+- **根因**：`checkcmd.run` 的调用顺序是 `validate_review_manifests`（`checkcmd.py:75`）**先于**
+  `grill_evidence_findings_in_change`（`checkcmd.py:79`）。前者在 `contract._validate_one`
+  （`contract.py:230`）对 manifest 做 `json.loads(read_text)`，`except (OSError, json.JSONDecodeError)`
+  **漏 `UnicodeDecodeError`** ⇒ **在到达 `evidence.py` 前就崩**。⇒ `tasks.md` C3（只改 `evidence.py:165`）
+  **对 `check` 无效**——那条只在 **`guard`** 生效（甲副本：`guard` 遇字节坏 manifest ⇒ **干净退 1（拦）**，
+  「实测」3）。
+- **第二处**：`contract.py:176`（`_bound_report`）**同病**，同样 `check` 可达、同样漏捕——只是 `:230` 先崩
+  轮不到它。⇒ **R1 枚举了 ≥3 处崩溃点（`evidence`×2 + `policy`），但 `contract.py` 这两处 R1 也没列**；
+  design 沿用 R1 的枚举，故**同样漏**。「读点枚举不完备」这坑**两轮都没抓全**（换了模块）。
+- **与既有边界的关系**：`proposal.md:28-29` 把「`check` 报错难看」列为**非目标**，但 `design.md:140`
+  R5 与 `spec.md:78-79` Req4 又**明确要**「只改 `check` 的报错路径（崩溃 ⇒ 干净的 finding）」——**设计自己
+  承诺了 `check` 侧归一**，执行清单却只覆盖**报告**读点。⇒ 承诺与接线**不一致**。
+
+### N2（阻塞·论证）甲案否乙的理由被证伪；乙可干净实现
+
+- **design 的声明**（`design.md:74-78` D4-2 / `grill-review.md:59-61` Q1 理由(1)）：乙案「在共享函数里
+  **无法干净实现**」——「让它对报告读失败**返回空 findings**（= 放行）会**同时让 `check` 变绿**
+  ⇒ CI 锚失去 fail-closed」；「要两者分支就得给共享函数加『调用者』参数（**把职责渗入门禁层**）」。
+- **实测（乙副本，「实测」4）**：
+  - **报告在 manifest 之后被损坏**（**常见场景**：附写一个 `0xff`）⇒ 乙案下 `check` **仍退 1**
+    （`report_hash 不匹配` 由 `contract._check_hashes`（`contract.py:371`）**独立**抓获）——**`check`
+    没有变绿**。⇒ design 的「会同时让 `check` 变绿」**在这条常见路径上不成立**。
+  - 仅当「报告损坏 **且** manifest 也在损坏字节上**重建**」（`manifest build` 读**字节**、不校报告正文，
+    `manifestcmd.py:101` ⇒ 确实可行）时，乙才让 `check` **退 0（绿）**。
+- **乙可干净实现**：给共享函数加一个**带默认值**的调用者参数（如 `on_unreadable_report="block"`，
+  `guard` 传 `"allow"`），或让函数返回「不可核验」标记由**调用者**决定取舍——两者都在 `evidence.py`
+  **一处**完成，`check` 仍 fail-closed、`guard` 仍 fail-open。⇒ 「无法干净实现」**是断言，不是事实**。
+- **评估（翻不翻转？）**：甲案**不必然翻转**——甲仍有**真实**优势：(1) 无需新参数（口径留在共享函数里、
+  不向门禁层渗**调用者**语义）；(2) 收紧「重建 manifest 于损坏字节」这个**乙漏掉**的角落（上条第二条）。
+  但 **design 用来否乙的『会让 check 变绿』是错的前提**，而 Q1 是**未决的用户裁定**——**用错前提引导裁定**
+  正是本仓「不许假声明」的红线。⇒ **必须**把 D4/Q1 的理由改成**真**陈述（甲严格 fail-closed、且在重建
+  角落更严；代价仅是无参数的简洁性），或据此**重新评估**推荐。
+
+### 其余角度（多为**确认**，无新洞）
+
+- **甲案不自锁** → **成立**。`require_change_for` 不含 `reviews/**`/`docs/**`；写报告/文档在 `_code_paths`
+  （`guardcmd.py:67-75`）里**豁免放行**。⇒ 「报告损坏 ⇒ 甲拦」**不会**锁死修复路径。`design.md:80` 成立。
+- **甲案新增的 fail-closed 与 `docs/gate.md §8` 冲突？** → **已被 design 预见**。`gate.md:314` 的 fail-open
+  列表（推不出/未给路径/写文档/未接入）**不含**「证据损坏」；甲**新增**一类 fail-closed，但 `design.md:137`
+  R3 + `tasks.md:45` F4 已标为「对**接入方**的行为变更，须写明」，`design.md:96-97` D7/F2 计划改 §6/§8。
+  ⇒ 不是隐藏冲突，是**已登记的行为变更**。
+- **`check` 侧对别的 change 回归？** → **无**。基线 `uv run pytest -q` ⇒ **388 passed**；甲副本（补
+  `EXIT_INTERNAL` + `guard` 兜底 + policy/evidence 补捕）⇒ **388 passed**（「实测」2）。改动只**多捕**异常、
+  不增删规则 ⇒ 既有 change 的 `check` 不受影响。`design.md:113-114` D9 成立。
+- **`design.md §1` 读点表**（`design.md:19-25`）→ **对 guard 准确、完整**。沿 `guardcmd.run` 链核对：文件
+  读取仅 `policy.py:128`、`evidence.py:165`、`evidence.py:216` 三处（+ 非文件读 `gitutil._run`，已括注）
+  ⇒ **无第 5 个 guard 可达读点**。缺的两处（`contract.py:176,230`）是 **`check` 专属**，不在 guard 链上——
+  故 §1 表**无错**，只是**整体清单**仍不完整（N1）。
+- **F0/两段提交互斥？** → **不互斥，但「重跑」是承重的**。实测（「实测」7）：F0 build（pre-content）→ 写
+  `src/**` 放行 → 内容提交 → **重跑 build** → 证据提交 ⇒ `check` **绿**；**不重跑** ⇒ `check` 判
+  「审阅的是旧 revision」（head_sha 停在 pre-content，`src/**`+change 目录全成 stray）。
+- **spec 的每条 Scenario 都有对应用例** → **是**（Req1×3↔B1/B2/E1；Req2×3↔C5/C4/C2；Req3×2↔D1/D2；
+  Req4×1↔C6）。**唯一**「写了但无 Scenario/无用例」的残留是 **Req2 正文里的 `check` 侧 manifest 归一**
+  （见 N1）——它是**正文**而非独立 Scenario，故 R1 的第 5 条（补 check Scenario）**没覆盖到它**。
+
+## 必须修改（R2）
+
+1. **消灭 `check` 侧 manifest 读点的崩溃（或收窄 spec/design 的 `check` 声明）。** 二选一：
+   (a) 把 `contract.py:176` 与 `contract.py:230` 的 `except (OSError, json.JSONDecodeError)` **一并补
+   `UnicodeDecodeError`**（⇒ 字节坏 manifest 也走「manifest 无法解析」那条**干净 finding**，与 JSON 坏同归），
+   并把 `tasks.md` C3/C4 的接线**扩到 `contract.py`**、补一条对 `check` 的用例；
+   (b) 若不动 `contract.py`：把 `spec.md:39-40` 的「`check` **红**（与 JSON 语法坏**一致**）」**收窄**为
+   「`guard` 侧一致；`check` 侧仍为**受控非零**（traceback，fail-closed 方向正确但不可诊断）」，并同步
+   `design.md:69-71` D4-2。**不可**留着「已修掉裂缝 / 与 JSON 坏一致」的 in-line 声明而实际 `check` 仍崩。
+2. **重写否乙的理由（`design.md:74-78` D4-2 / `grill-review.md` Q1 理由(1)）。** 把被实测证伪的前提
+   「乙会让 `check` 变绿 ⇒ 失去 fail-closed」换成**真**陈述：乙**只在**「重建 manifest 于损坏字节」这一角落
+   漏 fail-closed；甲**无新参数、口径不向门禁层渗调用者语义**，且在**该角落**更严。给出**可干净实现的乙案**
+   （调用者参数 / 不可核验标记）并说明**为何仍（或不）推荐甲**。Q1 既为未决裁定，理由必须经得起证伪。
+
+## 新发现的风险
+
+- **「崩溃归一」在 `check` 侧是**分模块**的**：`evidence.py` 修好 ≠ `check` 不崩——`contract.py` 是 `check`
+  的**第一道** manifest 读点（`checkcmd.py:75` 先于 :79）。⇒ 任何「归一共享函数读点」的方案，若只盯
+  `evidence.py`，都**够不到** `check` 的 manifest 路径。这与 R1「读点枚举不完备」**同源、但换了模块**，
+  两轮都没抓到 ⇒ 建议改用「**谁先在 `check` 路径读 manifest**」而非「谁在共享函数里」来列清单。
+- **`manifest build` 读报告用**字节**（`manifestcmd.py:101` `sha256_tree`）⇒ 能在**字节坏报告**上**成功**
+  产出 manifest**。这使「重建 manifest 掩盖报告损坏」成为**可达**回避面——正是甲相对乙的价值所在；建议在
+  D4/Q1 **点明**这条（比现写的「会让 check 变绿」**准确**）。
+- **F0 的重跑是承重的**：忘了重跑 ⇒ `check` stale。`tasks.md:49-50` 已写「重跑覆盖」，属实且必需；建议在
+  F0 句末**显式**加「（**必须**重跑；否则 stale——且重跑前先 freeze `tasks.md`/`specs`，否则 hash 漂移）」。
+
+## 我实测复现的
+
+均在 `/tmp/r2` 内造仓 / 打补丁副本，**未在仓库留文件**；真 CLI 走 `python -m witnessloop`（`PYTHONPATH`
+指副本 `src`），真 git 仓。
+
+1. **基线**：`uv run pytest -q` ⇒ **388 passed in 18.09s**。
+2. **甲副本全量**：按 design 落 `EXIT_INTERNAL=4` + `cli.py` guard 分支 `try/except` + `policy.py`/`evidence.py`
+   补捕 ⇒ `PYTHONPATH=副本/src pytest -q` ⇒ **388 passed**（首跑 2 条 `test_agentenv` 红为 `/tmp` 模板
+   路径假象，符号链接修正后消失——与代码无关；与 `grill-review.md:38` 口径一致）。
+3. **`check` + 字节坏 manifest 仍崩**（甲副本）：
+   - 字节坏 `grill.manifest.json` ⇒ `check` 退 **1 带 traceback**（`contract.py:230`）；`guard` 遇同一文件
+     ⇒ **干净退 1（拦）**。
+   - JSON 坏同一文件 ⇒ `check` 退 1 **干净**（`manifest 无法解析` + 孤儿 + 无 stage）⇒ **不同归**。
+4. **乙副本（报告读失败 ⇒ 返回空 findings）**：
+   - 报告在 manifest 之后损坏 ⇒ `check` **退 1**（`report_hash 不匹配`）——**没变绿**；`guard` 退 **0**。
+   - 报告损坏 **且** manifest 重建于损坏字节 ⇒ `check` **退 0（绿）**——乙**唯一**漏 fail-closed 的角落。
+5. **自锁复现**：本仓 `guard --root . --path src/witnessloop/cli.py` ⇒ **退 1**「无 stage=grill 的 manifest
+   （现有 stage：（无））」。
+6. **`cli.py` 自身 import 边界仍在**（甲副本，坏 `constants.py`）：`guard` ⇒ **退 1** `RuntimeError: broken
+   install`（shim 会当 block）——与 `design.md:56-57` 声明的边界一致。
+7. **F0 流程端到端**（甲副本）：F0 build（pre-content）⇒ 写 `src/**` 放行（退 0）⇒ 内容提交 ⇒ **重跑**
+   build ⇒ 证据提交 ⇒ `check` **通过 ✓**；**不重跑** ⇒ `check` 退 1「审阅的是旧 revision」。
+8. **字节坏 policy**（甲副本）：`guard` 退 **0**（放行，`policy 非法…不拦`）；`check` 退 **1** 干净
+   （`policy 非法`）——与 `design.md:82-86` D5 一致。

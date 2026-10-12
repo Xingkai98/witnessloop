@@ -16,13 +16,15 @@
   任何从 `guardcmd.run` 冒出的未捕获异常 ⇒ CPython 以 **status 1** 结束。
 - **宿主映射**：`plugin/hooks/guard.sh:38-41` —— `if [ "$status" -eq 1 ]; then exit 2; fi; exit 0`。
   **1 → CC 的 2（block）** ⇒ **崩溃 = 误拦**。
-- **`guard` 可达的读点（实测 ≥3，且都漏 `UnicodeDecodeError`）**：
-  | 读点 | 文件 | 现有守卫 | 非法 UTF-8 时 |
-  |---|---|---|---|
-  | policy.json | `policy.py:128` | `except (OSError, json.JSONDecodeError)` | 崩（`UnicodeDecodeError` 是 `ValueError` 子类、不被捕） |
-  | review manifest | `evidence.py:165`（`_read_json`） | 同上 | 崩 |
-  | grill 报告正文 | `evidence.py:216` | 无 | 崩 |
-  （另有潜在第 4 处 `gitutil._run` 的 `FileNotFoundError`——`git` 不在 PATH 时；同样被通用兜底覆盖。）
+- **读点清单（实测，`guard` 与 `check` 各走一条路，都漏 `UnicodeDecodeError`）**：
+  | 读点 | 谁读到 | 文件 | 现有守卫 | 非法 UTF-8 时 |
+  |---|---|---|---|---|
+  | policy.json | `guard` / `check` | `policy.py:128` | `except (OSError, json.JSONDecodeError)` | 崩（`UnicodeDecodeError` 是 `ValueError` 子类、不被捕） |
+  | review manifest | **`guard`** | `evidence.py:165`（`_read_json`） | 同上 | 崩 |
+  | grill 报告正文 | `guard` / `check`（**共用**） | `evidence.py:216` | 无 | 崩 |
+  | review manifest | **`check`**（先于 `evidence`！） | `contract.py:176`（`_bound_report`）、`contract.py:230`（`_validate_one`） | `except (OSError, json.JSONDecodeError)` | 崩 —— `checkcmd.py:75` 的 `validate_review_manifests` **先于** `:78` 的 `evidence`，故 `check` 的 manifest 读点走的是**这里**、不是 `evidence.py` |
+  | 事件文件 | `check` | `events.py:51` | **无 try** | 崩（**本 change 非目标**——不同 artifact、且无 `guard` 路径，见 §非目标） |
+  （另有潜在一处 `gitutil._run` 的 `FileNotFoundError`——`git` 不在 PATH 时；被通用兜底覆盖。）
 - **「拦」= 1 的由来**：`guardcmd.py:129` `return C.EXIT_FAIL`（`constants.py:81`）——为避开 argparse 的 **2**
   （`cli.py:19-23`）。见 change `grill-evidence-gate` 的 D5 / 回归审阅 **Issue 3**。
 - **`check` 侧同崩溃点**：`checkcmd` 也调同一函数 ⇒ 同样崩；但 `check` 崩溃退 1 = 「**未通过**」= **fail-closed，语义正确**。
@@ -63,21 +65,35 @@
 ### D4 证据「读不出」的语义：**甲案（统一视为不完备 ⇒ 拦 / 红）** —— 待用户裁定（Q1）
 
 - **问题**：`guard` 撞上「证据文件存在、但**解码失败**」时该**拦**还是**放**？（grill 与对抗验证推荐不同。）
-- **三个读点的归宿（分解后）**：
+- **读点归宿（分解后）**：
   1. `policy.py:128`（**policy 读不出**）→ 归一为 `PolicyError` ⇒ `guardcmd.py:86-88` **放行**。
      **与既有「policy 非法 ⇒ 不拦」完全一致，无争议，直接采纳。**
-  2. `evidence.py:165`（**manifest = 证据容器**）→ 捕 `UnicodeDecodeError`，产出**可诊断**的 Finding
-     「清单无法解码：<file>」⇒ **拦 / 红**。与既有契约一致（manifest **缺失 / JSON 语法坏** ⇒ 拦，`evidence.py:184-203`）。
-     ——**这修掉对抗验证实测出的裂缝**：今日「字节坏 manifest ⇒ 放（崩溃退 4）」与「JSON 坏 manifest ⇒ 拦」自相矛盾。
-  3. `evidence.py:216`（**报告 = 证据内容**）→ 捕 `UnicodeDecodeError` ⇒ 见下**甲/乙**。
+  2. **manifest = 证据容器**：`evidence.py:165`（`guard` 侧）+ **`contract.py:176` / `contract.py:230`（`check` 侧）**
+     → 捕 `UnicodeDecodeError`，产出一条**可诊断**的 finding「清单无法解码 / manifest 无法解析：<file>」
+     ⇒ **拦 / 红**。与既有契约一致（manifest **缺失 / JSON 语法坏** ⇒ 拦，`evidence.py:184-203`）。
+     ——**这修掉 R1 实测出的裂缝**：今日「字节坏 manifest ⇒ 放（崩溃退 4）」与「JSON 坏 manifest ⇒ 拦」自相矛盾。
+     ⚠️ **R2 修正：`check` 的 manifest 读点不在 `evidence.py`**——`checkcmd.py:75` 的 `validate_review_manifests`（→ `contract.py:230`）
+     **先于** `:78` 的 `evidence` 调用。**只改 `evidence.py` 不够**：R2 实测「字节坏 manifest ⇒ `check` 仍 traceback（`contract.py:230`）」，
+     与「JSON 坏 ⇒ 干净退 1」**不同归**。⇒ 归一必须**同时**覆盖 `contract.py:176,230`。
+  3. `evidence.py:216`（**报告 = 证据内容**）→ 见下**甲/乙**。
 - **甲（推荐）**：报告读不出 ⇒ Finding「报告无法解码」⇒ **拦 / 红**。统一口径「**读不出 ⇒ 不可核验 ⇒ 不完备**」。
-- **乙（对抗验证原推荐：容器坏⇒拦、内容读不出⇒放）**：**在共享函数里无法干净实现**——
-  `grill_evidence_findings_in_change` 被 `check` 与 `guard` **共用**（`evidence.py:170`；
-  `guardcmd.py:108` + `checkcmd.py:79`）：让它对报告读失败**返回空 findings**（= 放行）会**同时**让 `check` 变**绿**
-  ⇒ **CI 锚失去 fail-closed**。要两者分支就得加「调用者」参数（把职责渗进门禁层），或让 `check` 单独兜（本 change 非目标）。
-  ⇒ **甲是唯一不需要给共享函数加参数的连贯解**。
-- **两案的共同点**：**崩溃都不再发生**（异常在源头归一成 verdict）。D3 的兜底从此只负责「**真正未预期**的异常」。
-- **甲不自锁**：写文档豁免（`require_change_for` 不含 `docs/**`）⇒ 报告坏了仍可先去修报告。
+- **乙（R1/R2 原推荐：容器坏 ⇒ 拦、内容读不出 ⇒ 放）**：**是可实现的**——给共享函数加一个**带默认值**的调用者参数
+  （或拆一个 `guard` 专用窄函数）即可。
+  ⚠️ **R2 已证伪我原稿的两处理由，此处如实重写**：
+  (a) 「乙在共享函数里无法干净实现」——**伪**（加默认参数即可）；
+  (b) 「乙会让 `check` 变绿 ⇒ 失去 fail-closed」——**在真实场景下不成立**：报告通常是在 manifest **之后**被写坏的
+  ⇒ `check` 由 `report_hash` **独立**判红（`contract._check_hashes`），**不会绿**。只有「作者把字节坏的报告
+  **重新 `manifest build`** 进 manifest」这一角落才会绿（build 对字节算 hash），而那属**作者自欺**、
+  落在「防漂移不防伪造」的既有边界内。
+- **两案的真实差别**（不再用假前提，交用户裁定）：
+  | | **甲（推荐）** | 乙 |
+  |---|---|---|
+  | 报告损坏时 `guard` | **拦**（快反馈：先修报告再写码） | **放**（交 CI 锚） |
+  | 「重 build 坏报告」角落的 `check` | **红** | **绿**（靠作者自欺） |
+  | 代码面 | **不新增参数** | 需调用者参数 / 窄函数 |
+  | 与「manifest 缺失 ⇒ 拦」口径 | **一致** | 「容器 / 内容」两分（须在 spec 写明） |
+- **共同点**：**崩溃都不再发生**（异常在源头归一成 verdict）。D3 的兜底从此只负责「**真正未预期**的异常」。
+- **甲不自锁**（R2 实测）：写 `reviews/**` / `docs/**` 属文档豁免（不在 `require_change_for`）⇒ 报告坏了仍可先修报告。
 
 ### D5 policy 读失败的归一（无争议，直接采纳）
 
@@ -125,10 +141,18 @@
 - `src/witnessloop/policy.py`：`policy.py:129` 补 `UnicodeDecodeError`（D5）。
 - `src/witnessloop/evidence.py`：`_read_json` 补 `UnicodeDecodeError` + 可诊断 Finding（D4-2）；
   报告读点补捕（D4-3）。
+- `src/witnessloop/contract.py`：**`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）**
+  补 `UnicodeDecodeError`（D4-2 ⚠️ R2：`check` 的 manifest 读点在这里，不在 `evidence.py`）。
 - `src/witnessloop/guardcmd.py`：模块 docstring 记「兜底在 `cli.main` 的 guard 分支 + 边界」。
 - `docs/gate.md` §6/§8、`README.md:35`、`docs/adr/0001-local-guard-hook.md:16`（D7）。
-- 测试：`tests/test_guard.py`（崩溃 ×2 + shim 新码 + 常量守卫）、`tests/test_evidence.py`（两个读点的解码失败）、
-  `tests/test_check_grill_evidence.py` 或 `test_check_manifest.py`（**check 对无法解码报告的 fail-closed**）。
+- 测试：`tests/test_guard.py`（崩溃 ×2 + shim 新码 + 常量守卫）、`tests/test_evidence.py`（读点归一）、
+  `tests/test_check_manifest.py` / `test_check_grill_evidence.py`（**`check` 对无法解码 evidence 的干净红**）。
+
+### 非目标（本 change）
+
+- **`events.py:51`**（`workflow-events.jsonl` 读点，`load_events_file` **无 try**）：`check`-only、**不同 artifact**、
+  **无 `guard` 路径**，其崩溃退 1 = fail-closed（仅报错难看）⇒ 属**既有**问题、与本 issue（`guard` 误拦）不同类，
+  不在本 change；建议另立 issue。（同理 `uninitcmd`/`initcmd` 的多个读点不在 `guard`/`check` 路径内。）
 
 ## 4. 风险
 
@@ -143,16 +167,17 @@
 
 ## 5. 测试策略（TDD）
 
-- **先红**：
-  - `test_guard_crash_is_not_a_block`：合格 `stage=grill` 证据 → 把报告覆写成**非法 UTF-8** →
-    `guard --path src/x.py` ⇒ **按 D4 裁定**断言（甲：退 1 且 stderr 含「报告无法解码」；乙：退 4）+ 断言 `!= ` 反之。
+- **先红（崩溃兜底 D3 —— 用**真正未预期**的异常触发，不用可归一的解码失败）**：
   - `test_guard_survives_an_arbitrary_internal_error`：monkeypatch `evidence.grill_evidence_findings_in_change`
-    抛 `RuntimeError` ⇒ 退 `EXIT_INTERNAL`（通用路径）。
+    抛 `RuntimeError` ⇒ 退 `EXIT_INTERNAL`（≠1）+ 一行诊断。
   - `test_guard_dispatch_survives_a_broken_import`：`sys.modules["witnessloop.guardcmd"] = None` ⇒ 退 `EXIT_INTERNAL`。
-  - `test_manifest_decode_failure_is_diagnosable`：字节坏 manifest ⇒ 退 **1** 且文案点名「清单无法解码」。
-  - `test_policy_decode_failure_is_not_a_block`：字节坏 policy ⇒ 退 `EXIT_PASS`（与 policy 非法同归）。
-  - `test_shim_allows_the_internal_error_code`：`_run_shim(cli_exit=C.EXIT_INTERNAL) == 0`。
-  - `test_check_stays_fail_closed_on_an_undecodable_report`（补 spec 的不可验证 Scenario）。
+  - `test_shim_allows_the_internal_error_code`：`_run_shim(cli_exit=C.EXIT_INTERNAL) == 0`；`.== EXIT_FAIL → 2` 回归。
+- **先红（读点归一 D4/D5 —— 断言是**确定性 verdict**、且**不出现 traceback**）**：
+  - 报告字节坏 ⇒ `guard`：**甲**退 **1** 且 stderr 含「报告无法解码」；**乙**退 4。（按 Q1 结果二选一，另一案断言相反。）
+  - manifest 字节坏 ⇒ `guard` 退 **1** 且文案点名「清单无法解码」；**与 JSON 坏 / 缺失同归**（同一断言形状）。
+  - policy 字节坏 ⇒ `guard` 退 `EXIT_PASS`。
+  - **`check` 侧（D4-2 ⚠️ R2）**：字节坏 manifest ⇒ `main(["check",…])` **不抛异常**且非 0（干净红，非 traceback）；
+    字节坏报告同理。
 - **回归（不变红）**：既有 `guard` 三态 / shim 1→2 / 全量 388；本仓 `dogfood-bootstrap`、`grill-evidence-gate` 的 `check` 仍绿。
 
 ## 6. 文档影响
@@ -174,6 +199,18 @@
 - **`tasks.md` 补 F0**（实现前须先有 passing grill manifest；自锁已实测复现）。
 - **spec 的 check Scenario 补测试**（原为「写了但不可验证」）。
 
+**必须修改（已整合 · 来源 `grill-adversarial-reviewer-guard-crash-exit-2026-10-12` R2，CHANGES_REQUESTED）**：
+R2 确认 R1 的 5 条**全部到位**，但**新证伪两条**（均已整合）：
+- **N1 `check` 的 manifest 读点在 `contract.py`，不在 `evidence.py`**：`checkcmd.py:75` 的
+  `validate_review_manifests`（→ `contract.py:230`）**先于** `:78` 的 `evidence`。只改 `evidence.py`
+  时「字节坏 manifest ⇒ `check` 仍 traceback」，与「JSON 坏 ⇒ 干净退 1」不同归 ⇒ **本 change 原 spec 的
+  「与 JSON 坏同归」是 over-claim**。⇒ D4-2 的归一**扩到 `contract.py:176,230`**（§1 表 + §3 接线点 + §5 用例）。
+- **N2 甲案否乙的两条理由被证伪**：①「乙无法干净实现」伪（加带默认值的调用者参数即可）；
+  ②「乙 ⇒ `check` 变绿」在真实场景下伪（报告在 manifest **之后**损坏 ⇒ `report_hash` **独立**判红，
+  只有「把坏报告重 build 进 manifest」这一角落才绿）⇒ **D4 的对比表重写**（不再用假前提引导 Q1）。
+- **未发现新洞**：甲不自锁、无 check 回归（甲/乙副本均 388 passed）、`design.md §1` 的 `guard` 读点表完整
+  （无第 5 读点）、F0 与两段提交不互斥（但**重跑 build 是承重的**：不重跑 ⇒ stale 红）。
+
 **Code-Resolved 结论**：
 `guard` 不校验 hash（`guardcmd.py:108` ⇒ `evidence.py:170-217`）⇒ 覆写报告能直达崩溃点；
 `sys.modules[...]=None` ⇒ `ImportError` 可造；照抄 D3 示例不加 import ⇒ `NameError` ⇒ bug 复活（实测）；
@@ -181,7 +218,10 @@
 
 ## 8. Open Questions（停轮待用户确认）
 
-- **Q1** 证据「读不出（解码失败）」时 `guard` 该**拦**还是**放**？甲（统一不完备 ⇒ 拦，推荐）/ 乙（容器坏⇒拦、内容读不出⇒放）。
+- **Q1** **报告**内容「读不出（解码失败）」时 `guard` 该**拦**还是**放**？
+  **甲（推荐）**= 统一「读不出 ⇒ 不可核验 ⇒ 不完备」⇒ **拦**（快反馈，且与「manifest 缺失 ⇒ 拦」同口径）；
+  **乙** = 内容读不出 ⇒ **放**（容器/内容两分，交 CI 锚）。**两案的真实差别见 D4 的表**（R2 已证伪我原稿的两条否乙理由，
+  现按事实重述：乙**可实现**、且**不会**让真实场景的 `check` 变绿）。
 - **Q2** `witnessloop.cli` 自身 import 失败（**安装破损**）导致的 exit 1 ⇒ 误拦：**收窄声明 + 记录边界**（推荐）还是
   **前移到入口**（新增 entry 模块 + 改 packaging）？
 

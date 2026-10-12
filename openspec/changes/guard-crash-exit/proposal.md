@@ -20,15 +20,20 @@
 
 ## 目标
 
-让 `guard` 的**「拦」与非「拦」退出码互斥**：**未预期异常绝不被宿主当成 block**（fail-open），
-并把该不变量**钉成回归测试**（防日后回退）。
+1. 让 `guard` 的**「拦」与非「拦」退出码互斥**：**未预期异常绝不被宿主当成 block**（fail-open），
+   并把该不变量**钉成回归测试**（防日后回退）。
+2. **在源头把已知的读失败归一成 verdict**：`guard`/`check` 可达的证据读点（policy / review manifest / 报告）
+   遇**解码失败**时**不崩溃**，而是产出一条确定性结论（manifest 坏 ⇒ 拦/红；policy 坏 ⇒ 放；报告坏 ⇒ 见 Q1）。
 
 ## 非目标
 
-- **不改 `check` 的退出码语义**：`check` 崩溃退 1 = 「未通过」= fail-closed，**语义正确**（CI 锚本就该 fail-closed）；
-  仅报错难看，属可读性，不在本 change（见 design 的 Open Question Q2）。
+- **不改 `check` 的退出码语义**：`check` 遇同类问题的退出码仍是「未通过」= fail-closed；本 change 只把它的
+  **报错路径**从 traceback 改成干净的 finding（读点归一），**不改**它「通过 / 不通过」的判据。
+- **`events.py:51`（`workflow-events.jsonl` 读点）**：`check`-only、不同 artifact、无 `guard` 路径，
+  其崩溃退 1 = fail-closed（仅报错难看）⇒ 属**既有**问题、另立 issue（design §3 非目标）。
 - **不引入签名 / 防伪造**（沿用 v1 边界：防漂移，不防伪造）。
 - **不动 hook 的安装/分发方式**（沿用 `grill-evidence-gate` 的 D6）。
+- **不兜 `witnessloop.cli` 自身模块级 import 失败**（安装破损）——design 边界 + Open Question Q2。
 - 不新增动词、不改 plugin 文件清单。
 
 ## 验收

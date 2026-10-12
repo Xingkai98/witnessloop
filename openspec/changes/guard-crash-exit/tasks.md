@@ -24,7 +24,11 @@
 - [ ] C3 实现：`evidence.py:165`（`_read_json`）补捕 ⇒ 产出**可诊断** Finding「清单无法解码：<file>」（D4-2）
 - [ ] C4 单测（先红）：字节坏 **manifest** ⇒ `guard` 退 **1** 且文案点名「清单无法解码」（与 JSON 坏 / 缺失一致）
 - [ ] C5 实现 + 单测（**按 Q1 结果**）：报告读点（`evidence.py:216`）⇒ 甲案「拦 + 文案『报告无法解码』」/ 乙案「放」
-- [ ] C6 单测（先红·补 spec 的不可验证 Scenario）：`main(["check",…])` 遇无法解码的报告**不返回 0**（仍 fail-closed）
+- [ ] C6 单测（先红·补 spec 的不可验证 Scenario）：`main(["check",…])` 遇无法解码的 evidence **不返回 0**（仍 fail-closed）
+- [ ] **C7（⚠️ R2 N1）** 实现：`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）补 `UnicodeDecodeError`
+      ——**`check` 的 manifest 读点在这里**（`checkcmd.py:75` 先于 `:78`），只改 `evidence.py` 不够
+- [ ] **C8（⚠️ R2 N1）** 单测（先红）：字节坏 **manifest** ⇒ `main(["check",…])` **不抛异常**且非 0（干净红，非 traceback）
+      ——「与 JSON 坏**同归**」是 spec 的硬要求，须有测试钉住
 
 ## D. shim（D6）—— 待验证（预期零改动）
 
