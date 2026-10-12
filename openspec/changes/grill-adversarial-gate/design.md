@@ -116,7 +116,7 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 
 ⚠️ **两种都要写明是对先例的偏离**（先例挂归档点 + 三重豁免，本仓无对应物）——不许写「照 asterwynd 办」。
 
-### D3 verdict 文本**不参与判定**（Q2 定案 = 甲）
+### D3 verdict 文本**不参与判定**（Q2 定案：**不解析**）
 
 > **定案（用户 2026-10-12 确认）**：**不解析** verdict 文本（`PASS` / `CHANGES_REQUESTED` 都合格）。
 > 乙被否——它的代价（16 轮/5 份报告的格式规范 + 回填撞 `report_hash` + 给「到顶交人」找出路）远大于收益，
@@ -254,8 +254,9 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 - **配方纪律**（照 #12 的教训）：证据集用 `helpers.write_review(stage=..., report_rel=...)` 造，
   **不要**手写 manifest（`report_hash`/`tasks_hash` 极易不一致）；`grill-adversarial` 的默认报告名
   按真实约定取 `reviews/grill-adversarial.md`（R8）。
-- **配套的 spec 修订（实现前必须落地）**：`spec.md` 里**所有挂 Q1/Q2 待定标记的段落**都要按定案替换
-  ——对抗轮 R1 指出「两处」是**下限不是全集**（`spec.md` 里至少 5 处挂标记）。至少含：
+- **配套的 spec 修订（✅ 已落地 · 2026-10-12 `2cc56ce`，见 tasks B5）**：`spec.md` 里**所有挂 Q1/Q2
+  待定标记的段落**都已按定案替换——对抗轮 R1 指出「两处」是**下限不是全集**（`spec.md` 里至少 5 处挂标记）。
+  当初列的清单（第 4 条已随 Q2 定案失效，因为裁决就是不解析 verdict）：
   1. 「未触发时不误伤」Scenario 的 `Given` 写成「本次 diff **不满足**触发条件」= **循环定义** ⇒
      定案后替换成具体条件（乙 = 只改文档 / 只动 change 目录）；
   2. `spec.md` 的**触发条件**本身（正文 + Scenario 的 `Given`）；

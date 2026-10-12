@@ -53,7 +53,7 @@ witnessloop **无 archive 门禁、无 `ChangeType`、`specs/` 恒备** ⇒ 它�
 
 - **不改 `guard`**（写码前的本地守卫）：asterwynd 先例在守卫侧也不要求它（实测 0 命中）；
   本仓 `guard` 的定位是「防遗忘」、可绕过，真正的锚是 CI required check。
-- **不解析 verdict 文本**（选甲时）：见 design D3 的诚实边界。
+- **不解析 verdict 文本**（Q2 定案：不解析）：见 design D3 的诚实边界。
 - **不加 archive 门禁、不引入 `ChangeType`**。
 - **不加豁免名单**（= 新的绕过面）。
 - 签名 / 防伪造（沿用「防漂移不防伪造」边界）。

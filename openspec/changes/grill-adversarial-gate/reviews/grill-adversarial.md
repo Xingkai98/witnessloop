@@ -419,3 +419,215 @@ R1 的 N-6 担心它会「留下一条在乙口径下永远无法构造的 Scena
 - 全部实测在 `/tmp/g2/repo`（`rm -rf .git .venv` → `git init -q` → `git add -A && git commit -qm base` → `uv sync`；`.pth` 实测 = `/tmp/g2/repo/src`）。
 - ⚠️ **一次需记录的副作用**：我在**被审 worktree 内**跑了一次 `uv run witnessloop check --root .`（为读当前 `check` 状态），`uv` 因此在仓根建了 `.venv/`。该路径在 `.gitignore:1`（`.venv/`）内 ⇒ `git status --short` 仍为空、未产生任何可提交改动（收工核对：`git status --short` = 空）。此项**不构成对「仓库只读」的违反**（无 git 可见的写入），但按纪律记于此：**后续轮次若要读 `check` 状态，应在 `/tmp` 副本里跑**。
 - 收工核对：`git status --short` 只有本报告文件的追加；HEAD 仍 `d6d74fa`；`git worktree list` 无新增 worktree。
+
+---
+
+# 第 3 轮（R3）
+
+- run id: `adversarial-reviewer-grill-adversarial-gate-r3-2026-10-12T150130Z`
+- 时间: 2026-10-12T15:01:30Z
+- 立场: 默认「定案已完整落地」这个自述有错，逐份 artifact 对照实测
+- 复核对象: 提交 `2cc56ce`（`git diff db4c29d 2cc56ce`：`spec.md` / `design.md` / `tasks.md` / `grill-review.md` 四处）
+- 方法: `/tmp/g3/repo` 独立副本（`rm -rf .git .venv` → `git init` → `uv sync`；`.pth` 实测 = `/tmp/g3/repo/src`）。**未在被审 worktree 跑任何 `uv`**（R2 的遗留纪律已遵守）。
+
+## Verdict
+
+**PASS** —— 设计可冻结。
+
+用户裁定（Q1 乙 / Q2 甲 / Q3 接受缺口 / Q4 只写文档 / Q5 采纳 E0b）**五条全部落到四处 artifact 且口径一致**；最关键的那条（`## User Confirmation` 能过 grill 证据判据）**实测通过**；定稿后的 5 条 Scenario 在乙口径下**全部可构造**；E0 → E0b → E1 链条**实测跑通到 `check` 退 0**。
+
+遗留 **7 条非阻塞**（**没有一条**会改变实现行为或让门禁与 spec 不一致）：
+
+- **N-1..N-4（同一类：条件句残留）**：定案已锁死乙/甲，但四处仍留着「**若 Q2 选乙**」「**Q2 选甲时**」这类**分支条件句**——`spec.md:76`（唯一在 spec 内的残留）、`tasks.md:101`、`tasks.md:108`、`proposal.md:56`。
+- **N-5**：`tasks.md:89`（E0）把在 R2 已关闭的「B5 的两处」写回成待办（B5 本身在 `:56` 已标 `[x]` 已完成）。
+- **N-6**：`design.md:119` 的「（Q2 定案 = 甲）」在「甲/乙」同时是 Q1 选项的语境里有歧义（会被读成「Q1 选甲」）。
+- **N-7（新发现，实现期需注意）**：E0b 若给 `CHANGES_REQUESTED` 并要求改 `spec.md`/`design.md`，**grill 那条 manifest 也会同时变 stale**（实测：5 条 finding 里 2 条指向 `grill.manifest.json`）；`tasks.md:99-100` 只提「改完证据立刻 stale ⇒ 再跑」，**没说 grill 那份也要重建**（E1 会兜住，但那之前 `check` 会红）。
+
+---
+
+## 逐条核验
+
+### M-1 定案是否完整落到四处、口径一致（含「有没有残留甲/待定」）→ **成立（遗留 7 条非阻塞，见下）**
+
+**作者声称**：定案替换进 spec/design/tasks 三处 + `## User Confirmation`。
+
+**实测**（逐份读，`git diff db4c29d 2cc56ce`）：
+
+**`spec.md`**
+- `:16-21` 触发条件正文 = **乙**：「触及 `policy.require_change_for` 下的路径（= 落了实现）……SHALL 复用 `checkcmd._code_hits` 的同一口径」✅——**行号我核过**：`src/witnessloop/checkcmd.py:106-122` 正是 `def _code_hits`（`def` 在 `:106`、`return sorted(...)` 收在 `:122`），**引用准确** ✅
+- `:24` 未跑 Scenario 的 `Given` 改成「改了 `src/**`（命中 `require_change_for`）」✅
+- `:34-35` 未触发 Scenario 的 `Given` 由**循环定义**改成具体条件「未触及 `require_change_for`（只改文档 / 只动 change 目录）」✅（R1 Code-Resolved 那条已关）
+- `:40` 多 change Scenario 的 `Given` 改成乙口径「触及 `require_change_for` 且**同时**触及另一个 change 目录」，`:42` 的 `Then` 从「**每个**」改成「**两个**」✅
+- `:96` Requirement 标题去掉「（选甲时）」；`:98-102` 正文改成无条件 + 补理由，删掉「若 Q2 选乙」分支 ✅
+- `:90-91` 守卫缺口显式标注 Q3 已接受 ✅
+- ❌ **`:76` 残留**：「（对抗轮**只**要求证据存在；**若 Q2 选乙**，另加「最终裁定 = PASS」判据——那是**新增**判据，不是复用）」
+
+**`design.md`**
+- `:3-6` 状态从「**草稿**」改成「**设计环已收敛**……决策已定稿」✅
+- `:71-76`（D2）标「**乙**（Q1 停轮定案）」+ 说明甲被否的理由 ✅
+- `:119-122`（D3）标「（Q2 定案 = 甲）」+ 说明乙被否 ✅（措辞见 N-6）
+- `:145-147`（D4）标「Q3 定案：接受缺口」✅
+- `:174-176`（D7）标「Q4 定案：只写文档、不加开关」✅
+- `:320-331`（§8）标题改成「**停轮裁定**（Q1..Q5 —— 用户 2026-10-12 已逐条确认，**无待定项**）」+ 一张五行的裁定表 ✅
+- `:332` 显式声明「下面保留五个问题的**完整分析**……是上述裁定的**证据**，**不是待定项**」✅ —— **这条很关键**：它让「§8 后面还大段写着『推荐乙』『（推荐）』」不再构成残留（作者已预先声明它们是证据而非待定项）。我认可这个处理。
+
+**`tasks.md`**
+- `:17`（A3）写死「**触发面 = Q1 定案「乙」** ⇒ 放进既有的 `if code_hits:` 块（与 building 那条并列）」✅
+- `:36`（B3）标 `[x] ~~B3 若 Q1 选甲~~ —— **Q1 定案「乙」⇒ 本条不适用**（保留下方清单作为「甲为什么被否」的证据）」✅ —— **保留清单 + 标不适用**，比删掉更好（证据留档）
+- `:56`（B5）标 `[x] **已做（2026-10-12，随停轮定案）**` 并列 ①②③④ ✅
+- ❌ **`:101` 残留**：「⚠️ **Q2 选甲时**，以 `CHANGES_REQUESTED` 收尾也算合格」——Q2 已定案，条件句应去掉（改成「**定案是甲**（Q2）⇒ …」）
+- ❌ **`:108` 残留**：「verdict 文本判据（**若 Q2 选甲**）」
+- ❌ **`:89` 残留**：E0 里「把定案替换进 `spec.md` 的触发条件（**+ B5 的两处**）」——B5 已于 R2 扩成「所有挂 Q1/Q2 待定标记的段落」且本轮标 `[x]` 完成，这里把已关闭的旧说法写回成待办
+
+**`proposal.md`**
+- ❌ **`:56` 残留**：「**不解析 verdict 文本**（**选甲时**）：见 design D3 的诚实边界。」——（选甲时）是条件限定，现已无条件
+
+⇒ **四处口径一致**（触发条件 = 乙、verdict = 不解析、guard 不动、只写文档），**没有一处编码了甲的口径**；残留的 4 处全是「已锁死的条件句没删」的**文案**问题。
+
+### M-2 `## User Confirmation` 能否真过 grill 证据判据 → **关掉（实测，且带对照组）**
+
+**作者声称**：`grill-review.md:82-89` 新增 `## User Confirmation`，逐条记 Q1..Q5 答复 + 确认时间。
+
+**实测（端到端，非只跑解析器）**：在 `/tmp/g3/repo` 里把**本 change 真实的** `grill-review.md` 搬进测试仓，用**真实 CLI** `manifest build --stage grill` 绑上它，再跑 `check`：
+
+```
+[build grill] exit=0
+check：通过 ✓        (exit=0)
+```
+
+**并直接读解析器内部**：
+
+```
+FINDINGS: 0
+Open Questions 里的 Qn: [1, 2, 3, 4, 5]        ← 恰好 Q1..Q5，无多无少
+User Confirmation 解析出: {1: '**乙**——触发面…', 2: '**甲**——**不解析** verdict 文本…',
+                           3: '**接受缺口**——…', 4: '**只写文档**——…', 5: '**采纳 E0b**——…'}
+```
+
+⇒ **5 个 Qn 全部匹配、全部判为实质答复**（`_is_unconfirmed` 对 5 条都是 `False`），`grill_evidence_findings` 返回 **0 条**。**不再报**「Open Question Qn 未经用户确认」，也**不报**「是占位文本」。
+
+**对照组（证明这道判据确实在判，不是空过）**：
+
+| 篡改 | 实测 `check` |
+|---|---|
+| 删掉 `- **Q5**:` 整行 | **退 1**：`Open Question Q5 未经用户确认（## User Confirmation 里没有 Q5）` ✅ |
+| 把 Q3 答复改成短占位「待确认」 | **退 1**：`Open Question Q3 的确认是占位文本` ✅ |
+| 把 Q3 改成「**待确认**（稍后补齐）**——但其实后面写了一大堆实质内容说明理由**」 | 退 0（**通过**）——见「已知宽松面」 |
+
+**⚠️ 已知宽松面（非本轮引入，且代码里已自述）**：`evidence._is_unconfirmed`（`src/witnessloop/evidence.py:100-108`）对**长答复**（> `_UNCONFIRMED_MAX_ANSWER_LEN` = 20 字）**不做**占位检查。⇒ 「以占位词开头 + 后面凑够 20 字」即可混过。该函数 docstring（`evidence.py:115-118`）**已明写**「占位启发式是短答复子串匹配……属『防漂移不防伪造』的既定边界，非缺陷」，且**与 grill 门禁既有行为完全一致**（本 change 未触碰）。**故不构成本 change 的缺陷**，我仅在确认它的边界时实测到并记录。
+
+⇒ **这条最关键的要求：关掉。**
+
+### M-3 定稿后的 Scenario 在乙口径下是否都可构造 → **关掉（逐条过）**
+
+| Scenario | `Given` | 能否用真实 git 场景造出 |
+|---|---|---|
+| 未跑设计对抗轮（`:23-26`） | 改了 `src/**`，只有 grill+building 证据 | ✅ |
+| 有对抗轮证据则通过（`:28-31`） | 同条件 + 一份 `grill-adversarial` manifest 绑着报告 | ✅ |
+| 未触发时不误伤（`:33-37`） | 未触及 `require_change_for`（只改文档 / 只动 change 目录） | ✅ |
+| **多 change 同 PR（`:39-43`）** | 触及 `require_change_for`（落实现）**且同时**触及另一个 change 目录 | ✅ **R1 的洞已补** |
+| stage 拼错可诊断（`:45-48`） | 用 `grill-adversariall` 产的 manifest、仓里没有 `grill-adversarial` 的 | ✅ |
+| 对抗轮之后再改设计 ⇒ stale（`:50-54`） | `head_sha=H` 之后改了 `design.md` | ✅ |
+
+R1 唯一点名构造不出来的那条（多 change 同 PR：旧 `Given` 写「另一个 change 自身**无实现**」）**已改**：新 `Given` 把「落实现」放在**主** change 上、另一个 change 只要求「被触及」——这在乙口径下**可构造**（同一 PR 改 `src/` + 两个 change 目录）。我按此构造过（R2 的 `test_every_change_in_a_code_pr_must_have_building_evidence` 是同一形态的先例）。**逐条都可构造，无残留。**
+
+### M-4 定案改动有没有引入新矛盾 → **未发现矛盾；发现 1 条实现期提醒（N-7）**
+
+逐项对：
+
+- **spec 说「复用 `_code_hits` 同一口径」而 design/tasks 提到别的判定？** → **没有矛盾**。`spec.md:19`（`_code_hits`）、`design.md:72`（「甲/乙……**`code_hits`**（本次 diff 触及 `policy.require_change_for`）时才要」）、`tasks.md:17`（「放进既有的 `if code_hits:` 块」）三处指**同一个**判据，且 `checkcmd.py:106-122` 就是它的唯一实现（`:109-111` 的 docstring 明写「**唯一**口径……分两份实现必然漂移」）✅
+- **`_code_hits` 的行号引用对不对？** → **对**（`checkcmd.py:106-122`）✅——值得一提：这正是 R2 抓到的「引用行号没随正文改」那类问题，本轮**没有**重犯。
+- **E0b 与 E0 的先后在新口径下是否成立？** → **成立**。`guard` 放行 `src/**` 只依赖 **grill** 证据（R1 实测：只有 grill manifest 时 `guard --change add-x --path src/app.py` 退 0），而 grill 证据在 E0 就产出 ⇒ 「先放行、定案后重跑对抗」不产生环。且乙口径下本 change 自己落了实现 ⇒ 它**必然**要 `stage=grill-adversarial`，与 E0b 的存在一致（不是多余步骤）✅
+- **乙口径下 `guard` 与 `check` 的差集**：`guard` 不要求对抗轮（D4），`check` 要求 ⇒ 本地可先写码、CI 才拦——这与 Q3「接受缺口」一致，无矛盾 ✅
+- ⚠️ **N-7（新发现）**：**E0b 的重跑会连带让 `grill` 那条 manifest 变 stale**。实测（`/tmp/g3/repo` 的 E0→E0b 链条）：E0b 第一轮之后若按第二轮发现改 `specs/`，`check` 出 **5 条** finding，其中 **2 条**指向 `grill.manifest.json`（`spec_hash 不匹配` + `审阅的是旧 revision`）；重建 `grill-adversarial` 之后那 2 条**仍在**。⇒ `tasks.md:99-100` 只说「改完证据立刻 stale ⇒ 再跑」，**没点明 grill 那份也要重建**。E1（`tasks.md:102`）会兜住（它明说要重建 grill/grill-adversarial/building 三份），但**在 E0b 与 E1 之间 `check` 会红**——实现者若在这个窗口跑 `check` 会看到「自己刚修完却更红」而困惑。**修法**：`tasks.md:99-100` 补一句「**改 `spec.md`/`design.md` 后，`grill` 那份 manifest 也会同步 stale ⇒ 一起重建**」。
+
+### M-5 E0b 自身的产物约定与后续链条 → **关掉（实测链条跑通）**
+
+**作者声称**：R3 结论追加到同一路径。
+
+**实测**（`/tmp/g3/repo` 全链条，结果见下）：路径不变、追加式，`check` 走到 **exit=0**。
+
+```
+E0:                     exit=1（只缺 building——E1 才补；符合预期）
+E0b-R1:                 exit=1（同上）
+E0b-修spec后:            exit=1，5 条（2 条 grill + 2 条 grill-adversarial + 1 条 building）
+E0b-R2(覆盖+重建):       exit=1，3 条（grill-adversarial 的 2 条 **全部消失**；剩的 3 条都不是它）
+E0b-改design后:          exit=1，4 条（grill-adversarial 正确报「head_sha 之后改动了 design.md」）
+E1（实现 + 三份全重建）:  exit=0  ✅
+```
+
+⇒ **无孤儿 / 无 `report_hash` 陷阱**：
+- 第 2 轮**覆盖同一路径** ⇒ 报告文件仍**只有一份**、仍被**重建后的** manifest 绑定 ⇒ 孤儿规则不触发、`report_hash` 对得上 ✅
+- 重建 `grill-adversarial` 之后它自己的 2 条 stale **立即消失**（说明重建是有效的、不是掩耳盗铃）✅
+- 之后再改 `design.md` ⇒ 它**正确**变 stale ⇒ 机制在「追加式报告」下**依然有效**（没有因为追加而失效）✅
+- E1 把三份全部重建 ⇒ **退 0**，链条收口 ✅
+
+**另**：本轮的 R3 报告追加是**安全的**——`openspec/changes/grill-adversarial-gate/reviews/` 里**没有**任何 manifest（`grill-adversarial.md` / `grill-review.md` 都是**未绑定**的裸报告），孤儿规则要「有 manifest 且报告未被绑定」才触发（`contract.py:185-219`）；当前 `check` 的两条 finding 是「缺少 review manifest」「无 stage=grill 的 manifest」，与追加无关。⇒ **R3 追加后不会新增任何僵局**，E0b 届时才需要「原地覆盖 + 重建 manifest」。
+
+### 顺带复核：R2 的 4 条非阻塞遗留是否已清 → **已全部清掉**
+
+| R2 遗留 | 现状 |
+|---|---|
+| `design.md:87` 权威出处指错 | 现 `:95`「（`grill-review.md` 的「事实 1–3」只覆盖其中 9 条，**不足以**当权威出处——这正是对抗轮 R1 的阻塞项 B-1）」✅ |
+| `design.md:202` 「两条边界」 | 全文件已无「两条边界/同两条」✅ |
+| `design.md:291` 「两处缺口」 | 现 `:310-311`「缺口清单见 §5（**不是定数**……）」✅ |
+| `design.md:289` `spec_hash` 时序 | 现 `:308`「**证据之前**整体替换 `design.md` ⇒ 退 0；要看到 `spec_hash 不匹配` 必须**先产证据、后改** `specs/`」✅ |
+
+（`:304`/`:317` 仍出现「两处缺口」「两条边界」字样，但都是**回顾 R2 历史**的行文，不是残留断言。）
+
+**回归**：`2cc56ce` 上全量 `uv run pytest -q` = **420 passed**（`/tmp/g3/repo`，与基线一致，无 churn）。
+
+---
+
+## 新发现（R3）
+
+### N-1（非阻塞 · 文案）`spec.md:76` 是 **spec 内**唯一残留的分支条件句
+
+`（对抗轮**只**要求证据存在；若 Q2 选乙，另加「最终裁定 = PASS」判据——那是**新增**判据，不是复用）。`
+Q2 已定案为甲 ⇒「若 Q2 选乙」永远不会发生。**修法**：删掉分句，或改成「（Q2 定案为甲：对抗轮**只**要求证据存在，不解析 verdict——见下方 `Requirement: verdict 文本不参与判定`）」。
+**为什么单独点出来**：其余残留都在 tasks/proposal（过程文档），**只有这一条在 spec 内**——而 spec 是 manifest 哈希绑定的 artifact，读者会把它当**已成文的需求**。
+
+### N-2（非阻塞 · 文案）`tasks.md:101` 与 `tasks.md:108` 的「若 Q2 选甲」条件句
+
+- `:101`：「⚠️ **Q2 选甲时**，以 `CHANGES_REQUESTED` 收尾也算合格」——Q2 已定案，应改成「定案是甲（Q2）⇒ 以 `CHANGES_REQUESTED` 收尾也算合格」。
+- `:108`：「verdict 文本判据（**若 Q2 选甲**）」——应改成「verdict 文本判据（Q2 定案：不解析）」。
+两处都不影响实现（A3/A4 已按乙/甲写死），但留着会让读者以为还有待定项。
+
+### N-3（非阻塞 · 文案）`proposal.md:56` 的「（选甲时）」
+
+`- **不解析 verdict 文本**（选甲时）：见 design D3 的诚实边界。` ⇒ 括号里的限定应去掉（Q2 已定案为甲，这就是无条件非目标）。
+
+### N-4（非阻塞 · 文案）`tasks.md:89`（E0）把 R2 已关闭的「B5 的两处」写回成待办
+
+`E0 停轮拿到 Q1..Q4 答复 → 把定案替换进 spec.md 的触发条件（**+ B5 的两处**）→ …`
+B5 在 R2 已扩成「**所有挂 Q1/Q2 待定标记的段落**」、本轮 `:56` 已标 `[x]` 完成 ⇒ 这里应改成「（**+ B5 列的各项，已于本轮全部替换完毕**）」，否则读起来像 E0 还要再做一遍。
+
+### N-5（非阻塞 · 可读性）`design.md:119` 的「（Q2 定案 = 甲）」
+
+D3 的 `甲`/`乙` 是 **Q2 的**两个选项（甲 = 不解析 / 乙 = 判 PASS），而 Q1 的选项**也叫**甲/乙（甲 = 无条件 / 乙 = `code_hits`）。`:119` 的「Q2 定案 = 甲」在整份文档同时用这两套甲/乙的语境里，**会被读成「Q1 选了甲」**——与同页 `:71`「D2 触发条件 = **乙**（Q1 停轮定案…）」正好对撞。**修法**：改成「（Q2 定案：**不解析 verdict**）」——去掉「= 甲」，直接说内容。
+
+### N-6（非阻塞 · 实现期提醒）E0b 的 stale 会**连带 grill 那份**，`tasks.md` 没提
+
+见 M-4 的 N-7。**修法**：`tasks.md:99-100` 补「改 `spec.md`/`design.md` 后，**`grill` 那份 manifest 也会同步 stale ⇒ 一起重建**」。**为什么值得改**：E1 虽然兜住，但 E0b→E1 窗口里 `check` 会因为**两份**证据红，实现者刚修完反而看到更多红项，容易误判成「修坏了」。
+
+### N-7（非阻塞 · 边界记录）`evidence._is_unconfirmed` 的长答复宽松面
+
+见 M-2 的「已知宽松面」。**非本 change 引入**（`evidence.py:100-108` 是既有实现、docstring 已自述），**只是本轮实测确认了它的边界**：占位词 + ≥20 字即可通过。若日后要收紧，那是另一次 change（本 change 的 D8 非目标不含它）。
+
+---
+
+## Code-Resolved（R3）
+
+- **`spec.md:19` 引的 `checkcmd.py:106-122` 准确**：`def _code_hits` 在 `:106`，`return sorted(...)` 收在 `:122`（逐行 `awk` 核过）。
+- **R2 的 4 条非阻塞遗留已全部清掉**（`design.md:95` / `:310-311` / `:308`；全文件已无「两条边界」断言）。
+- **`## User Confirmation` 的 5 个 Qn 与 `## Open Questions` 的 5 个 Qn 精确一一对应**（parser 内部实测：`[1,2,3,4,5]` ↔ 5 条解析成功的答复）。
+- **E0→E0b→E1 全链条在乙口径下可跑到 `check` 退 0**（六步实测，见 M-5）。
+- **追加式报告不破坏 revision 绑定**：重建 manifest 后 `grill-adversarial` 的 stale 消失；再改 `design.md` 它**仍会**正确变 stale。
+- **R3 追加本身安全**：该 change 目录当前**没有任何 manifest** ⇒ 不触发孤儿规则、不撞 `report_hash`。
+- **基线**：`2cc56ce` 上全量 `uv run pytest -q` = **420 passed**。
+
+## 复核边界（R3）
+
+- 全部实测在 `/tmp/g3/repo`（`rm -rf .git .venv` → `git init -q` → `git add -A && git commit -qm base` → `uv sync`；`.pth` 实测 `/tmp/g3/repo/src`）。
+- **遵守了 R2 的纪律**：本轮**未在被审 worktree 里跑 `uv`**（所有 `check` / `manifest build` / `pytest` 都在 `/tmp/g3/repo`）。
+- 收工核对：`git status --short` 只有本报告文件的追加；HEAD 仍 `2cc56ce`；`git worktree list` 无新增 worktree。

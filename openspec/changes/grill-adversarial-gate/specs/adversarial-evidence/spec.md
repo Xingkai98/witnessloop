@@ -73,7 +73,7 @@ grill / building / grill-adversarial 三条判定 SHALL 共用它——分两份
 （本仓已因「两边各写一套」踩过坑）。
 
 该共用 SHALL **不**把 grill 专有的**报告正文**校验泄漏给对抗轮判定
-（对抗轮**只**要求证据存在；若 Q2 选乙，另加「最终裁定 = PASS」判据——那是**新增**判据，不是复用）。
+（对抗轮**只**要求证据存在——**不**解析 verdict、**不**校验报告正文；见本 spec 的 verdict Requirement 与边界声明 4）。
 
 ### Scenario: 对抗轮不要求 grill 式正文
 - **Given** 一份 `stage=grill-adversarial` 的 manifest 绑定着一份普通对抗报告（无 `## Confirmed Decisions` 小节）

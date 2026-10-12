@@ -86,9 +86,12 @@
 
 ## E. 证据链与收尾
 
-- [ ] **E0** 停轮拿到 Q1..Q4 答复 → 把定案替换进 `spec.md` 的触发条件（+ B5 的两处）→ 写 `## User Confirmation` →
-      `manifest build --stage grill` 放行 `src/**` →（**E0b**）**重跑一次设计对抗轮**并落
-      `--stage grill-adversarial` 证据 → 内容提交后**必须重跑** manifest（否则 stale 红）
+- [x] **E0（已做 2026-10-12，`2cc56ce`）** 停轮拿到 Q1..Q5 答复 → 把定案替换进 `spec.md`（+ B5 已勾）→
+      写 `## User Confirmation`（对抗轮 R3 已实测它能过 grill 判据）→ `manifest build --stage grill` 放行 `src/**`
+- [x] **E0b（已做 2026-10-12，R3 `PASS`）**：**重跑一次设计对抗轮**（对**定稿后**的设计），
+      同路径**追加** + 落 `--stage grill-adversarial` 证据 → 内容提交后**必须重跑** manifest（否则 stale 红）
+      ⚠️ **对抗轮 R3 的 N-6**：E0b 的追加会让 **`grill` 那份 manifest 也变 stale**（实测 5 条 finding 里 2 条指向它，
+      因为 `report_hash` 绑的是报告字节）——**E1 会一并重建**，但那之前 `check` 是红的，**属预期**，别以为实现错了。
 - [ ] **E0b（Q5 的处置）**：定案后**重跑设计对抗轮**（可只针对被定案改动的部分）——因为定案会改
       `spec.md`/`design.md`/`checkcmd.py` 的形态，而对抗轮原稿针对的是**定稿前**的稿子；
       不重跑 ⇒ 门禁绿、但证据针对的是一份被取代的设计（R4 的机制空洞在**本 change 身上必然发生**）。
@@ -105,7 +108,7 @@
 
 ## 明确不做（本 change）
 
-archive 门禁 · `ChangeType` · verdict 文本判据（若 Q2 选甲）· 改 `guard` · `require_change_for=[]` warning ·
+archive 门禁 · `ChangeType` · **verdict 文本判据（Q2 定案：不解析 ⇒ 不做）** · 改 `guard` · `require_change_for=[]` warning ·
 签名/防伪造 · 新增 `design_hash`（R4 已声明为已知上限）。
 
 ## 实测记录（实现期）
