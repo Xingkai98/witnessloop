@@ -1,7 +1,8 @@
 # Design: adopter-test-gate
 
-> 状态：**草稿 → 已按 grill 回写**（grill 证伪原稿 5 处事实、走到 3 个原稿没到的设计树节点；
-> 逐一复核属实，见 §7）。待对抗验证收敛 → 停轮用户确认。
+> 状态：**设计已收敛** —— grill（证伪原稿 5 处事实 + 走到 3 个原稿没到的设计树节点）→
+> 对抗验证 **R1 `CHANGES_REQUESTED`（4 阻塞）→ R2 `CHANGES_REQUESTED`（5 条机械）→ R3 `PASS`**（3 轮封顶）。
+> 待**停轮**（Q1..Q13）用户确认。订正记录见 §7 / §7bis。
 > 依据 `proposal.md`。流程出处 `templates/grill.md`。决策记录：`reviews/grill-review.md`。
 
 ## 0. 一句话
@@ -126,13 +127,13 @@
 
 ### D8 文档影响（**已按 grill 补漏**）
 
-- `README.md`：接入段（测试执行点怎么拿、**空=跳过 + 可见信号**、required 是**人工勾一次**）+ **两条告警**（D9）。
+- `README.md`：接入段（测试执行点怎么拿、**三态语义**、required 是**人工勾一次**）+ **三条告警**（D9）。
 - `docs/gate.md`：§7（能力边界补 D9）、新增一小节（本能力的语义与边界）。
 - **`templates/github/adopter-tests.yml`**（**新文件**，己 的交付物；⚠️ 位置依 **Q11** 定案——
   `templates/` 根是 **host 中立**契约，纯 GitHub Actions 的 YAML 不该直接躺在那儿）+ `templates/review-loop.md`：
   ⚠️ **本 change 的立项理由之一就是「审阅者只能靠人工记忆跑一次测试」**，而
   `templates/review-loop.md:33,69,77` 那些「跑相关测试并写进报告」的条款**目前没有 CI 兜底** ⇒
-  该模板要不要补一句「测试须由 CI 执行（见 templates/adopter-tests.yml）」是 D8 的一部分，
+  该模板要不要补一句「测试须由 CI 执行（见 `templates/github/adopter-tests.yml`）」是 D8 的一部分，
   **不改它这条冲突就还在**（grill 证伪第 5 条）。
 - `proposal.md:13` 的「流程规定 TDD + 审阅者核实测试通过」补出处：`templates/review-loop.md:33,69,77`。
 
@@ -215,7 +216,7 @@ CODEOWNERS（写进文档，不强制）。
 
 每条的具体例子、反驳与出处见 `reviews/grill-review.md` 与 `reviews/grill-adversarial.md` 的对应小节。
 
-## 7bis. 对抗验证 R1 的证伪与订正（已整合 · 来源 `adversarial-reviewer-adopter-test-gate-r1`）
+## 7bis. 对抗验证 R1/R2 的证伪与订正（已整合 · 来源 `grill-adversarial-reviewer-adopter-test-gate-0316bc00ebcd`）
 
 - **B1**：本 change 的 CI 门禁跑 **`v1` CLI**（无 `evidence` 模块）⇒ 原稿/grill 关于「必须三份 manifest，
   否则红」的表述**对本 PR 为假**（实测 v1 报 1 条 / main 报 4 条）⇒ 已在 §1 加行、在 tasks F1/F2 区分

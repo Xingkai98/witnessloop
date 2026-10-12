@@ -86,7 +86,9 @@ SHALL **不**改变退出码、SHALL **不**显著改变耗时。
 ## Requirement: `check` 不执行测试
 
 `witnessloop check` SHALL NOT 执行接入方的测试命令——它只判**流程证据**；
-本 change SHALL NOT 改变 `check` 的语义与耗时。（⚠️ 论据**不是**「`check` 也被 guard 调用」——那为假。）
+本 change SHALL NOT 改变 `check` 的**判定语义**与耗时。（⚠️ 论据**不是**「`check` 也被 guard 调用」——那为假。
+⚠️ 与上面那条「**非阻塞 notice**」Requirement 的关系：notice **只加一行播报**，不参与判定
+⇒ 「不改变判定语义」与「加一行 notice」不矛盾；两条 Requirement 不是同一件事。）
 
 ### Scenario: 本地 check 不跑测试
 - **Given** 仓里已采用测试 workflow

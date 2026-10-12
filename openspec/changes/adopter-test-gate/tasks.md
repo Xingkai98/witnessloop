@@ -57,7 +57,7 @@
       ⇒ 承诺**限定为**「在本次 PR 未修改自己 CI 配置的前提下」；③ **本 change 是零机械强制**
       （不拷、不勾，什么都不会发生）——**不得**以机械门禁之名说得像有强制力
 - [ ] C2 可选加固写进文档（不强制）：把 `.github/workflows/**` 纳入 `CODEOWNERS`
-- [ ] C3 钉住两条**文档类 Requirement**（N4；范式见 `tests/test_docs.py:test_every_idempotency_claim_is_scoped_or_qualified`
+- [ ] C3 钉住三条**文档类 Requirement**（N4/N10；范式见 `tests/test_docs.py:test_every_idempotency_claim_is_scoped_or_qualified`
       与 `test_docs_no_longer_call_hooks_advisory_only`）：
       ① 每处「拦住合并」都要带限定（±2 行窗口）；② 文档里**不出现**「手改 init 产物」/「先 uninit 再 init」的教法；
       ③ README 的接入段**必须出现**「零机械强制」字样（N10：`spec.md` 要求交付物自述这一点，
