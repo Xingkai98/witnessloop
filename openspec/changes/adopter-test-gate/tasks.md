@@ -22,7 +22,8 @@
       + 测试步骤；**必须同时**：① 台账记 `test_command`（照 `gate_ref` 的 recall 先例 `initcmd.py:131-141,:163`）
       ② 定 D5（**新 tag**，不是移动 `v1`）③ 按 D2 钉死**失败交互**（`check` 失败时测试跑不跑、是否 `if: always()`）
 - [ ] A3 **②（依 Q13 定案）**：`check` 在「仓里除 caller 外没有任何 workflow」时打一行 `::notice::`
-      ——**零依赖**（列 `.github/workflows/*` 即可，**不解析 YAML**）、**非 finding、不改退出码**
+      ——**零依赖**（列 `.github/workflows/*` 即可，**不解析 YAML**）、**非 finding、不改退出码**。
+      ⚠️ **必须配一条测试**（N8）：notice **只**在该条件成立时出现，且**退出码与 findings 都不变**
 - [ ] A4 单测（先红）：模板用 **pyyaml 结构化断言**（先例与理由见 `tests/test_gate_workflow.py:32-34`）——
       三态各一条：**占位符未替换 ⇒ `::error::` + 非零**、显式空 ⇒ `::notice::`、非空 ⇒ 回显命令且走 `env:`
       （**断言限定到新增内容**，见 R16/CRQ-I：现有 `gate.yml:57-58` 就有裸 `${{ }}`）
@@ -43,7 +44,8 @@
       对抗轮 B3 证伪了原稿的「唯一恢复路径」）
 - [ ] B3 文档**必须**写清「**不要**用 `uninit → init` 升级」（会删掉台账里**每一个**条目含 `policy.json`
       ⇒ **静默丢定制 policy**，本仓自己就是受害者）
-- [ ] B4 校验「本 change 不改 `caller_workflow()` 的字节」：用 A6 的 golden literal 保证（不改它 ⇒ 自然通过）
+- [ ] B4 校验「本 change 不改 `caller_workflow()` 的字节」——**判据**（N9）：在 `DEFAULT_GATE_REF`
+      **未变**的前提下，A6 的 golden literal 逐字节相等（即「不改生成物」这件事由 A6 的测试直接体现）
 - [ ] B5 ~~戊（种子文件）~~ —— **对抗轮 B2 已从推荐删除**（与 spec 冲突 / 只省一次 `cp` / 会种下永远绿的
       no-op check）。**若用户仍要**：走 `init --with-tests` **显式 opt-in** + 种子必须是「占位符未替换 ⇒ 红」版本
       + 改三文件契约（`docs/gate.md:9`、`tests/test_init.py:18,72,103`）+ spec delta 显式记
@@ -57,10 +59,13 @@
 - [ ] C2 可选加固写进文档（不强制）：把 `.github/workflows/**` 纳入 `CODEOWNERS`
 - [ ] C3 钉住两条**文档类 Requirement**（N4；范式见 `tests/test_docs.py:test_every_idempotency_claim_is_scoped_or_qualified`
       与 `test_docs_no_longer_call_hooks_advisory_only`）：
-      ① 每处「拦住合并」都要带限定（±2 行窗口）；② 文档里**不出现**「手改 init 产物」/「先 uninit 再 init」的教法
-- [ ] C4 `check` / `guard` 判定路径**零改动**：由既有 `tests/test_guard.py` 全绿 + 「本 change 的 diff 不含
-      `src/witnessloop/{checkcmd,guardcmd,contract,policy}.py`」保证（**不**用「`gate.yml` 逐字节不变」那种反模式断言——
-      CRQ-J-2）
+      ① 每处「拦住合并」都要带限定（±2 行窗口）；② 文档里**不出现**「手改 init 产物」/「先 uninit 再 init」的教法；
+      ③ README 的接入段**必须出现**「零机械强制」字样（N10：`spec.md` 要求交付物自述这一点，
+      否则会漂——与 N4 同族，但 N4 只覆盖了限定词与两条死路）
+- [ ] C4 `check` / `guard` 的**判定逻辑**零改动：由既有 `tests/test_guard.py` 全绿 + 「本 change 的 diff
+      **不含** `src/witnessloop/{guardcmd,contract,policy,evidence}.py` 的判定逻辑」保证
+      （⚠️ **`checkcmd.py` 允许改动**——增量 ② 要在那里加一行非阻塞 notice；见 A3）。
+      **不**用「`gate.yml` 逐字节不变」那种反模式断言（CRQ-J-2）
 
 ## D. 回归
 
@@ -76,7 +81,7 @@
 
 - [ ] E1 `README.md`：接入段补「测试执行点怎么拿」「三态语义」「required 是**人工勾一次**（job 粒度）」
       + **写清哪条规则在哪个 ref 上生效**（B1：`@v1` 的 CLI 没有 #13/#16 的新门禁）
-- [ ] E2 `docs/gate.md`：§1（若选戊 ⇒ 三文件契约变更）、§7（能力边界补 D9）、新增一小节（本能力的语义与边界）
+- [ ] E2 `docs/gate.md`：§7（能力边界补 D9）、新增一小节（本能力的语义与边界）
 - [ ] E3 `docs/design.md`：§5.1 的 caller 契约（仅甲才需要改）
 - [ ] E4 ⚠️ **不改** `openspec/changes/` 下**其他** change 目录的非证据文件（会让其 manifest 判 stale）
 

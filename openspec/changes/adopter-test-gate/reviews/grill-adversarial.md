@@ -363,3 +363,173 @@ check：未通过 ✗（4 项）
 - 平台行为（**未端到端实测**，沿用上游「非官方明文、置信度中高」的标注）：
   `startup_failure`（R8/CD-3）我**没有**独立复核，只标注其**已不适用于推荐方案**。
 - branch protection / PR checks / issue #4：`gh` 对真实仓的即时取证（本次重跑）。
+
+---
+
+# 第 2 轮（R2）—— 复审 `59e3b65`
+
+> 复审对象：作者对 R1 的 4 条阻塞 + N1–N7 + CRQ-J 的整合提交 `59e3b65`。
+> **立场不变：默认「已修」的每一处都只改了一份 artifact**（本仓老毛病），逐份对照
+> `design.md` / `tasks.md` / `spec.md` / `proposal.md` **四处**去核。
+> 被审 worktree 仍**只读**，唯一仓内写入是本小节（追加到同一份报告，未另建文件）。
+
+## Reviewer（R2）
+
+- run id: `grill-adversarial-reviewer-adopter-test-gate-59e3b65a1b2c`
+  （环境仍未设 `WITNESSLOOP_RUN_ID`，按 `templates/grill.md` 生成确定性兜底 id：
+  `<stage>-<role>-<anchor>`，anchor = change id + 被审 revision 前 12 位。）
+- 时间: 2026-10-12T16:20:00Z
+- 被审 revision: `59e3b65`（`git diff --stat 0316bc0 59e3b65` = 6 文件 +600/−116）
+- 方法：副本 `/tmp/r2`（`cp -a` → `rm -f .git && git init -q` → `uv sync`），基线独立复现
+  **431 passed**；R1 的三条死锁出口与 `--gate-ref` 出口在 `/tmp/r2e` **重跑了一遍**（工具未变，结论不变）。
+  本轮以**逐份 artifact 对照**为主（R1 已把代码/平台事实钉死，本轮不重复实测）。
+
+## Verdict
+
+**CHANGES_REQUESTED**
+
+**5 条阻塞，全部是机械修正**（改标题 / 删残留 / 拆一条自相矛盾的断言，**没有新的设计问题**）。
+把这 5 条改完即可 PASS + 停轮 —— 作者可以只做这 5 处编辑，不需要再问我。
+
+| # | 阻塞项 | 落点 |
+|---|---|---|
+| **R2-B1** | **A3 与 C4 互斥**：A3（推荐纳入增量 ②）要求改 `check`，C4 却把「diff **不含** `checkcmd.py`」当成零改动的**保证手段**；且 ② 在 `spec.md` 里**没有任何 Requirement** | `tasks.md:24-25`（A3） vs `tasks.md:61-63`（C4） + `design.md:227` |
+| **R2-B2** | `spec.md` **自相矛盾**：`:25` 明写「**不写**『PR 触发后日志里有一行』这种**行为式** Scenario」，`:41-44` / `:46-49` 却正是行为式 | `spec.md:25` vs `spec.md:41-44,46-49` |
+| **R2-B3** | `design.md` **自相矛盾**：§5 要求 `gate.yml`「**逐字节不变**」，§7bis 的 CRQ-J-2 说「**不该**钉逐字节不变」 | `design.md:192` vs `design.md:225` |
+| **R2-B4** | §6 标题仍写「**Q1..Q8**」，而表内已是 **Q1–Q13**；§6 是驱动停轮的权威清单 ⇒ 用户会**漏掉 Q9–Q13**（含 B4 的 #4 收口） | `design.md:194` |
+| **R2-B5** | **戊 仍被写成并列候选**（不只历史记录，还有**可执行指令**级的残留） | `design.md:32,63,72,106,115,122,128,129,147-148,167,169,173,189`、`tasks.md:79` |
+
+**已确认关掉的（不必再动）**：B1 的四处落点、B3 的三条出口（含 `--gate-ref`）、B4 的三处、
+增量 ①②③、N1/N3/N4/N5/N6/N7、CRQ-J 的 A6 与 D2。逐条见下。
+
+## 逐条核验（作者声称 → 实测 → 关掉？）
+
+### 1. B1（本 change 的 CI 门禁跑 `v1` CLI）
+
+| 作者声称 | 实测 | 结论 |
+|---|---|---|
+| `design.md §1` 加了一行 | `design.md:27` 新增行 ✓（含 `witnessloop.yml:14` + `gate.yml:19-23` + 「v1 无 `evidence.py`、`REQUIRED_FIELDS` 不含 `stage`」+「v1 报 1 条 / main 报 4 条」） | **关掉** |
+| `tasks.md` F1 区分本地/CI 并禁止越权表述 | `tasks.md:87-91` ✓：明写「**本地** check 跑的是 main 的代码」「CI 的 `gate / check` 跑的是 `@v1` 的 CLI（**不**含这些新门禁）」+「**不得**在 PR 正文或文档里写『本 PR 由三份 manifest 门禁拦住』」 | **关掉** |
+| `grill-review.md` 的 CD-8 处加订正指针 | `grill-review.md:89-95` ✓（引用 `witnessloop.yml:14`/`gate.yml:19-23`/v1 无 evidence/`REQUIRED_FIELDS` 不含 `stage`，并指向本报告的 B1/CRQ-F） | **关掉** |
+| 「哪条规则在哪个 ref 上生效」写进 tasks E1 | `tasks.md:78` ✓（「+ **写清哪条规则在哪个 ref 上生效**（B1：`@v1` 的 CLI 没有 #13/#16 的新门禁）」） | **关掉** |
+
+附带：`design.md:179-181`（R20）、`design.md:246-249`（§7-6）也各记了一份 ✓。
+`proposal.md:50` 也写了 ✓ ⇒ 四处齐全，B1 是这轮关得最干净的一条。
+
+### 2. B2（删戊）
+
+- **关掉的部分**：`design.md:37`（删除线行 + 「若日后仍要做」的前置条件）、`design.md:46`（「⚠️ **「戊」已删**」）、
+  `tasks.md:47-49`（B5 = 「已删除 + 若用户仍要走 `--with-tests` opt-in + 前置条件」，正确形态）、
+  `tasks.md:101`（明确不做里点名「戊（种子文件，已按对抗轮 B2 删除）」）、
+  **`spec.md` 全文已无「戊」**（`grep -n 戊 specs/…/spec.md` 零命中）✓。
+- **未关掉的部分（残留「己/戊」并列，含可执行指令）**：
+  - `design.md:147-148`（§3 接线点）：「**选己/戊（推荐）**：…（戊 另加『种一次 + 不进台账』的写入路径 + 改三文件契约）」
+    —— 这是**在推荐里给戊派了活**，与 D1 的「戊已删」直接矛盾；
+  - `design.md:189`（§5 测试策略）：「**若选己/戊**：另需钉…与（**戊**）『种子只写一次、不进台账、不参与 `uninit`』」——同上；
+  - `tasks.md:79`（E2）：「§1（**若选戊** ⇒ 三文件契约变更）」；
+  - `design.md:32`（D1 标题）、`:63`（R14）、`:72`（D2）、`:106`（D5）、`:115`（D6）、`:122`（D7）、
+    `:128`（D8 `docs/gate.md §1`）、`:129`（D8 「`templates/adopter-tests.yml`…己/戊 的交付物」，**且路径还是旧的**）、
+    `:167`（R14）、`:169`（R15）、`:173`（R17）—— 共 13 处把戊当现存候选。
+  ⇒ **未关掉**。修法：全库把「己/戊」→「己」，删掉 `design.md:147-148` 与 `:189` 里的戊分支、
+  `tasks.md:79` 的戊括注；`design.md:37` 与 `tasks.md:47-49` 保持现状（那才是唯一该留的形态）。
+
+### 3. B3（三条文件级出口）+ R10 严重度
+
+- `design.md:83-87`（D3-①）✓ **逐字对上 R1 的 B3**：三条文件级出口（恢复字节 / 删掉该文件 / 改台账 sha 只对
+  `uninit` 有效）+「**『删台账』既不必要也不充分**」（只恢复字节就够；删了但字节没恢复仍 exit 1）✓
+- `tasks.md:41-43`（B2）✓ 同一口径。`spec.md:54-56` ✓ 同一口径（Requirement 正文也写了「有效出口是**文件级**的」）。
+- **`--gate-ref` 我本轮实测补上**（R1 只测了 `--dry-run`/`--policy`）：`/tmp/r2e` 手改 caller 后
+  `init --gate-ref <别的 tag>` = **exit 1** ⇒ `design.md:83` 的三项列举**属实** ✓。
+- **R10 半关**：`design.md:160` 已去掉「高」、标签改成「**条件式严重度**」✓，但**正文没有写出那个条件**
+  （应写「Q1=甲/丁 时高；Q1=己 时它退化为**文档约束**」）。读者仍不知道「什么条件下它才高」。
+  ⇒ **非阻塞**（不改变交付物），但建议补半句。
+
+### 4. B4（不得关 #4）
+
+- `proposal.md:52-56` 新增「## 与 issue #4 的关系（**不得含糊**）」段 ✓（明写 #4 的两条建议都是机械的、
+  本 change 一条都不做、不得直接关掉，#4 归属见 Q9）。
+- `tasks.md:94-96`（F4）✓ 已改成 Q9 形态（推荐「关 #4 时另开一条『机械执行点』issue」或保持 open）。
+- `design.md:206`（Q9）✓ 已新增。**关掉**。
+
+### 5. 增量 ①②③
+
+- **①**：`design.md:47-51`（D1 正文）+ `tasks.md:16-17`（A1）+ `spec.md:32-49`（Requirement「三态语义」）
+  **三处都有**，口径一致（「占位符未替换 ⇒ `::error::` + exit 1 / 非零」「显式空 ⇒ 跳过 + `::notice::`」）
+  ⇒ **关掉**（Scenario 的措辞问题另见 R2-B2）。
+- **②**：`tasks.md:24-25`（A3）+ `design.md:210`（§6 Q13）✓ **两处都有** ⇒ 落点齐，
+  但与 C4 互斥、且无 spec 覆盖（R2-B1）。
+- **③**：`tasks.md:38-40`（B1）+ `spec.md:27-30`（存量 Scenario 的 When/Then 明确要求「可达 ref + 可直接执行的
+  获取命令」「配方里的 ref 上**确实存在**该文件（不会 404）」）✓ **关掉**。
+
+### 6. N1–N7
+
+| N | 要求的落点 | 实测 | 结论 |
+|---|---|---|---|
+| N1 | tasks B1 + design + Q12 | `tasks.md:38-40` ✓、`design.md:55-56` ✓、`design.md:209`（Q12）✓ | 关掉 |
+| N2 | design D1/D8 + tasks A1 | `design.md:60-62`（D1）✓、`tasks.md:13-15`（A1，含「纳入 fixture」）✓、`design.md:208`（Q11）✓；**但 `design.md:129`（D8）仍是旧路径 `templates/adopter-tests.yml`** | **半关**（D8 那一行随 R2-B5 一起改即可） |
+| N3 | A5/A7 | `tasks.md:29`（A5：`init` 输出补一行、**只改 stdout 不改生成物**）✓、`tasks.md:33-34`（A7：钉 `dependencies == []`）✓；两者声称的现状我复核属实（`tests/` 里 `Requires-Dist\|dependencies` **零命中**） | 关掉 |
+| N4 | tasks C3 | `tasks.md:58-60` ✓（照 `test_docs.py` 的两个范式钉「≥ 每处『拦住合并』带限定」+「不出现两条死路教法」），且 `spec.md:61-64`、`:72-75` 各有一条 Scenario 接上 ✓ | 关掉 |
+| N5 | spec Scenario 改写 | `spec.md:21-25` ✓ 已改成**结构式**并明写「不写行为式」；**但同文件 `:41-49` 又写了两条行为式** | **半关**（→ R2-B2） |
+| N6 | design §1 + tasks D4/Q10 | `design.md:28`（§1 新行）✓、`design.md:182-183`（R21）✓、`tasks.md:72-73`（D4）✓、`design.md:207`（Q10）✓、`spec.md:102`（边界声明 3）✓ | 关掉 |
+| N7 | design D3-② | `design.md:90-91` ✓（「对 **D5 甲（换 tag）** 同样致命…⇒ 存量接入方『换 tag』的代价是丢定制 policy」） | 关掉 |
+
+### 7. CRQ-J（三件事怎么钉）
+
+| CRQ-J | 落点 | 结论 |
+|---|---|---|
+| J-1 `caller_workflow()` golden literal | `tasks.md:30-32`（A6）✓，且理由（R17：生成物是已接入仓的实际契约）写对了；我复核 `tests/test_init.py:46-55` **确实只有子串断言** ✓ | 关掉 |
+| J-2 `gate.yml` 用回归检查项 | `tasks.md:68-69`（D2）✓ + `tasks.md:102`（明确不做里点名「快照断言」反模式）✓ | 关掉（**但 design.md:192 没跟着改** → R2-B3） |
+| J-3 `check`/`guard` 零改动用 diff 范围保证 | `tasks.md:61-63`（C4）✓ 照抄了 R1 的建议 —— ⚠️ **但作者在同一轮采纳了增量 ②（A3，改 `check`），这条建议因此自相矛盾**。**这是我的责任**：R1 的 CRQ-J-3 是在「不碰 `check`」的前提下写的，作者采纳 ② 之后它就失效了 | **未关掉**（→ R2-B1） |
+
+### 8. 新引入的自相矛盾（逐条排查）
+
+| 排查项 | 结果 |
+|---|---|
+| `spec.md` 三态语义 vs「己 里命令住接入方自己的文件」 | **自洽** ✓ —— 三态都定义在**接入方自己的文件**里（模板的占位符/空/命令），不依赖 witnessloop 台账 |
+| `tasks.md` A1 的「显式空 ⇒ 跳过」vs A4 的三态断言 | **对得上** ✓（A1 `:16-17` 与 A4 `:27-28` 三项逐字一致：占位符⇒`::error::`+非零 / 显式空⇒`::notice::` / 非空⇒回显且走 `env:`） |
+| `spec.md` 边界声明 2 vs `proposal.md` 的「零机械强制」 | **一致** ✓（`spec.md:100-101` 与 `proposal.md:46-47` 同口径）。⚠️ 但增量 ② 是 `check` 的行为变化 —— `spec.md:100` 说「不新增任何**门禁**」（notice 不是门禁，字面不冲突），可是 **spec 里没有任何一条 Requirement 描述 ②**（`grep` 后 `::notice::` 只出现在模板三态语境）⇒ 见 R2-B1 |
+| `design.md §6` 有无「Q1 已定案」类越权表述 | **无** ✓ —— `tasks.md:6`「Q1 定案前…形态不确定」、`tasks.md:85`「停轮拿到 Q1..Q13 答复 → 定案替换进 `spec.md`」、`design.md:198` 用「**推荐**」而非「定案」。作者把「戊已删」写进 §6 的推荐列，**是作者对自己推荐范围的调整**，不是替用户拍板（`tasks.md:47` 仍留「**若用户仍要**」的入口）✓ |
+| **A3 vs C4（新发现）** | **矛盾** ✗ → R2-B1 |
+| **`spec.md:25` vs `:41-49`（新发现）** | **矛盾** ✗ → R2-B2 |
+| **`design.md:192` vs `:225`（新发现）** | **矛盾** ✗ → R2-B3 |
+| `proposal.md:66`「不改本仓自己的 `ci.yml`」vs `tasks.md:72`（把 `test` 勾成 required） | **文案级张力**：`tasks.md:101` 已把口径收窄成「不改本仓 `ci.yml` 的**内容**」（勾 required 是**仓库设置**、不是文件内容），但 `proposal.md:66` 没跟着收窄。⇒ **非阻塞**，建议照 `tasks.md:101` 的措辞补一个「（内容）」 |
+| `design.md:127`（D8）「**两条**告警」vs `tasks.md:53`「**三条**告警」 | **未同步** ⇒ **非阻塞**（D8 是清单，C1 才是执行项），但同属「只改一份」 |
+| `design.md:93-98`（D4）仍只写「空 = 跳过」两态 | **非阻塞**：三态在 D1(:47-51) 与 spec 里齐了，D4 只是没跟着扩写；建议 D4 首个「空」改成「**显式**空」，否则与 D1 的「占位符没填 ⇒ 红」读起来像打架 |
+| `design.md:214` 来源写 `adversarial-reviewer-adopter-test-gate-r1` | 与本报告实际的 run id `grill-adversarial-reviewer-adopter-test-gate-0316bc00ebcd` **不一致** ⇒ **非阻塞**，但身份字段漂了会让 `manifest` 的追溯对不上；建议照抄 `## Reviewer` 里的原值（`templates/grill.md` 的「防漂移」正是为此） |
+| `design.md:3-5` 状态行仍写「已按 grill 回写…见 §7」 | **非阻塞**：没提对抗轮 R1（§7bis），且「决策记录」只列 `grill-review.md`，未列 `grill-adversarial.md` |
+
+## 新发现（R2）
+
+- **N8（阻塞 · 见 R2-B1）｜增量 ② 是「本轮新引入」的唯一实质问题**：它同时
+  ① 与 C4 的机械保证互斥、② 无 spec Requirement、③ 让 `design.md:227`（CRQ-J-3）失真。
+  **修法（三处一起）**：C4 的排除名单去掉 `checkcmd.py`、把「零改动」限定成**判定路径**
+  （`contract.py` / `policy.py` / `evidence.py` 的判定逻辑 + 退出码语义）；A3 补一条测试
+  （「notice 只在**除 caller 外无 workflow** 时出现，且退出码不变」）；`spec.md` 补一条 Requirement
+  （`check` 的播报是**非阻塞 notice**，SHALL NOT 影响 findings / 退出码 / 耗时）。
+- **N9（小）｜`tasks.md:30`（A6）与 `tasks.md:46`（B4）是同一件事的两种说法**：A6 建 golden literal，
+  B4 说「用 A6 的 golden literal 保证（不改它 ⇒ 自然通过）」。逻辑没错，但 B4 作为「校验项」没有
+  自己的判据 —— 建议 B4 明写判据是「A6 的测试在 `DEFAULT_GATE_REF` 未变的前提下逐字节相等」。
+- **N10（小）｜「零机械强制」需要一处落地检查**：`spec.md:16` 要求「交付物 SHALL 自述『本 change 零机械强制』」
+  且 `spec.md:100-101` 是边界声明 —— 这两处目前**没有任何测试/任务**钉（与 N4 同族，但 N4 只覆盖了
+  「拦住合并」的限定词与两条死路教法）。建议在 `tasks.md` C3 里加第三条断言（README 接入段必须出现
+  「零机械强制」字样），否则这条自述会漂。
+
+## 需要用户裁定（R2）
+
+本轮**没有新增**需要用户裁定的问题。R1 的 5 条（Q1 形态 / #4 收口 / 本仓自举 required / 模板位置 / 分发 ref）
+已全部落成 `design.md:198-210` 的 Q1、Q9–Q13，等 R2 的 5 处机械修正完成后即可停轮。
+**我自己不改这些推荐**：它们是用户的取舍，审阅者不得替用户拍板。
+
+## 复核记录（R2）
+
+- 副本 `/tmp/r2`（隔离 gitdir、`uv sync`）→ `uv run pytest -q` = **431 passed**（未变，本 change 目前是纯文档改动）。
+- `/tmp/r2e`：重跑死锁四条 + **补测 `--gate-ref`**（exit 1）⇒ `design.md:83` 的三项列举属实。
+- 四份 artifact 逐份对照（R2 的核心方法）：`grep -n 戊`（残留 13 处 + 1）、
+  `grep -n 逐字节`（`design.md:192` 与 `:225` 冲突）、`grep -n checkcmd`（A3/C4 冲突）、
+  `grep -n "Q1..Q8\|Q13"`（标题滞后）、`sed` 逐段核对 spec/tasks/design/proposal 的对应条款。
+- 代码事实复核（README 声称类）：`tests/` 里 `Requires-Dist|dependencies` 零命中（A7 属实）；
+  `tests/test_init.py:46-55` 仍是子串断言（A6 属实）；`tests/test_templates.py:39` fixture 仍只两个 `.md`（N2/Q11 属实）；
+  `src/witnessloop/checkcmd.py` 233 行、`_report` 在 `:219-233`（A3 的落点，故与 C4 冲突）。
+- 仓内写入：**仅本小节**（追加到 `reviews/grill-adversarial.md`，+169 行）。R2 开始时
+  `git status --porcelain` 为**空**（R1 那份报告已在 `59e3b65` 里提交）；追加后 `git diff --stat`
+  只有该文件一项 ⇒ 被审 worktree 其余部分全程未动。

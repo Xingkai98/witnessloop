@@ -38,15 +38,13 @@ SHALL NOT 自行**探测**约定命令（猜 `pytest` / `npm test`）。
 理由：模板路线的最大失败模式是「**拷了但没填**」——若那是绿 job，就等于工具亲手种下
 「**看起来在保护你**的绿勾」。这一条正是把该风险从「大概率」压到「必须显式确认」。
 
-### Scenario: 占位符没填会红
-- **Given** 接入方原样拷了模板、没替换占位符
-- **When** PR 触发
-- **Then** 该 job **失败**（不是绿）
-
-### Scenario: 显式空 ⇒ 跳过但可见
-- **Given** 模板已采用、命令显式留空
-- **When** PR 触发
-- **Then** 该 job **成功**，日志里有一行 `::notice::` 明说「未声明测试命令」
+### Scenario: 三态在交付物里都可辨（**内容式**，可机械验证）
+- **Given** 交付的模板文件
+- **When** 用 YAML 解析它（不是 grep 子串）
+- **Then** 三态各有分支且可区分：**占位符未替换 ⇒ `::error::` + 非零退出**；
+  **显式空 ⇒ `::notice::` 且不失败**；**非空 ⇒ 回显实际命令**。
+  （⚠️ **不写**「PR 触发后日志里有一行」「该 job 失败」这类**行为式** Scenario——本仓没有任何测试
+  能验证 GitHub 的 run 日志或 job 结论，见 N5 与 `spec.md` 上面那条同样的告诫。）
 
 ## Requirement: SHALL NOT 要求接入方手改 `init` 的产物
 
@@ -73,6 +71,17 @@ SHALL NOT 自行**探测**约定命令（猜 `pytest` / `npm test`）。
 - **Given** README / `docs/gate.md`
 - **When** 按 `tests/test_docs.py::test_every_idempotency_claim_is_scoped_or_qualified` 的范式（±2 行窗口）扫描
 - **Then** 每一处「拦住合并」都带限定，没有无限定条件的裸承诺
+
+## Requirement: `check` 的测试缺失播报是**非阻塞 notice**
+
+（依 **Q13** 定案；未选则本节整节删除。）`witnessloop check` SHALL 在「仓里除 witnessloop 的 caller 外
+没有任何 workflow」时输出一行**非阻塞**播报（`::notice::`）；该播报 SHALL **不**产生 finding、
+SHALL **不**改变退出码、SHALL **不**显著改变耗时。
+
+### Scenario: 播报不改判定（内容式）
+- **Given** 一个除 caller 外无 workflow 的仓
+- **When** 运行 `check`
+- **Then** 输出里有一行 `::notice::`，且 **findings 与退出码与不播报时逐字相同**
 
 ## Requirement: `check` 不执行测试
 
