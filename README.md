@@ -109,6 +109,16 @@ grill 证据不完备就不许写代码路径（**写文档豁免**，否则永�
 （解码失败 / 读不到）此前会表现为**工具故障**——`witnessloop：内部错误（UnicodeDecodeError…）`，
 现在是一行**点名文件**的 finding（`事件文件无法解析：… 无法解码：…`）。**退出码不变**（仍非 0）。
 
+⚠️ **对**接入方**还有一条行为变更**（`grill-adversarial` 门禁，issue #16）：**改了代码**
+（= 本次 diff 命中 `policy.require_change_for`，本仓**含** `templates/**` / `plugin/**`）的 PR 现在**必须**
+有一份 `stage=grill-adversarial` 的审阅证据（= 跑过**设计阶段的对抗验证轮**：grill 之后、停轮之前的
+证伪环节），**否则红**。触发面与下面那条 `building` 门禁**完全相同**（同一个时点的两端证据）。
+**三条诚实边界**（与 [docs/gate.md §10](docs/gate.md) 逐条一致）：
+① 报告的 **verdict 文本不参与判定**（`PASS` / `CHANGES_REQUESTED` 都能过）；
+② 只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在**写码之前**；
+③ **报告正文不校验——空文件亦合格**。
+**不加**过渡开关（开关 = 静默绕过面）。
+
 ⚠️ **对**接入方**还有两条行为变更**（`building` 门禁）：**改了代码**（触及 `policy.require_change_for`）的 PR
 现在**必须**有一份 `stage=building` 的审阅证据（= 跑过 review-loop），**否则红**；
 且**一个 PR 同时触及多个 change**（只要它触及了代码）时，**每个** change 都要 building 证据（要免除就把 change 拆到单独 PR）。

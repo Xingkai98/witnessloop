@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "grill-adversarial-gate",
+  "stage": "building",
+  "reviewer_run_id": "building-reviewer-grill-adversarial-gate-573ddc3",
+  "author_run_id": "author-grill-adversarial-gate-2026-10-12",
+  "base_sha": "f77edf0236d5b0df9c93c758da0323d63f694672",
+  "head_sha": "ac9a40ae088aa822e375acadda6afdfd964fec14",
+  "tasks_hash": "ab6062116e4807ed6351ef83e5a78d420733304ba4208664d172f9a0262e54b1",
+  "spec_hash": "a5253b5978066dadfa1cad4446f79c829f447a1657939cc021f2925033771240",
+  "diff_hash": "268fda8332310b2d578092107a20d5ef16c11bcd2425acb4bdb7fbf59b7387a5",
+  "report_hash": "c25d27df9ea5c62927f35ab46a8ceac5766ce4b3d40bf8a0d42e3f52891d0b76",
+  "report_path": "reviews/building-review.md"
+}

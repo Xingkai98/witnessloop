@@ -35,6 +35,11 @@ def test_policy_schema_has_three_sections(repo: Path, cli, read_json):
         "review_manifest_glob",
         "events_file",
         "protected_write_event_types",
+        # 三条 stage 轴：出厂 doc 必须把它们写出来（否则只能靠读代码保证——
+        # review-loop R1 的 M8 变异实测：删掉 grill_adversarial_stage 那行**全量不红**）
+        "grill_stage",
+        "grill_adversarial_stage",
+        "building_stage",
     }
 
 

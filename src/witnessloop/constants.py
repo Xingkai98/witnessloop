@@ -52,6 +52,13 @@ DEFAULT_BUILDING_STAGE = "building"
 # `check` 校验「该 stage 的 manifest 所绑定报告」的正文完备性（见 evidence.py）。
 DEFAULT_GRILL_STAGE = "grill"
 
+# 承载「设计阶段对抗验证轮」（grill 后、停轮之前的证伪环节）的阶段名
+# （policy.evidence.grill_adversarial_stage 可覆写）。
+# 触发面与 building **共用同一条**（本次 diff 触及 require_change_for = 落了实现）——
+# change grill-adversarial-gate / issue #16。判据同 building：只要求**证据存在**，
+# 不解析 verdict 文本、不校验报告正文（空文件亦合格）。
+DEFAULT_GRILL_ADVERSARIAL_STAGE = "grill-adversarial"
+
 # 数据契约 schema 标签（写入各 json 的 `schema` 字段，便于人工识别）。
 SCHEMA_POLICY = "witnessloop/policy@v1"
 SCHEMA_INIT_MANIFEST = "witnessloop/init-manifest@v1"
