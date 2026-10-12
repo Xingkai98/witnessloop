@@ -62,9 +62,16 @@
 「要求存在某 stage 的 manifest」SHALL 由**一处**实现提供，`check` 的 grill 判定与 building 判定
 SHALL 共用它——分两份实现必然漂移（本仓已因「两边各写一套」踩过坑）。
 
-该共用 SHALL **不**把 grill 专有的**报告正文**校验泄漏给 building 判定（building 只要求证据存在）。
+该共用 SHALL **不**把 grill 专有的**报告正文**校验泄漏给 building 判定（building **只**要求证据存在——除非 Q1 选乙，那时另加「最终裁定 = PASS」的判据）。
 
 ### Scenario: building 不要求 grill 式正文
 - **Given** 一份 `stage=building` 的 manifest 绑定着一份普通审阅报告（无 `## Confirmed Decisions` 等小节）
 - **When** 运行 `check`
 - **Then** building 那条**不得**因缺少 grill 式小节而报错
+
+## 边界声明（**非新增行为**，仅把既有逃生面的后果写清）
+
+`policy.require_change_for` 显式写成 `[]`（或在目标仓里没覆盖其**真实**代码路径）时，
+`check` 的**整条代码门禁**——「改代码必须挂 change」（`_require_change`）**与本 change 新增的 building 门禁**——
+SHALL 一并**静默失效**（实测：`check` 退 0）。这是**既有**的逃生面，本 change **不**改变它，
+但 SHALL 在 `docs/gate.md §2` 与本 spec 显式声明，避免读者以为「机械强制」在这条最省事的配置上仍然成立。

@@ -246,3 +246,70 @@ design D5 写明了**两条**行为变更，而**产出 README 的那条任务**
 3. **规范件形态**（会不会卡实现）：`uv run witnessloop check`（对**本仓自身**）⇒ **仅 2 条** finding，都是**预期**的「本 change 还没有 manifest」（`reviews/` 下确实只有两份 `.md`、无 `*.manifest.json`）；`validate_change_dir` **无**抱怨 ⇒ spec delta / change 目录**形态合格**，不会卡住实现。
 4. **引用抽查**（自己开门核，不采信任何一侧的声明）：`contract.py:89` `validate_change_dir` ✓、`:121` `validate_review_manifests` ✓、`:272` `_check_git_span` ✓；`checkcmd.py:92` `_require_change` ✓、`:123` `_protected_writes`（design 引 `:122-180`，起点早一行，**无实质影响**）；`evidence.py:203` 逐字 = 「grill 决策记录必须有对应的审阅证据」✓；`helpers.py:116` `stage: str = "building"` ✓、`:214` `stages=("grill","building")` ✓；`docs/gate.md:121-123` 逐字含「结构性不同…不挡蓄意伪造」✓、`:172-177` 逐字含「内容与证据必须分属两个提交；单提交 PR 不被支持」✓。
 5. **还原确认**：本 worktree **未打源补丁**，`git status --porcelain -uall` 在写本报告前 = **0 行**；`/tmp` 实验产物在仓外，不影响。**未 commit。**
+
+---
+
+# 第 3 轮（R3）
+
+## Reviewer
+- run id: grill-adversarial-reviewer-building-review-gate-r3-2026-10-12
+- 时间: 2026-10-12T07:24:16Z
+- 方式: 独立**零记忆**审阅者（**无** R1/R2 记忆），**默认前两轮结论有错**，逐条开门核。
+  作者刻意收窄范围 ⇒ 本轮只做两件事：核 R2 的 4 项整合 + 跨 4 份文档的最终一致性扫描。
+  实测在 `/tmp/r3/probe.py`（**复用本仓 `tests/helpers.py` 原语 + `conftest.git`/`commit_all`**，与既有用例走同一条代码路径）；
+  本 worktree **未打任何源补丁**，只写本文件（写前 `git status --porcelain -uall` = 0 行；未 commit）。
+
+## Verdict
+**PASS** —— R2 的 4 项**全部到位**，跨文档扫描的 4 个指定靶点**无残留不一致**，**无阻塞项**。
+change 的技术核心我**独立复现**了它所依赖的前提（多 change 同 PR **今天确实绿**）。
+
+## 逐条核验（R2 那 4 项 → 本轮落点）
+| # | R2 的项 | 落在哪 | 核验 |
+|---|---|---|---|
+| 1 | **（R2 唯一阻塞）** `tasks.md` D3 只写**一条**行为变更，design D5 要求**两条** | `tasks.md:36-38` | ✅ **到位**。现为「写明**对**接入方**是两条**行为变更（design D5 明列两条，**别只写一条**）：①「改了代码但没跑 review-loop」的 PR 从**绿变红**；② **多 change 同 PR** 时**每个** change 都要 building 证据（原本可「一个 PR 捎带一个纯文档 change」，现在会红；实测 `exit 0 → exit 1`）」——与 `design.md:125-127` **同义且逐条对应**，且与 `design.md:81`「须与 D5 那条一并写进 README」对得上。 |
+| 2 | `tasks.md` B9 的「Q2 **裁定**」过头 → 应写「推荐…待裁定」 | `tasks.md:23` | ✅ **到位**：现为「（**这是刻意的**，Q2 的**推荐**口径「一 PR 一 change」前提；待用户裁定）」——「裁定」已换成「**推荐**口径…待用户裁定」，与 `design.md:221`「**推荐**」及 `tasks.md:3`「Q1/Q2/Q3 确认前不得写实现代码」自洽。 |
+| 3 | `proposal.md` 去掉 asterwynd 的**漂移行号** `:1009-1048` | `proposal.md:16` | ✅ **到位**。现为「（已读源码核对；**按函数名**引用 `_check_review_manifests`，不引行号——跨仓行号会漂）」；全文件**已无**任何 asterwynd 行号（`grep -n "asterwynd"` 4 处，全是函数名/项目特有检查，无 `:NNNN`）。 |
+| 4 | `design.md` 的 `checkcmd` 行号 off-by-one（`122`→`123`） | `design.md:22` | ✅ **到位**：现引 `checkcmd.py:123-180`，实测 `def _protected_writes` **确在 `:123`**（起点已修对；终点仍差一行，见 O6，无害）。 |
+
+## 跨文档一致性扫描（只扫指定的 4 个靶点）
+1. **多 change 边界（design D1 ↔ spec Scenario ↔ tasks B9）→ 无残留。**
+   `design.md:82-83`（「本 PR 触及 `require_change_for` ⇒ 本 PR 触及的**每个** change 都要 building 证据；要免除就把 change 拆到单独 PR」+「**不加** `building_exempt_changes` 豁免名单」）
+   ↔ `spec.md:29-33`（同一条，操作句近逐字：「要免除就把 change 拆到单独 PR」「**不提供** `building_exempt_changes` 之类的豁免名单（豁免名单 = 新的绕过面）」）
+   ↔ `tasks.md:22-23`（B9 用例）。三处**同一条事实、同一口径**，无 A/B 分叉。
+2. **两条行为变更（design D5 ↔ tasks D3 ↔ proposal）→ 无残留。**
+   `design.md:125-127` / `tasks.md:36-38` 两侧**逐条对齐**（① 改了代码没跑 review-loop；② 多 change 同 PR）。
+   `proposal.md` **未**逐条列举这两条——但 design D5 只要求它们落 **README**（`design.md:183` §6 同），proposal 的职责是「为什么/目标/边界声明」，其 `:33-34` 的「目标」与 `:57` 的「验收」（只改文档/只动 change 目录 ⇒ 不要求）与两条行为变更**不冲突**（前者是机制陈述，后者是**单 change 情形**的豁免，见 O-① 的同类限定）。
+3. **「PASS 不成为硬门」的**条件式**措辞（Q1 未裁定）→ 无残留（1 处措辞级，见 O1）。**
+   `design.md:95`「**待用户裁定**（**Q1**，甲/乙）」、`design.md:111`「**若** Q1 选**甲**，则**必须**…」、`proposal.md:43`「（**选甲时**；见 design D3/D3.1）」、`tasks.md:51`「verdict 文本判据（**若** Q1 选甲）」——四处**都带条件标记**，**没有**任何一处把它写成已定案。spec 侧唯一相关处是 `spec.md:65` 的括注，见 O1（判**不阻塞**）。
+4. **asterwynd 引用方式（全仓「按函数名」）→ 无残留。**
+   `design.md:31`「**按函数名定位** `_check_review_manifests`…⚠️ **不按行号引用**」、`design.md:49`「**按函数名**定位」、`design.md:173`（R7）、`proposal.md:16`「**按函数名**引用…不引行号」——口径统一。
+   我把两侧仍出现的**行号**当「实测证据」逐条**开门核了真值**（见「我实测的」4）：`_check_review_manifests` **在 `:1111`**、`requires_building_review` **`:1129-1136`**、`_tasks_all_complete` **`:1016`** 且末行 `:1040` = `return checked > 0 and unchecked == 0`、post-PASS **`:1716`**；原稿引的 `:1009-1048` 处（`sed -n '1009,1012p'`）是**无关代码** ⇒「已漂」属实。**引文块与真源码逐字一致。**
+
+## 阻塞项
+**无。**（未发现会让实现失败、或 spec 自相矛盾、或使结论站不住的问题。故本轮 **PASS**。）
+
+## 非阻塞观察（我**不**据此拦；供作者/停轮顺手）
+- **O1（措辞级 · 条件式）**：`spec.md:65` 的括注「（building 只要求证据存在）」是**无条件**写法，而 design 把同一句当**甲案**的产物——
+  `design.md:92`「**不额外要求报告正文结构**（**除 D3 若选乙**）」、`design.md:128-129`「选**甲**则补一句『本门禁只要求证据存在』」。
+  即：design 是「A 除非乙」，spec 写成「A」。**不判阻塞**：该括注是**理由性注解**，它注解的那条 SHALL（「**不**把 grill 专有的**报告正文**校验泄漏给 building」）在**甲/乙下都成立**（乙要的是「最终裁定 = PASS」这一条**新**判据，不是 grill 的 `## Confirmed Decisions` 正文校验）；spec 的规范句**不自相矛盾**、实现按它做**不会失败**。若作者顺手，可加「（Q1 选甲时）」或删括注。
+- **O2（design 有 mandate、spec 无对应 · 判不阻塞）**：`design.md:167`（R5）「⇒ 关掉的是**整条代码门禁**…**须在 `docs/gate.md §2` 与 spec 显式声明**」、`design.md:224-225`（Q4）「**至少写进 `docs/gate.md §2` + spec」。
+  - `docs/gate.md §2` 那半边**仓里早就有**：`docs/gate.md:66-68` 逐字写着「没有它时，`check` 只保证「如果你动了 change 目录/受保护路径，它要齐备」——于是最省事的绕过方式是什么都不建（**只改 `src/` 的 PR 直接放行**）」⇒ 无需新任务。
+  - **spec 那半边**：`spec.md` 全文**无**「静默/失效/为空/`[]`」字样，也没有对应任务（`tasks.md` D1/D2 只覆盖 `§6`/`§8`）。
+  - **为什么不拦**：这是**既有**机制的既有边界（本 change 只是**继承**它，不是新造），§2 已声明；且 Q4 本身就是**待用户裁定**的 Open Question（design 明写「是否加『为空时 warning』请用户定」）。**不构成**「实现失败 / spec 自相矛盾 / 结论站不住」。建议：Q4 定案时一并补进 spec + tasks。
+- **O3（口径小缺）**：`tasks.md:3` 与 `:43`（E0）只列「**Q1/Q2/Q3** 答复」，而 `design.md:216-225` 有 **Q4**（若答「加 warning」会改代码并**有意**让 `test_require_change_for.py::test_empty_require_change_for_disables_the_rule` 变红）⇒ 实现闸门少列了一个可能改代码的问号。建议 E0 改成「Q1–Q4」。
+- **O4（命名）**：`tasks.md:13`（B1）把共用助手称作 **`StageRequirement`**——该名字**全 change 目录只此一处**，`design.md:150` 的切法是 `stage_manifest_findings_in_change(change_dir, *, stage, manifest_glob, label, reason, verify_body=False)`（`spec.md:60-65` 只说「一处实现」）。语义描述一致（都是「只要求存在的参数化助手」），实现者只会写一个助手 ⇒ **不拦**，但名字最好统一。
+- **O5（编号同名不同指）**：`design.md:135`「原稿（**R1**/本节的旧稿）」用的是 **§4 的风险编号** R1（自伤面），而 `design.md:202`「**对抗验证 R1**」是**轮次**编号 ⇒ 同文件里 **R1 有歧义**。可把风险项写作「风险 1」。
+- **O6（行号终点 off-by-one，无害）**：`design.md:22` 引 `checkcmd.py:123-180`，实测 `_protected_writes` 的 `return findings` 在 **`:181`**（起点 123 已修对）。同类：`design.md:31` 引 `:1110-1145`，实测 `def` 在 **`:1111`**——但该处**明写「不按行号引用」**、数字仅作实测证据，可留。
+- **O7（排版）**：`proposal.md:65` 有一个**未闭合**的 ``` 围栏（`grep -n '^```'` = 18 / 25 / 65；18-25 已配对，65 悬空、其后无内容）。**非本轮引入**（`git show e0904e6^:…/proposal.md` 末尾同样是这个悬空围栏）。纯排版，删掉即可。
+
+## 我实测的
+1. **基线**：`uv run pytest -q` → **`404 passed in 29.62s`** ✅（与要求逐字一致）。
+2. **规范件形态**（会不会卡实现）：`uv run witnessloop check`（对**本仓自身**）⇒ **仅 2 条**，都是**预期**的「本 change 还没有 manifest」（`reviews/` 下只有 2 份 `.md`、无 `*.manifest.json`）；`validate_change_dir` **无**抱怨 ⇒ spec delta / change 目录形态合格。
+3. **独立复现「多 change 同 PR 今天可行」**（= `spec.md:29-33` 那条新 Scenario 的**前提**，也是 `design.md:127` / `tasks.md:38` 的「原本可以」）：
+   `/tmp/r3/probe.py`——`init` → feature → **单一内容提交**（change `impl-a` + `src/a.py`；change `b-doc` **纯 change 目录、无实现**）→ **单一证据提交**（`impl-a`：grill + building；`b-doc`：**只有 grill**）→ `check --base main --head HEAD`
+   ⇒ **`check：通过 ✓`，exit 0**（15 个变更文件 / 2 个 change 目录：`b-doc, impl-a`）。
+   ⇒ 「一个 PR 改代码 + 捎带一个纯文档 change」**今天确实是绿的** ⇒ 新 Scenario 是**真的行为变更**（不是把现状写成规范），`design.md:80` 的「未打补丁 `exit 0`」不夸大。
+   （打补丁那半我不重跑：机制上 `checkcmd.py:73-77` 的循环是**逐 change**、而触发是**全局**的（`checkcmd.py:92-120` 只看本次 diff 命中 `require_change_for`）⇒「全局触发 × 逐 change 要求」**必然**产生该误伤；R1 已实测 `exit 0 → exit 1`。）
+4. **引用抽查**（自己开门核，不采信任何一侧的声明）：`checkcmd.py:71-89` 逐行（含 `:79-84` 的 grill 调用）✓；`_require_change:92-120` ✓；`_protected_writes:123-181` ✓；`contract.validate_change_dir:89` ✓；`validate_review_manifests:121` ✓；`_check_git_span:272` ✓；`evidence.grill_evidence_findings_in_change:172` 且 `:203` 逐字 = 「grill 决策记录必须有对应的审阅证据」✓；`docs/gate.md:121-123` 逐字含「结构性不同…不挡蓄意伪造」✓、`:172-177` 逐字含「内容与证据必须分属两个提交；单提交 PR 不被支持」✓；`templates/review-loop.md:99-100` 逐字含「第 3 轮仍 `CHANGES_REQUESTED`…停下…升级到人判断」✓；`manifestcmd.py:122-124` 只在两 id **相等**时拒 ✓；`grep -rn building src/` **只**命中 `cli.py:107,111` 的 `--help` 文案 ✓（`design.md:24`「0 处**功能性**命中」属实）。
+5. **asterwynd 跨仓**（`/home/happy/my-agent/scripts/check_openspec_artifacts.py`，1802 行）：`_check_review_manifests` **`:1111`**、`requires_building_review` **`:1129-1136`**、`_tasks_all_complete` **`:1016`**、`return checked > 0 and unchecked == 0` **`:1040`**、post-PASS **`:1716`**；全文件 `PASS` 命中 **4 处全是注释/文案**（`:1122` `:1139` `:1623` `:1716`）、**无**解析逻辑 ⇒「不解析 verdict 文本」属实。
+6. **还原确认**：本 worktree **未打源补丁**；`git status --porcelain -uall` = **0 行**；实验产物在 `/tmp/r3/`（仓外）。**未 commit。**

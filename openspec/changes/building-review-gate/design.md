@@ -19,7 +19,7 @@
 | 有 manifest | `contract.validate_review_manifests`（`contract.py:121-149`） | **至少一份** `reviews/*.manifest.json`；每份过 hash/revision/reviewer≠author；**孤儿报告**不许有 |
 | grill 证据 | `evidence.grill_evidence_findings_in_change`（`checkcmd.py:78-84`） | **必须有 `stage=grill` 的 manifest**，且其报告正文合格 |
 | 代码必须挂 change | `checkcmd._require_change`（`checkcmd.py:92-120`） | 改了 `require_change_for` 路径 ⇒ 必须有 change 目录 |
-| 受保护写入 | `checkcmd._protected_writes`（`checkcmd.py:123-180`） | 需 `workflow-events.jsonl` 解释事件 |
+| 受保护写入 | `checkcmd._protected_writes`（`checkcmd.py:123-181`） | 需 `workflow-events.jsonl` 解释事件 |
 
 ⇒ **`building` 这个 stage 在 `src/` 里 0 处功能性命中**（`grep -rn building src/` 只命中 `cli.py:107,111` 的 `--help` 文案；grill 实测纠正——原稿写"0 命中"字面不成立）——**跳过 review-loop 的 PR 照样绿**。
 
@@ -121,6 +121,7 @@ if requires_building_review and not review_report.exists():
 
 ### D5 文档 / 行为变更
 
+- `docs/gate.md §2` + `spec`：显式声明 `require_change_for=[]` 会让**整条代码门禁**（含本 change 的 building 门禁）静默失效
 - `docs/gate.md §6`（`check` 的红项清单加「缺 building 审阅证据」）+ `§8`（新增一小节：building 门禁的触发与判据）。
 - `README.md`：**对**接入方**是两条行为变更**（**都要写明**，口径同 `grill-evidence-gate` 那次）：
   ① 「改了代码但没跑 review-loop」的 PR 从**绿变红**；② **多 change 同 PR** 时**每个** change 都要 building 证据
@@ -157,7 +158,7 @@ D1 的触发条件是「diff 触及 `require_change_for`」，而既有用例里
 
 ## 4. 风险
 
-1. ~~**R1（高，自伤面）**~~ → **已降级为「观测到 0 条」**（grill 实测 404 passed 不变，见 D6）。
+1. ~~**风险 R1（高，自伤面）**~~ → **已降级为「观测到 0 条」**（grill 实测 404 passed 不变，见 D6）。
    留存价值：它提醒我们「**风险要实测，不要照直觉估**」。
 2. **R2（中）**：D1 的触发条件若写错（如把「change 目录被改」也算成实现）⇒ 提案期 change 被误伤。
 3. **R3（中）**：D3 选乙 ⇒ 多轮格式规范 + 历史回填 + 「封顶交人」出路，三者缺一不可。

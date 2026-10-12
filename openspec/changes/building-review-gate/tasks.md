@@ -1,6 +1,6 @@
 # Tasks: building-review-gate
 
-> 依据 `design.md`（**草稿**——grill + 对抗验证收敛 + Q1/Q2/Q3 确认前不得写实现代码）。
+> 依据 `design.md`（**已收敛**：grill + 对抗 R1/R2/R3（R3=PASS）——grill + 对抗验证收敛 + Q1/Q2/Q3 确认前不得写实现代码）。
 > 原则：**测试先行（TDD）**。
 > ⚠️ change 目录必须**全程完整**（本文件 + `specs/building-evidence/spec.md`）。
 
@@ -10,7 +10,7 @@
 
 ## B. 判定（D1/D2）—— 共用助手，避免两边各写一套
 
-- [ ] B1 单测（先红）：`StageRequirement` 助手——**只要求存在**某 stage 的 manifest（**不**触发报告正文校验）
+- [ ] B1 单测（先红）：`evidence.stage_manifest_findings_in_change` 助手——**只要求存在**某 stage 的 manifest（**不**触发报告正文校验）
 - [ ] B2 单测（先红）：grill 那条**行为不变**（仍校验报告正文；回归）
 - [ ] B3 实现：`evidence.py` 抽出参数化助手；grill 调用改为经它（正文校验仍只在 grill 分支）
 - [ ] B4 单测（先红）：改了受管控代码 + 只有 grill 证据 ⇒ `check` 红，且文案点名「缺 `stage=building` 的审阅证据」
@@ -36,11 +36,13 @@
 - [ ] D3 `README.md`：写明**对**接入方**是两条**行为变更（design D5 明列两条，**别只写一条**）：
       ① 「改了代码但没跑 review-loop」的 PR 从**绿变红**；
       ② **多 change 同 PR** 时**每个** change 都要 building 证据（原本可「一个 PR 捎带一个纯文档 change」，现在会红；实测 `exit 0 → exit 1`）
+- [ ] D4b `docs/gate.md §2` + `specs/building-evidence/spec.md`：显式声明 `require_change_for=[]` 会让**整条代码门禁**静默失效
+      （design D5 要求；spec 已补「边界声明」节）
 - [ ] D4 `templates/review-loop.md`：依 **Q1** 结果（甲：补一句「只要求证据存在」；乙：规定多轮最终裁定形态）
 
 ## E. 证据链与收尾
 
-- [ ] **E0**（顺序约束 · 自锁防线）：停轮拿到 Q1/Q2/Q3 答复 → 写 `## User Confirmation` →
+- [ ] **E0**（顺序约束 · 自锁防线）：停轮拿到 Q1/Q2/Q3/Q4 答复 → 写 `## User Confirmation` →
       `manifest build --stage grill` 放行 `src/**` → 内容提交后**必须重跑**覆盖（否则 stale 红）
 - [ ] E1 两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
 - [ ] E2 独立 `review-loop`（PASS 或 3 轮封顶）

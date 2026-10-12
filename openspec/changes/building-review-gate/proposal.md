@@ -62,4 +62,3 @@ issue 标题里的「PASS」指的是「**那份被 manifest 绑定的审阅证�
 ## 测试策略
 
 TDD。判定落在 `checkcmd` 的既有 change 循环里（与 grill 那条并列），复用 `evidence`/`contract` 的既有原语。
-```
