@@ -1,6 +1,7 @@
 # Design: guard-crash-exit
 
-> 状态：**设计已收敛**（grill + 对抗验证 R1/R2/R3 三轮 CHANGES_REQUESTED → 逐轮已整合；R3 收尾项已修）。停轮待用户确认。
+> 状态：**设计已二次收敛**（grill + 对抗 R1–R4 逐轮整合；**用户 Q1/Q2 已答**：Q1=甲、Q2=修掉 ⇒ D3 重写为
+> 「入口兜底」；R5 待复核改动后的 D3）。
 > 依据 `proposal.md`。流程出处 `templates/grill.md`。
 > 审阅证据：`reviews/grill-review.md`（决策记录）、`reviews/grill-adversarial.md`（对抗验证）。
 > 关联 issue：witnessloop **#9**（低、非阻塞）。
@@ -29,9 +30,11 @@
   （`cli.py:19-23`）。见 change `grill-evidence-gate` 的 D5 / 回归审阅 **Issue 3**。
 - **`check` 侧同崩溃点**：`checkcmd` 也调同一函数 ⇒ 同样崩；但 `check` 崩溃退 1 = 「**未通过**」= **fail-closed，语义正确**。
 - **退出码今日占用**：`0/1/2/3`（`constants.py:80-83`）；**4 空闲**（全树 grep 无 `EXIT_* = 4` / `exit(4)` / `return 4`）。
-- **修完仍存的边界（对抗验证实测）**：`cli.py:14-15` 的**模块级** import（`from witnessloop import __version__`、
-  `from witnessloop.constants import …`）发生在 `main()` **之前**、`__main__.py:3` 处 ⇒ 属 guard 分支 try **之外**。
-  install 破损（如 `constants.py` 坏了）时 `witnessloop guard` **退 1 ⇒ 被 shim 当 block**（已复现）。见 D4/边界。
+- **`cli.py` 自身 import 失败 = 真实洞（已复现）**：`cli.py:14-15` 的**模块级** import
+  （`from witnessloop import __version__`、`from witnessloop.constants import …`）发生在 `main()` **之前**；
+  真实 console script 是 `from witnessloop.cli import main; sys.exit(main())`（`.venv/bin/witnessloop` 实测）
+  ⇒ 它**不在**任何我们代码的 try 内。install 破损（如 `constants.py` 坏了）时 `witnessloop guard`
+  **退 1 ⇒ 被 shim 当 block**（已复现）。**用户裁定：修掉它**（→ **D3** 兜底前移到**进程入口**）。
 
 ## 2. 决策
 
@@ -51,20 +54,43 @@
 - 不用 0（与「正常放行」同码 ⇒ 丢失诊断性）；不用 3（`EXIT_NOT_ONBOARDED` 已占，`guardcmd.py:95`）。
 - shim **无需认识它**（只认 1）⇒ 无新增耦合。
 
-### D3 兜底落点：`cli.main` 的 **`guard` 分支**（`try/except Exception` 包住 **lazy import + run**）
+### D3 兜底落点：**进程入口** `src/witnessloop/entry.py`（单一兜底，包住 **cli 的 import + 整个 run**）
 
-- **覆盖**：`from witnessloop import guardcmd` 及其**传递依赖**（`contract`/`gitutil`/`evidence`/`paths`/`policy`）
-  的 `ImportError` + `guardcmd.run` 的运行期异常。
-- **不覆盖（边界，须写明）**：`cli.py:14-15` 的**模块级** import 失败（`witnessloop.cli` 自身起不来）。
-  那属于「**安装破损**」——所有动词一起坏，不是 guard 专属；见 D9 与 Open Question **Q2**。
-- **不 catch `BaseException`**：`argparse` 的 `--help`/用法错误是 `SystemExit`（且在 `parse_args`、dispatch 之前），
-  实测不受影响；`KeyboardInterrupt` 实测以**信号**结束（shell 见 130 ≠ 1）⇒ shim 放行，非误拦。
-- ⚠️ **实现细节（对抗验证实测的坑）**：`cli.py:15` 当前只 import `DEFAULT_GATE_REF, EXIT_USAGE`——
-  必须**同时 import `EXIT_INTERNAL`**，否则照抄本示例会 `NameError` ⇒ **在 except 处理器里退出 1 ⇒ 原 bug 复活**。
+- **形态**：新模块 `entry.py`，**刻意不 import witnessloop 任何东西**（它存在的意义正是「witnessloop 自己
+  import 不起来时」仍能兜底）：
+  ```python
+  _EXIT_INTERNAL = 4          # 与 constants.EXIT_INTERNAL 同值；此处不 import 以免依赖坏包
+  def main(argv=None) -> int:
+      try:
+          from witnessloop.cli import main as cli_main
+          return cli_main(argv)
+      except Exception as exc:            # SystemExit/KeyboardInterrupt 是 BaseException，不受影响
+          verb = (argv if argv is not None else sys.argv[1:])[:1]
+          print(f"witnessloop：内部错误（{type(exc).__name__}: {exc}）", file=sys.stderr)
+          return _EXIT_INTERNAL if verb == ["guard"] else 1
+  ```
+- **为什么在入口而非 `cli.main` 的 guard 分支**（用户裁定，Q2 = 「修掉它」）：`cli.py` **自身**的模块级 import
+  是 console script 的第一行、**在我们任何 try 之外**（§1 实测）。把 try 放 `cli.main` 里**盖不住**它；
+  只有**入口**能同时包住「导入 `cli`」与「跑 `cli`」。
+- **单一兜底**：进程路径 = console script / `python -m witnessloop` → **都改指 `entry.main`**；
+  不再在 `cli.main` 里另设 guard 分支（避免两套）。`cli.main` 仍是可用的进程内 API（测试的路由用例直接调它），
+  但它不再承诺兜底——兜底是**进程边界**的职责。
+- **argv 判 verb**：入口只知道命令行第一词（`guard` / `check` / `init` / `uninit` / `manifest`）。
+  `guard` ⇒ `EXIT_INTERNAL`(4)（fail-open，**绝不等于 1**）；其余 ⇒ **1**（`check` = 未通过 = fail-closed，正确；
+  `init`/`uninit`/`manifest build` = 失败）。**仅这条 argv 判断把「4」限定在 guard**。
+- **不 catch `BaseException`**：`argparse` 的 `--help`(SystemExit 0) / 用法错误(SystemExit 2) 都**照常传播**
+  （发生在 `parse_args`，且是 `BaseException`）⇒ 既有行为不变；`KeyboardInterrupt` 实测以**信号**结束（shell 见 130 ≠ 1）⇒ shim 放行。
+- **覆盖检查**：`from witnessloop.cli import main` 的 ImportError（**含 `cli.py` 自身模块级 import 失败**）
+  + `cli_main(argv)` 的任何 `Exception`（含 `guardcmd`/`evidence`/`policy`/`contract`/`gitutil` 的传递依赖）。
+- ⚠️ **打包改动**：`pyproject.toml` 的 `[project.scripts]` 改指 `witnessloop.entry:main`；`__main__.py` 改从
+  `witnessloop.entry` 导入；测试的 `cli` fixture（`tests/conftest.py:48-56`，**进程内**调 `cli.main`）改为
+  调 `entry.main`，让 B 组用例走真实入口路径。
+- ⚠️ **`constants.EXIT_INTERNAL` 与 entry 的 `_EXIT_INTERNAL` 必须同值**：由**常量守卫**测试钉住（D8）——
+  值一旦漂移，入口兜底与 CLI 语义就会分叉。
 
-### D4 证据「读不出」的语义：**甲案（统一视为不完备 ⇒ 拦 / 红）** —— 待用户裁定（Q1）
+### D4 证据「读不出」的语义：**甲案（统一视为不完备 ⇒ 拦 / 红）** —— **用户已裁定（Q1=甲）**
 
-- **问题**：`guard` 撞上「证据文件存在、但**解码失败**」时该**拦**还是**放**？（grill 与对抗验证推荐不同。）
+- **问题**：`guard` 撞上「证据文件存在、但**解码失败**」时该**拦**还是**放**？（grill 与对抗验证推荐不同；**已裁定：甲**。）
 - **读点归宿（分解后）**：
   1. `policy.py:128`（**policy 读不出**）→ 归一为 `PolicyError` ⇒ `guardcmd.py:86-88` **放行**。
      **与既有「policy 非法 ⇒ 不拦」完全一致，无争议，直接采纳。**
@@ -89,7 +115,7 @@
   ⇒ `check` 由 `report_hash` **独立**判红（`contract._check_hashes`），**不会绿**。只有「作者把字节坏的报告
   **重新 `manifest build`** 进 manifest」这一角落才会绿（build 对字节算 hash），而那属**作者自欺**、
   落在「防漂移不防伪造」的既有边界内。
-- **两案的真实差别**（不再用假前提，交用户裁定）：
+- **两案的真实差别**（不再用假前提；**用户 2026-10-12 裁定取甲案**）：
   | | **甲（推荐）** | 乙 |
   |---|---|---|
   | 报告损坏时 `guard` | **拦**（快反馈：先修报告再写码） | **放**（交 CI 锚） |
@@ -140,14 +166,18 @@
 
 ## 3. 接线点（实现清单）
 
-- `src/witnessloop/constants.py`：`EXIT_INTERNAL = 4` + 注释。
-- `src/witnessloop/cli.py`：`import EXIT_INTERNAL`（D3 ⚠️）+ `guard` 分支 `try/except Exception`。
+- **`src/witnessloop/entry.py`（新）**：D3 的**进程入口兜底**（依赖自由、不可 import witnessloop 任何模块）。
+- `pyproject.toml`：`[project.scripts] witnessloop = "witnessloop.entry:main"`。
+- `src/witnessloop/__main__.py`：改从 `witnessloop.entry` 导入 `main`。
+- `tests/conftest.py`：`cli` fixture（`:48-56`）改调 `entry.main`，让 B 组用例走真实入口。
+- `src/witnessloop/constants.py`：`EXIT_INTERNAL = 4` + 注释（文档/测试的规范值；`entry.py` 因不可 import 而用字面量，由 D8 守卫钉等值）。
+- `src/witnessloop/cli.py`：**无需改动**（兜底已在入口；`cli.main` 仍是进程内 API）。
 - `src/witnessloop/policy.py`：`policy.py:129` 补 `UnicodeDecodeError`（D5）。
 - `src/witnessloop/evidence.py`：`_read_json` 补捕 `UnicodeDecodeError`（⇒ 与 JSON 坏/缺失**同归**、**不新造文案**，D4-2）；
   报告读点补捕 ⇒ Finding「报告无法解码：<file>」（D4-3）。
 - `src/witnessloop/contract.py`：**`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）**
   补 `UnicodeDecodeError`（D4-2 ⚠️ R2：`check` 的 manifest 读点在这里，不在 `evidence.py`）。
-- `src/witnessloop/guardcmd.py`：模块 docstring 记「兜底在 `cli.main` 的 guard 分支 + 边界」。
+- `src/witnessloop/guardcmd.py`：模块 docstring 指「崩溃兜底在进程入口 `entry.py`」。
 - `docs/gate.md` §6/§8、`README.md:35`、`docs/adr/0001-local-guard-hook.md:16`（D7）。
 - 测试：`tests/test_guard.py`（崩溃 ×2 + shim 新码 + 常量守卫）、`tests/test_evidence.py`（读点归一）、
   `tests/test_check_manifest.py` / `test_check_grill_evidence.py`（**`check` 对无法解码 evidence 的干净红**）。
@@ -161,7 +191,8 @@
 ## 4. 风险
 
 1. **R1（中）**：`except Exception` 掩盖真 bug ⇒ 缓解：诊断行含异常类型 + message；只作用于 `guard`。
-2. **R2（中，边界）**：`witnessloop.cli` 自身 import 失败仍退 1 ⇒ 误拦（**安装破损**场景，已复现）⇒ Q2 裁定。
+2. **R2（已关闭）**：`witnessloop.cli` **自身** import 失败（安装破损）曾会退 1 ⇒ 误拦（已复现）。
+   **用户裁定「修掉它」⇒ D3 的入口兜底覆盖之**（`entry.main` 的 try 包住 `from witnessloop.cli import main`）。
 3. **R3（低）**：D4 甲案把「报告读不出」从「放」改成「拦」⇒ 对**接入方**是**行为变更**（损坏证据从静默放行变为拦）。
    须在 README/gate.md 写明。
 4. **R4（低）**：4 的宿主语义？——shim 只输出 0/2 给 CC；4 只在**直连 CLI**可见。CC 对非 0/2 = 非阻塞，与意图一致。
@@ -204,7 +235,7 @@
 不改 `check` 退出码语义；必须新增漂移守卫。
 
 **必须修改（已整合 · 来源 `grill-adversarial-reviewer-guard-crash-exit-2026-10-12`，R1 CHANGES_REQUESTED）**：
-- **CD3 over-claim 收窄**：兜底覆盖 `guardcmd` 及其传递依赖的 import 缺口，**不**覆盖 `cli.py` 自身模块级 import（D3 + 边界 + Q2）。
+- **CD3 over-claim 收窄**（R1）→ **R5 起升级为「彻底关闭」**：兜底前移到进程入口 `entry.py`，**连 `cli.py` 自身模块级 import 失败也覆盖**（用户 Q2 裁定「修掉它」）。
 - **读点枚举修正**：≥3 处（`evidence.py:216` / `evidence.py:165` / `policy.py:128`），非「一处」（§1 + D4/D5）。
 - **`README.md:35` 也在写 `exit 2`**（grill 漏、对抗验证证伪其「README 不含退出码叙述」）⇒ D7 纳入订正。
 - **裁定「解码失败」语义**（D4 甲案）并落 spec。
@@ -234,7 +265,7 @@ R2 确认 R1 的 5 条**全部到位**，但**新证伪两条**（均已整合�
   **甲（推荐）**= 统一「读不出 ⇒ 不可核验 ⇒ 不完备」⇒ **拦**（快反馈，且与「manifest 缺失 ⇒ 拦」同口径）；
   **乙** = 内容读不出 ⇒ **放**（容器/内容两分，交 CI 锚）。**两案的真实差别见 D4 的表**（R2 已证伪我原稿的两条否乙理由，
   现按事实重述：乙**可实现**、且**不会**让真实场景的 `check` 变绿）。
-- **Q2** `witnessloop.cli` 自身 import 失败（**安装破损**）导致的 exit 1 ⇒ 误拦：**收窄声明 + 记录边界**（推荐）还是
-  **前移到入口**（新增 entry 模块 + 改 packaging）？
+- ~~**Q2**~~ **已由用户裁定（2026-10-12）：修掉它**（选「前移到入口」）⇒ 见 **D3**（新增 `entry.py` 兜底 +
+  改 packaging + fixture）。不再作为 Open Question。
 
 （每条的具体例子与推荐答案见 `reviews/grill-review.md` 的 `## Open Questions`。）

@@ -5,25 +5,39 @@
 
 ## Requirement: 守卫的内部错误不得被当成拦截
 
-`witnessloop guard` SHALL 在 **`cli.main` 的 `guard` 分派路径内**（含该分支的 lazy import 与 `guardcmd.run`
-的执行过程）出现**未预期异常**时**不**以「拦」的退出码结束——即内部错误 SHALL 以**非 1**的退出码返回
-（fail-open 放行），并在标准错误输出一行诊断。
+`witnessloop guard` SHALL 在**进程入口**（`witnessloop.entry`，即 console script 与 `python -m witnessloop`
+调用的那个函数）起、到判定完成止的**整条路径**出现**未预期异常**时**不**以「拦」的退出码结束——
+即内部错误 SHALL 以**非 1**的退出码返回（fail-open 放行），并在标准错误输出一行诊断。
 
-「拦」的退出码 SHALL 保持为 **1**，且在该分派路径内 SHALL **只**由「命中 `require_change_for` 且当前
-change 的 grill 证据不完备」这一显式判定产生。内部错误的退出码 SHALL 由一个与「拦」（1）**不同**的常量定义。
+「拦」的退出码 SHALL 保持为 **1**，且 SHALL **只**由「命中 `require_change_for` 且当前 change 的
+grill 证据不完备」这一显式判定产生。内部错误的退出码 SHALL 由一个与「拦」（1）**不同**的常量定义
+（实现为 **4**），且该常量 SHALL 在入口与 `constants` 两处**同值**（由测试钉住）。
 
-**已知边界（不在本要求内）**：`witnessloop.cli` **自身**的模块级 import 失败（安装破损）不被覆盖——
-该情形下所有动词一起不可用，属声明边界，不是本守卫可兜的分派路径。
+该入口兜底 SHALL 覆盖 **`witnessloop.cli` 模块自身导入失败**的情形（安装破损）——不得让它以 1 退出、
+被宿主当成「拦」。
+
+入口兜底对**非 `guard`** verb 的未预期异常 SHALL 以 **1** 退出（`check` = 未通过 = fail-closed；
+其余动词 = 失败），即「4」SHALL **只**用于 `guard`。
 
 ### Scenario: 任意内部异常都不拦
 - **Given** `guardcmd.run` 在判定过程中抛出未预期异常（如 `RuntimeError`）
 - **When** 运行 `guard`
 - **Then** 退出码**不是 1**（实现为 `EXIT_INTERNAL`），且打印诊断
 
-### Scenario: 崩溃兜底覆盖子模块 import 缺口
-- **Given** `witnessloop.guardcmd` 模块**导入失败**（`ImportError`，如 `sys.modules[...]` 被置 None）
+### Scenario: 兜底覆盖子模块 import 缺口
+- **Given** `witnessloop.guardcmd` 模块**导入失败**（`ImportError`）
 - **When** 运行 `witnessloop guard`
 - **Then** 退出码**不是 1**（走同一个兜底），而不是让 CPython 以 1 退出被宿主当成「拦」
+
+### Scenario: 兜底覆盖 cli 自身 import 缺口（安装破损）
+- **Given** `witnessloop.cli` **模块自身**导入失败（如 `constants.py` 坏了）
+- **When** 运行 `witnessloop guard`
+- **Then** 退出码**不是 1**（入口兜底接住），而不是让 CPython 以 1 退出被宿主当成「拦」
+
+### Scenario: 非 guard verb 的崩溃仍 fail-closed
+- **Given** 同一入口、verb 是 `check`
+- **When** 判定过程中抛出未预期异常
+- **Then** 退出码为 **1**（= 未通过），**不是** 4 —— 「4」只属于 `guard`
 
 ### Scenario: 「拦」仍是 1（回归）
 - **Given** 写目标命中 `require_change_for` 且当前 change 的 grill 证据不完备

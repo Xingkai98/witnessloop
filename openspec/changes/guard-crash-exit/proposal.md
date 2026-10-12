@@ -33,7 +33,7 @@
   其崩溃退 1 = fail-closed（仅报错难看）⇒ 属**既有**问题、另立 issue（design §3 非目标）。
 - **不引入签名 / 防伪造**（沿用 v1 边界：防漂移，不防伪造）。
 - **不动 hook 的安装/分发方式**（沿用 `grill-evidence-gate` 的 D6）。
-- **不兜 `witnessloop.cli` 自身模块级 import 失败**（安装破损）——design 边界 + Open Question Q2。
+- **兜 `witnessloop.cli` 自身模块级 import 失败**（安装破损）——用户 Q2 裁定「修掉」⇒ 兜底前移到进程入口 `entry.py`（**因此不列为非目标**）。
 - 不新增动词、不改 plugin 文件清单。
 
 ## 验收

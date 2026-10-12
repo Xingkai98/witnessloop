@@ -92,3 +92,13 @@
 - **已承认（design R2）**：`except Exception` 可能掩盖真 bug——缓解（诊断行含异常类型 + message、且只作用于 `guard`）成立、可接受。
 - **已核对（design R4）**：CC 对非 0/2 退出码视为**非阻塞**（放行）——与意图一致；且 shim 实际把 4 映射成 **0**、不直传，故这条只在「绕过 shim 直连 CLI」时才相关。
 - **流程提示（非缺陷）**：本报告是 grill 产物，**尚无** `## User Confirmation` 段；因此 `check` 此刻会把上面的 Q1/Q2 判为「未经用户确认」= 红，**这是预期的**——停轮拿到用户答复后须把 Q1/Q2 逐条写进 `## User Confirmation`（`- **Q1**: 用户答复：…；确认时间: …`），本 change 才会转绿。
+
+## User Confirmation
+
+- **Q1**: 用户答复：取**甲案**——证据文件「存在但读不出（解码失败）」一律视为「不可核验 ⇒ 证据不完备」
+  ⇒ `guard` **拦**、`check` **红**；且**要求 `guard` 侧与「JSON 坏 / 缺失」逐字同归**（不自造文案）。
+  确认时间: 2026-10-12
+- **Q2**: 用户答复：**「这个 import 失败不是应该修吗」**——即**不接受**「只收窄声明 + 记录边界」，**要求修掉**：
+  兜底**前移到进程入口**，使 `witnessloop.cli` **自身** import 失败（安装破损）**也不再以 1 退出**被当成 block。
+  据此新增 `src/witnessloop/entry.py` + 改 `pyproject.toml` console-script + `__main__.py` + 测试 `cli` fixture
+  （design D3 已据此重写）。确认时间: 2026-10-12
