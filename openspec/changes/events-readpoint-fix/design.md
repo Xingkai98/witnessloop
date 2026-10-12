@@ -104,7 +104,7 @@ EXIT=1                      ← **没有 Traceback**
   - `read_bytes` 两处：`initcmd.py:215`、`uninitcmd.py:59`（`sha256_bytes(path.read_bytes())`）——
     **不同族**：无解码语义；且 `OSError` 的 message **自带文件名** ⇒ 今天的「内部错误」**已可定位**。
   - 间接：`hashing.py:19/31/35`（`sha256_file`/`sha256_tree`）。
-  - 「已覆盖（无需动）」清单纯供参考：`policy.py:133`、`contract.py:176/231`、`evidence.py:165/224`、**`paths.py:69`**（共 5 处）。
+  - 「已覆盖（无需动）」清单纯供参考：`policy.py:133`、`contract.py:176/231`、`evidence.py:165/224`、**`paths.py:69`**（共 **6** 处）。
     ⚠️ **`read_bytes` 合计 4 处**（直接 2：`initcmd.py:215`/`uninitcmd.py:59`；间接 2：`hashing.py:19/35`）。
     ⚠️ 但要知道 **`contract.py:373/386`**（`sha256_tree`）在 **`check` 主路径**上、且**早于**
     `evidence.py:224` 的正文守卫 ⇒ **「报告文件存在但不可读」仍会退成一行「内部错误」**——
@@ -120,10 +120,16 @@ EXIT=1                      ← **没有 Traceback**
   **定案**：读失败 ⇒ **报一行点名文件的诊断（`无法解码`/`无法读取`）并退 1，不进 diff**；
   **不得**让 `None`（或异常）流进 `render_diff`。**若实现时觉得这超出本 change 的尺度，可把 `:118` 移进「非目标」并写明理由**（二选一，但**不能**留着不写）。
   `initcmd.py:63/131/201`、`uninitcmd.py:30`：**补 except 元组**（用 D3 的 idiom）。
-  ⚠️ **`initcmd.py:201` 是「补元组」不是「无 try」**——原稿与 tasks B1 分类错（它 `:200-204` 有 try，只是
-  `except json.JSONDecodeError`，**同时**漏 `OSError` 与 `UnicodeDecodeError`）。grill 实测纠正。
+  ⚠️ **四处都是「补元组」不是「无 try」，但漏的东西分两类**（对抗 R1+R2 两轮实测钉死）：
+  - `initcmd.py:131`（`:132`）、`initcmd.py:63`（`:64`）：`except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`**；
+  - **`initcmd.py:201`（`:202`）、`uninitcmd.py:30`（`:31`）：`except` 只有 `json.JSONDecodeError`** ⇒ **`OSError` 与 `UnicodeDecodeError` 都漏**
+    （实测：台账 `chmod 000` ⇒ `内部错误（PermissionError…）`，栈停在 `:201`/`:30`）。
+  ⇒ 动作都相同——补成 `except (OSError, ValueError)`（D3 的多数派 idiom），**两类都适用**。
+  ⚠️ 原稿把 `:201` 写成「无 try」（错，grill 纠）；我随后又把 `:201`/`:30` 一并说成「只漏 `UnicodeDecodeError`」
+  （**做过头**，对抗 R2 纠——**这正是本仓要防的「修正只落一份」**）。`:63` 的漏捕另有下游 `initcmd.py:148` 的
+  `except ValueError` 兜住 ⇒ **降级为可选**。
 - `tests/`：`events.py` 单测 + `check` 端到端（**可判定形态见 §5**）。
-- 文档：**只改 `docs/gate.md`**（§4 + §8）——见 R-G2。
+- 文档：**只改 `docs/gate.md`**（§4 + §8）——见 R-G2；⚠️ 且**须订正 §8 既有那句错话**（「`check` ⇒ traceback」，R1）。
 
 ## 3.5 非目标（**明确登记，免得下次再问「为什么这里崩那里不崩」**）
 

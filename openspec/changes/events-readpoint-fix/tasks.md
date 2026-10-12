@@ -19,7 +19,8 @@
 
 - [ ] B1 实现（若 Q1 一并修）：**补 except 元组**（用 `except (OSError, ValueError)`——本仓**多数派 + 唯一带注释**的那个；
       **不要**逐点罗列异常名）到 `initcmd.py:131/201`、`uninitcmd.py:30`
-      （⚠️ 三处都是**补元组**不是「无 try」，且**只漏 `UnicodeDecodeError`**——`OSError` **已捕**；
+      （⚠️ **四处都是「补元组」不是「无 try」，但分两类**：`:131`/`:63` **只漏 `UnicodeDecodeError`**（`OSError` 已捕）；
+      **`:201`/`uninitcmd.py:30` 两个都漏**——其 `except` 只有 `json.JSONDecodeError`（实测 `chmod 000` ⇒ PermissionError 直冒）。
       `initcmd.py:63` **降级为可选**：它今天已是 `init：<decode error>`、退 1，不是本 issue 的缺陷形态）
 - [ ] B2 实现（若 Q1 一并修）：**新包 try** 在 `initcmd.py:216`、`uninitcmd.py:77`；
       ⚠️ **`initcmd.py:118` 按 design §3 的定案写**（读失败 ⇒ 一行点名文件的诊断 + 退 1，**不进 diff**；
@@ -41,7 +42,7 @@
 
 - [ ] D1 `docs/gate.md §8`：**新增一行** events（该表**只有 3 行、无 events 行**——原稿说「改一行」是错的，grill 实测），
       写明覆盖范围 = **active change 目录**（`archive/**` 不参与，R5）；
-      ⚠️ **只改 `docs/gate.md`**——**绝不**编辑 `openspec/changes/guard-crash-exit/**`（那会触发 R2 自伤：多 change 同 PR ⇒ 它也要 building 证据）
+      ⚠️ **只改 `docs/gate.md`**——**绝不**编辑 `openspec/changes/guard-crash-exit/**`（那会触发 R2 自伤：改别的 change 目录里的**非证据文件** ⇒ 它的 manifest 判 **stale**）
 - [ ] D1b 订正 `docs/gate.md §8` 里**既有**那句错话（「`check` ⇒ traceback」——实测是**一行** `内部错误`，R1）
 - [ ] D2 `docs/gate.md §4`（结构化解释事件）：补「读不出 ⇒ 干净的 finding（不是崩溃）」
 - [ ] D3 `README.md`：写明**对**接入方是**报错形态变更**（`witnessloop：内部错误` → 一行点名文件的 finding；

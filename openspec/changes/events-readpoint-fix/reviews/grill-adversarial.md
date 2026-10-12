@@ -358,3 +358,128 @@ witnessloop：内部错误（AttributeError: 'NoneType' object has no attribute 
 16. **证据链就绪度**：`evidence.grill_evidence_findings(grill-review.md 正文)` ⇒ 只剩
     `Q1/Q2/Q3/Q4 未经用户确认` 4 条 ⇒ 其余（`Confirmed Decisions` ≥3、每条带 `来源:`）**已过**。
 17. **基线**：`uv run pytest -q` ⇒ **413 passed**（打补丁后同）。
+
+---
+
+# 第 2 轮（R2）
+
+> **结论一句话**：**6 项整合我逐条核完——5 项到位、1 项「做过头」**：`proposal.md:48` 与 `tasks.md:21-22`
+> 把 R1 要求的那句「只漏 `UnicodeDecodeError`」**套到了 `initcmd.py:201` / `uninitcmd.py:30` 头上**——
+> 而这两处的 `except` **只有 `json.JSONDecodeError`**（`initcmd.py:202` / `uninitcmd.py:31`），`OSError` **照样漏**
+> （我实测到 `witnessloop：内部错误（PermissionError: …）`，栈分别钉在 `:201` / `:30`），
+> 且与 **`design.md:122-124` 自己写的「`:201` 同时漏 `OSError` 与 `UnicodeDecodeError`」正面打架**。
+> 故 **CHANGES_REQUESTED**——**唯一阻塞项就是这一处 3 行订正**（动作 `except (OSError, ValueError)` 本身不用改、范围不用重裁）；
+> 其余（支点、§3.5、B3 配方、`:118` 定案、绝对句收窄、R2 机制）**全部 PASS**，且 `grill-review.md` 的假观测确已回写。
+
+## Reviewer
+
+- run id: `grill-adversarial-reviewer-events-readpoint-fix-2026-10-12-r2`
+  （`WITNESSLOOP_RUN_ID` 本环境仍未设 ⇒ 同 R1 按 `templates/grill.md` 走确定性兜底形态 `<stage>-<role>-<anchor>`。）
+- 时间: **2026-10-12T08:56:18Z**
+- **零记忆（第 2 轮）**：不读作者 / grill / R1 的会话历史；R1 报告只作为**被核对象**读，不作为我的记忆。
+- 基线实测：`uv run pytest -q` ⇒ **413 passed**（与 worktree 声明一致）。
+- 本轮**未修改本 worktree 任何文件**（不跑补丁，只读 + 在 `/tmp/r2`–`/tmp/r5` 建仓跑 CLI）⇒ `git status --porcelain` 为空、**未 commit**。
+- CLI 一律 `uv run witnessloop …`（PATH 上的裸 `witnessloop` 是另一份 uv-tool 安装）。
+
+## Verdict
+
+**CHANGES_REQUESTED**（1 条阻塞）
+
+先说不阻塞的部分，免得读成「整合要重做」：**整合没有触碰任何 `src/**` / `tests/**`**
+（`git show e324e5e --stat` 只含 `design.md`/`proposal.md`/`tasks.md`/`spec.md`/`reviews/*`）⇒ 「整合引入代码回归」这条路径不存在，
+413 passed 与基线同源。支点、D1–D4、§3.5、B3 配方、`:118` 定案、绝对句、R2 机制**我逐条复核为真**（含末节 10 条独立实测）。
+
+## 逐条核验（R1 的 6 项）
+
+### 1.【假证据】`grill-review.md` Q1 的假观测 → ✅ **到位**（我独立复现了真观测）
+
+`:77` 已用删除线划掉「`init --policy <含 0xff 的 seed>` ⇒ 同样是「内部错误」」，改写成「实测输出是 `init：'utf-8' codec can't decode byte 0xff …`（退 1）」，并带 `来源:`。
+**我独立实测**（`/tmp/r2`，`--policy` 指向含 `0xff` 的 seed）：`init：'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`、`EXIT=1`
+⇒ **不是**「内部错误」，与新回写的字面**逐字一致**；机制（漏捕的 `UnicodeDecodeError` 是 `ValueError` 子类，被 `initcmd.py:148` 的 `except ValueError` 接住）亦读码核实。**R1 阻塞①闭环。**
+
+### 2.【分类错】`:63`/`:131` 的定性 → ⚠️ **半到位**（`:63` 对、`:131` 对，**但把 `:201`/`:30` 一起写坏了**）
+
+- `proposal.md:49` 的 `:63` 格 ✅：`:64` 是 `except (OSError, json.JSONDecodeError)`、下游 `:148` 接住 ⇒ 「**不是**本 issue 的缺陷形态 ⇒ 降级为文案改善（可选）」——定性、理由、降级**三项都对**（读码 + 实测双复核）。
+- `:131` 的「只漏 `UnicodeDecodeError`」✅（`:132` 确为 `except (OSError, json.JSONDecodeError)`）。
+- ❌ 但新合并出来的那一行把 `:201` / `uninitcmd.py:30` **也算进了「只漏 `UnicodeDecodeError`」**——见阻塞项 **B1**。
+
+### 3.【会让实现卡住】B3 / spec 的测试配方 → ✅ **到位，且它的理由我独立复核为真**
+
+`tasks.md:28-31` 与 `spec.md` 新增的 ⚠️ 段都钉住：`init`/`uninit` 的「读不出」**必须用非法 UTF-8 造**，只有 `events` 那条用「目录冒充」。
+**理由实测成立**（这正是 R1 阻塞③的关键）：
+`init`（已接入）+ `.witnessloop/policy.json` 是**目录** ⇒ `witnessloop：内部错误（IsADirectoryError: …）`、退 1 ⇒ 先炸在**族外** `initcmd.py:215`（`read_bytes`）；
+`uninit` + 台账里某文件是**目录** ⇒ 同形态 ⇒ 族外 `uninitcmd.py:59`。
+反过来也核了 `events` 侧：目录冒充确实炸在**族内**那一点（`events.py:51`、`IsADirectoryError`，且单层 glob 真会把目录收进来）⇒ spec Scenario 2 的配方对。**R1 阻塞③闭环。**
+
+### 4.【细节未定】`design.md` §3 的 `:118` 定案 → ✅ **到位且可落地**
+
+`design.md:117-121`：读失败 ⇒ **报一行点名文件的诊断（`无法解码`/`无法读取`）+ 退 1，不进 diff**，**不得**让 `None`/异常流进 `render_diff`；
+并给了显式二选一出口（移进非目标 + 写明理由）。`_already_initialized:224-229` 的 `! {rel} 缺失（台账记录它应存在）` 就是「不 render_diff、直接打印一行」的**现成先例**
+⇒ 配方可实现，不会重蹈 `AttributeError: … splitlines`。**R1 阻塞④闭环。**
+
+### 5.【非阻塞 5 条】→ ✅ **到位 4 条 + 2 处小瑕**
+
+- **新 §3.5 非目标** ✅（`design.md:128-138`）：`read_bytes`（含「合计 4 处」的显式计数）、`sha256_tree`、**「半成品 `init`」写点**三条都在。
+- **R9** ✅ 在（`:160`）。小瑕：编号排在 R7 之后、R8 之前（7 → 9 → 8），纯排版。
+- **D3 措辞收紧** ✅：`:84-90` 已写成「**三种 `except` 并存**（**不是**『已有唯一 idiom』）」。**计数我逐条 grep 复核，全部为真**：
+  `(OSError, ValueError)` **5 处**（`policy.py:134`、`contract.py:177/232`、`evidence.py:166`、`paths.py:69`〔换序〕）；
+  `(OSError, json.JSONDecodeError)` **2 处**（`initcmd.py:64/132`）；`(OSError, UnicodeDecodeError)` **1 处**（`evidence.py:225`）。
+- **§1.1 绝对句收窄** ✅：`design.md:26` 与 `proposal.md:37-38` 都收成「**非交互**调用路径」+ `KeyboardInterrupt` 例外。
+- **R2 机制改 stale 判定** ✅：`design.md:145-149` 写的是 `_check_git_span` 的 stale 判定——我在代码里核到 `contract.py:272`（定义）与
+  `:325`（`head_sha=… 不是本次被检 revision … 的祖先`）⇒ 机制名与 finding 文案都属实，「两种都会红」的注解也留着。
+
+### 6.【新增内容的小瑕】→ 非阻塞
+
+`design.md:107`「『已覆盖（无需动）』清单……**（共 5 处）**」后面实际列了 **6** 个位置
+（`policy.py:133`、`contract.py:176`、`contract.py:231`、`evidence.py:165`、`evidence.py:224`、`paths.py:69`）⇒ 应为「共 6 处」。
+同段 `:85` 说 `(OSError, ValueError)` **5 处**、`:90` 又说「与既有 **4 处**分叉」——两种口径各自都讲得通（4 = 不换序的写法，5 = 含 `paths.py:69`），
+但同一节并列两个数字容易误读，收一下更稳。
+
+## 跨文档一致性扫描
+
+| 事实 | 结论 |
+|---|---|
+| `:201` 的定性 | ❌ **`design.md:124`（同时漏两者）vs `proposal.md:48` / `tasks.md:22`（`OSError` 已捕）** ⇒ 阻塞 **B1** |
+| `:63` 的定性 | ✅ 一致（`proposal.md:49` / `tasks.md:23` / `grill-review.md:77` 都写「不是缺陷形态 · 可选」）。⚠️ 小瑕：`design.md:122` 与 `:210`（§8 Q1）仍把 `:63` **无条件**列在「补元组」范围内 ⇒ 与「可选」的措辞不齐（动作无害，非阻塞） |
+| `read_bytes` 处数 | ✅ 一致：`design.md:108`「合计 **4 处**」（直接 2 + 间接 2）、`tasks.md:32`「4 处」；`design.md:105/121/211` 的「两处」都指**直接**那两处，口径可辨 |
+| `init`/`uninit` 测试配方 | ✅ 一致（`tasks.md:28-31` 与 `spec.md` ⚠️ 段同口径：必须非法 UTF-8）。⚠️ 小瑕：`spec.md` 的 ⚠️ 写「见 design §5 / tasks B3」，但 **design §5 里没有这条配方**（只在 §3.5 与 tasks B3）⇒ 指向应收成 `tasks.md B3` |
+| 绝对句的收窄 | ✅ 一致（`design.md:26`、`proposal.md:37-38`）。change 目录里其余提到 traceback 的地方都是**被订正的对象**或**订正记录**，不是残留绝对句 |
+| R2 的机制 | ⚠️ `design.md:145-149` 已改成 stale ✅，但 `tasks.md:44` 的括注仍是旧口径「多 change 同 PR ⇒ 它也要 building 证据」——design 已注明「两种都会红」且行动指引相同 ⇒ 非阻塞 |
+| `grill-review.md:50` | ⚠️ 该行仍把 `:201` 与 `:131` 并成「**同一类**（同时漏 `OSError` 与 `UnicodeDecodeError`）」——对 `:201` 对、对 `:131` 错。R1 当时只点了 proposal/design/tasks 三处 ⇒ 属**遗留未清**（非阻塞，顺手可改） |
+| `docs/gate.md:342` 的假话 | ✅ 仍是**待订正对象**（`tasks.md:45` 的 D1b 覆盖它）⇒ 不是残留，是排期中的任务 |
+
+## 阻塞项
+
+**B1（阻塞 · 分类错反着又犯了一遍）** — `proposal.md:48`、`tasks.md:21-22`
+
+- **原文**：`proposal.md:48`「`initcmd.py:131`、**`:201`**、`uninitcmd.py:30` ｜ 有 try，但 `except json.JSONDecodeError` ⇒ **只漏 `UnicodeDecodeError`**」；
+  `tasks.md:21-22`「**补 except 元组**……到 `initcmd.py:131/201`、`uninitcmd.py:30`（⚠️ **三处**都是补元组不是「无 try」，且**只漏 `UnicodeDecodeError`**——`OSError` **已捕**）」。
+- **为什么错**：`initcmd.py:202` 与 `uninitcmd.py:31` 的 `except` **只有 `json.JSONDecodeError`**（不是元组）⇒ `OSError` **没被捕**。
+  三处里**只有 `:131`** 是「`OSError` 已捕」。同一 change 的 `design.md:122-124` 明写 `:201`「**同时**漏 `OSError` 与 `UnicodeDecodeError`」
+  ⇒ **两份文档对同一条事实各说各话**，而这正是本 change 立项时被纠过两次的那类错（R1 阻塞②）。
+- **实测（`traceback` 直接钉行）**：台账 `chmod 000` 后——
+  - `init` ⇒ `witnessloop：内部错误（PermissionError: [Errno 13] … init-manifest.json）`、退 1，栈钉在 **`initcmd.py:201`**；
+  - `uninit` ⇒ 同形态，栈钉在 **`uninitcmd.py:30`**。
+
+  （`ledger_gate_ref`（`:131`）先捕掉 `OSError` 返回 `None`，于是 `init` 一路走到 `:201` 才炸 ⇒ 「`:201` 漏 `OSError`」是**可观测**后果，不只是纸面分类。）
+- **最小订正**（3 行，不动范围、不动动作）：把「只漏 `UnicodeDecodeError`（`OSError` 已捕）」**限定到 `initcmd.py:131`**；
+  对 `initcmd.py:201`、`uninitcmd.py:30` 改回 `design.md:124` 的口径——「有 try，但 `except json.JSONDecodeError`（`:202`/`:31`）⇒ **同时漏 `OSError` 与 `UnicodeDecodeError`**」。
+  B1 的**动作**（统一写成 `except (OSError, ValueError)`）**不必改**；B3 的配方（非法 UTF-8）**继续钉住**——它是「解码那一半」的红先，
+  「`OSError` 那一半」在 `init`/`uninit` 上按 R1 的族外论证**不必**造用例。
+
+## 我实测的
+
+> 本轮**没有**给 worktree 打补丁（无需：被核对象是文档 + 已有的行为）；全部实测在 `/tmp/r2`–`/tmp/r5` 上跑，CLI 一律 `uv run witnessloop …`。
+
+1. **基线**：`uv run pytest -q` ⇒ **413 passed**（72s，exit 0），与基线声明一致。
+2. **整合未碰代码**：`git show e324e5e --stat` = `design.md` / `proposal.md` / `tasks.md` / `spec.md` / `reviews/*` 五份文档（+ 新增 R1 报告），**没有** `src/**`、`tests/**`。
+3. **`init --policy <含 0xff 的 seed>`**（`/tmp/r2`）⇒ `init：'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`、`EXIT=1` ⇒ R1 的回写字面**逐字为真**（「内部错误」那条假观测可证伪）。
+4. **`init` + 台账 `chmod 000`**（已接入）⇒ `witnessloop：内部错误（PermissionError: [Errno 13] Permission denied: '<abs>/init-manifest.json'）`、`EXIT=1`；直调 `initcmd.run`（绕开 `entry.main` 兜底）后栈钉在 **`initcmd.py:201`**。
+5. **`uninit` + 台账 `chmod 000`** ⇒ 同形态；直调 `uninitcmd.run`，栈钉在 **`uninitcmd.py:30`** ⇒ `:30` 的 `except`（`:31`）漏 `OSError` 亦实证。
+6. **`init`/`uninit` + 台账非法 UTF-8** ⇒ `witnessloop：内部错误（UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff …）`、`EXIT=1`（`init` 侧栈钉在 `:131` = 「`:131` 遮蔽 `:201`」那条；`uninit` 侧钉在 `:30`）⇒ 非法 UTF-8 确实是这两条路径的红先配方。
+7. **族外性复核**（B3 理由）：`init` + `policy.json` 是目录 ⇒ `内部错误（IsADirectoryError …）`（族外 `:215`）；`uninit` + 台账里文件是目录 ⇒ 同（族外 `:59`）⇒ 用「目录冒充」写 B3 用例确实够不着族内读点。
+8. **`events.py:51` 的目录冒充**（反向对照）：直调 `load_events_file`，栈钉在 **`events.py:51`**、`IsADirectoryError`；单层 glob 确实把这个目录收了进来 ⇒ spec Scenario 2 的配方成立。
+9. **证据判定**：`evidence.grill_evidence_findings(grill-review.md)` ⇒ **只剩 Q1–Q4 未经用户确认 4 条**（其余全过）⇒ 与 R1 末节第 16 条一致。
+   另：把**同一判定**套到 `grill-adversarial.md` 会得「缺 `## Confirmed Decisions` / 缺 `## User Confirmation`」2 条，但 `check` 只在 `pol.grill_stage`（默认 `grill`）上开 `verify_body`
+   （`checkcmd.py:83` → `evidence.py:238`），`building` 那条只要求「存在」（`:92-98`）⇒ **这不是 gate 缺口**，也是本轮追加进本文件（而非新开文件）不引入新红的原因。
+10. **干净性**：本轮**未改**本 worktree 任何文件（只读 + `/tmp` 建仓）；`git status --porcelain` 为空、**未 commit**。

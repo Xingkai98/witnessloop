@@ -45,13 +45,15 @@ EXIT=1        ← 没有 Traceback
 |---|---|---|
 | `events.py:51` | **无 try** | `check` 报「内部错误」（本 issue 主体） |
 | `initcmd.py:118`、`:216`、`uninitcmd.py:77` | **无 try** | `init`/`uninit` 报「内部错误」 |
-| `initcmd.py:131`、**`:201`**、`uninitcmd.py:30` | 有 try，但 `except json.JSONDecodeError` ⇒ **只漏 `UnicodeDecodeError`** | 同上 |
-| `initcmd.py:63`（`--policy`） | `:64` 是 `except (OSError, json.JSONDecodeError)` ⇒ **`OSError` 已捕**；漏的 `UnicodeDecodeError` 又被下游 `:148` 的 `except ValueError` 接住 | 测**不是**本 issue 的缺陷形态（今天已是 `init：<decode error>`、退 1）⇒ **降级为「文案改善（可选）」** |
+| `initcmd.py:131` | `:132` 是 `except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`** | 同上 |
+| `initcmd.py:201`、`uninitcmd.py:30` | 有 try，但 `except` **只有 `json.JSONDecodeError`** ⇒ **`OSError` 与 `UnicodeDecodeError` 都漏** | 同上（实测台账 `chmod 000` ⇒ 「内部错误（PermissionError…）」，栈停在 `:201`/`:30`） |
+| `initcmd.py:63`（`--policy`） | `:64` 是 `except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`**；而它又被下游 `:148` 的 `except ValueError` 接住 | **不是**本 issue 的缺陷形态（今天已是 `init：<decode error>`、退 1）⇒ **降级为「文案改善（可选）」** |
 | ⚠️ **族外**：`initcmd.py:215`、`uninitcmd.py:59`（`read_bytes`）、`contract.py:373/386`（`sha256_tree`） | 无 try | **不同族**（无解码语义；`OSError` 的 message 自带文件名）。⚠️ 但 `contract.py:373/386` 在 **`check` 主路径**上、**早于** 正文守卫 ⇒「报告存在但不可读」仍报「内部错误」（**已知未覆盖**） |
 
 ⇒ ⚠️ **两轮审阅纠正了我三处分类错**：① `initcmd.py:201` 是「有 try」不是「无 try」（grill 纠）；
-② `:63`/`:131` **不是**「同时漏 `OSError` 与 `UnicodeDecodeError`」——`OSError` **已捕**，**只漏 `UnicodeDecodeError`**（对抗验证纠；
-grill 只纠了 `:201`，漏了这两处）；③ `:63` 连**缺陷形态都不是**（下游 `:148` 的 `except ValueError` 接住了）⇒ 降级为可选。
+② `:63`/`:131` **不是**「同时漏 `OSError` 与 `UnicodeDecodeError`」——`OSError` **已捕**，**只漏 `UnicodeDecodeError`**（对抗验证纠）；
+③ 但 `:201`/`uninitcmd.py:30` 与 design 原口径一致（**两个都漏**）——我在回写时把这两处**也**改成「只漏」是**做过头**，
+经对抗 R2 纠正并实测坐实（`chmod 000` ⇒ 栈停在 `:201`/`:30`）；④ `:63` 连**缺陷形态都不是**（下游 `:148` 的 `except ValueError` 接住）⇒ 降级为可选。
 
 ## 目标
 
