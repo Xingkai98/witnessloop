@@ -163,7 +163,9 @@ def grill_evidence_findings(
 def _read_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
+        # ValueError 涵盖 JSON 语法坏**与**非法 UTF-8 —— 两者必须**同归**（都当「这份 manifest 不可用」），
+        # 否则「字节坏放行 / JSON 坏拦」自相矛盾（change guard-crash-exit / D4-2）。
         return None
 
 
@@ -212,6 +214,14 @@ def grill_evidence_findings_in_change(
         rel_report = report.relative_to(change_dir.resolve()).as_posix()
     except ValueError:  # pragma: no cover - resolve_report_path 已保证在目录内
         rel_report = str(doc.get("report_path") or "report")
-    return grill_evidence_findings(
-        report.read_text(encoding="utf-8"), report_path=f"{label}/{rel_report}"
-    )
+    try:
+        text = report.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # 甲案（用户 Q1 裁定）：证据内容**读不出** ⇒ 不可核验 ⇒ 不完备（**拦/红**），而不是崩溃出栈。
+        return [
+            Finding(
+                f"{label}/{rel_report}",
+                f"报告无法解码（{type(exc).__name__}）：无法核验 grill 证据",
+            )
+        ]
+    return grill_evidence_findings(text, report_path=f"{label}/{rel_report}")

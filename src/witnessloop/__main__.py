@@ -1,6 +1,6 @@
 import sys
 
-from witnessloop.cli import main
+from witnessloop.entry import main
 
 if __name__ == "__main__":
     sys.exit(main())

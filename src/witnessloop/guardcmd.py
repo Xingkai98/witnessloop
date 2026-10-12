@@ -9,6 +9,10 @@ hook 属**交互层**（host 特定，见 `plugin/hooks/`），但本动词本�
 时 argparse 退 2，会被宿主当成 block，把 fail-open 反转成 fail-closed（回归审阅 Issue 3）。
 由 `plugin/hooks/guard.sh` 把 1 映射成 host 的 block 约定。
 
+**不变量**：**1（拦）只由本模块的 `return C.EXIT_FAIL` 产生**。崩溃**绝不**退 1 —— 未预期异常由
+**进程入口** `entry.py` 捕获，`guard` 退 `EXIT_INTERNAL`(4)（fail-open，见 `docs/adr/0002`）。
+本模块**不自设**兜底：`cli.main` 是被入口调用的进程内 API，兜底属**进程边界**的职责。
+
 **诚实边界**：本动词是「**防遗忘**」，**不是防对抗**——agent 可以改用 Bash 写文件
 （`Write|Edit` matcher 不覆盖它）、也可以不装插件。真正的锚仍是 CI required check。
 

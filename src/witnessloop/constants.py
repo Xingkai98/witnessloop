@@ -81,6 +81,11 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_NOT_ONBOARDED = 3
+# `guard` 的**内部错误**（未预期异常）：fail-open，**绝不等于 1**（1 是「拦」）。
+# 由进程入口 `entry.py` 捕获未预期异常时返回；**仅 `guard`** 用它——其余动词崩溃退 1（失败 / fail-closed）。
+# `entry.py` 不可 import 本模块（要能在 witnessloop 自己导入不起来时兜底）⇒ 那里用车字面量，
+# 由 `tests/test_entry.py` 钉两处同值（漂移会让入口兜底与 CLI 语义分叉）。
+EXIT_INTERNAL = 4
 
 # 注意（回归审阅 Issue 3 修复）：`guard` 的「拦住」用 EXIT_FAIL(1)，**不是** 2。
 # 早先用 2（= EXIT_USAGE）同值 ⇒ 任何 argparse 用法错误都被 CC 当成 block——

@@ -174,7 +174,8 @@ def _bound_report(directory: Path, manifest_path: Path) -> Path | None:
     """这份 manifest 绑定了哪个报告（**解析后**的绝对路径）；取不到则 None。"""
     try:
         doc = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
+        # ValueError 涵盖 JSON 语法坏**与**非法 UTF-8（后者此前漏捕 ⇒ 崩溃）。
         return None
     if not isinstance(doc, dict):
         return None
@@ -228,7 +229,8 @@ def _validate_one(
     manifest_rel = f"{rel_change}/{manifest_path.relative_to(directory).as_posix()}"
     try:
         doc = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
+        # 同上：JSON 坏与字节坏**同归**于这条 finding（它**点名文件**）。
         return [Finding(manifest_rel, f"manifest 无法解析：{exc}")]
     if not isinstance(doc, dict):
         return [Finding(manifest_rel, "manifest 根必须是 JSON 对象")]

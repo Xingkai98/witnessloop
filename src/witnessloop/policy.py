@@ -126,7 +126,9 @@ def load_policy(root: str | Path) -> Policy | None:
         return None
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError 涵盖 json.JSONDecodeError **与** UnicodeDecodeError（非法 UTF-8 的 policy）——
+        # 后者此前漏捕 ⇒ 崩溃退 1 ⇒ 被 host 当成 block（change guard-crash-exit / #9）。
         raise PolicyError(f"{C.POLICY_PATH} 无法解析：{exc}") from exc
     return Policy.from_doc(doc)
 
