@@ -51,3 +51,60 @@ def test_check_names_the_existing_stage_so_a_typo_is_diagnosable(gated: Path, cl
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL
     assert "现有 stage：grills" in err
+
+
+def test_check_names_a_byte_bad_manifest_and_does_not_crash(gated: Path, cli):
+    """C8（R2 N1）：`check` 的 manifest 读点在 `contract.py`（`checkcmd.py:75` 先于 `:78` 的 `evidence`）。
+
+    字节坏必须**干净红**（与 JSON 坏同归）且**点名该文件**——不能是崩溃（入口兜底会把崩溃也变成非 0，
+    所以只断言退出码不够：必须断言**是那条 finding**、且**不是**入口的「内部错误」）。
+    """
+    commit_content(gated, CHANGE)
+    manifest = write_review(gated, CHANGE, stage="grill")
+    manifest.write_bytes(b'{"stage": "grill", "broken": "\xff\xfe"}')
+    commit_all(gated, "证据：manifest 字节坏")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "manifest 无法解析" in err
+    assert "grill.manifest.json" in err
+    assert "内部错误" not in err  # 崩到入口兜底 = 不算「同归」，用例须排除
+
+
+def test_check_stays_fail_closed_on_an_undecodable_report(gated: Path, cli):
+    """spec「崩溃兜底不改变 `check` 的退出码语义」：报告读不出 ⇒ **干净红**（非 0 且不是崩到入口）。
+
+    ⚠️ 审阅 R1 指出原版是**弱测试**：只断言 `code != EXIT_PASS`，而那个非 0 可能来自
+    `contract._check_hashes` 的 hash 不匹配（改了报告却没重建 manifest）或**入口兜底**——
+    两种都**走不到** `evidence.py` 的报告读点。故这里**先按坏字节重建 manifest**（让 `report_hash`
+    与坏字节一致、越过 hash 检查），真正打到读点，再断言**是那条 finding**、且**不是**入口的「内部错误」。
+    """
+    commit_content(gated, CHANGE)
+    write_review(gated, CHANGE, stage="grill")
+    report = gated / "openspec" / "changes" / CHANGE / "reviews" / "grill-review.md"
+    report.write_bytes(b"# Grill\n\xff\xfe")
+    build_code, _, build_err = cli(
+        "manifest",
+        "build",
+        "--root",
+        str(gated),
+        "--base",
+        "main",
+        "--change",
+        CHANGE,
+        "--stage",
+        "grill",
+        "--report",
+        "reviews/grill-review.md",
+        "--reviewer-run-id",
+        "run-reviewer-1",
+        "--author-run-id",
+        "run-author-1",
+    )
+    assert build_code == C.EXIT_PASS, build_err
+    commit_all(gated, "证据：坏报告 + 按坏字节重建 manifest")
+
+    code, _, err = check(gated, cli)
+    assert code == C.EXIT_FAIL
+    assert "报告无法解码" in err
+    assert "内部错误" not in err  # 崩到入口兜底 = 不是「干净的红」，用例须排除

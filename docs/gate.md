@@ -273,11 +273,19 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 1 | **拦住**——命中 `require_change_for` 且当前 change 的 grill 证据不完备 |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——不拦（本地守卫对未接入的仓无意见） |
+| 4 | **内部错误**（未预期异常，由**进程入口**兜底）——**fail-open，不拦**。**只有 `guard` 会用 4** |
 
 ⚠️ **`guard` 的「拦住」是 1，不是 2**：2 与「argparse 用法错误」同值 ⇒ **旧版 CLI 不认识
 `guard` 子命令**时 argparse 退 2，会被宿主当成 block，把**每个 `Write|Edit` 都拦下**
 （fail-open 反转成 fail-closed）。由 `plugin/hooks/guard.sh` 把 **1 → host 的 block（CC 的 2）**。
 `3` 在两动词里仍相反：`check` 是「不放行」、`guard` 是「放行」。
+
+⚠️ **`guard` 崩溃绝不等于「拦」**（issue #9）：退出码 **1** 同时是 CPython 未捕获异常的退出码，
+若不兜底，`guard` 一崩就会被宿主当成 block ⇒ **误拦每个 `Write|Edit`**。故**进程入口**
+（`src/witnessloop/entry.py`，console script 与 `python -m witnessloop` 都走它）捕获未预期异常：
+verb 是 `guard` ⇒ **4**（fail-open）；其余 verb ⇒ **1**（`check` = 未通过 = fail-closed；`init`/`uninit`/
+`manifest` = 失败）。**该保证只对两个声明入口成立**（console script 与 `python -m witnessloop`）——直接跑 `python -m witnessloop.cli` 绕开兜底，不属承诺入口。入口刻意**不 import `witnessloop` 任何模块**——这样连「`witnessloop.cli` 自身
+导入失败」（安装破损）也兜得住。⇒ 「拦」(1) 成为**只由显式判定产生**的退出码。
 
 `base` 解析顺序：`--base` → `WITNESSLOOP_BASE_REF` → `GITHUB_BASE_REF`（→ `origin/<ref>`）
 → `origin/main` \| `main` \| `origin/master` \| `master`。
@@ -316,5 +324,19 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
   ⇒ 静默放行（声明的 fail-open 边界）；大小写**不折叠**同理（见 §2 的归一化边界）。
 - 逃生口：`WITNESSLOOP_SKIP_GUARD=1`。
 - CC hook 随 plugin 分发（`plugin/hooks/`）；**装了 plugin 还要装 CLI**，否则命令非 2 退出 = CC 视为不阻塞 = fail-open。
-- **诚实边界**：本地 guard 是「**防遗忘**」不是防对抗——用 **Bash 写文件**（`matcher` 只覆盖 `Write|Edit`）
-  或不装 plugin 即绕过；锚仍是 §7 的 CI。
+- **崩溃 / 内部错误 ⇒ 放行**（§6 的 4）：兜底在**进程入口**（`src/witnessloop/entry.py`，见 `docs/adr/0002`），
+  当**任何**未预期异常冒到入口（含 `witnessloop.cli` 自身导入失败）⇒ `guard` 退 **4**、绝不退 1。
+- **证据文件「读不出」⇒ 归一为 verdict（不再崩溃）**——口径见下。
+
+**证据「读不出」（解码失败）的归宿**（change `guard-crash-exit`；读点归一）：
+
+| 文件 | 归宿 | 为什么 |
+|---|---|---|
+| `.witnessloop/policy.json` | **放行** | 连受管控范围都读不出 ⇒ **不执行**（与既有「policy 非法 ⇒ 不拦」同归） |
+| `review manifest` | **拦 / 红** | 与「manifest **缺失** / **JSON 语法坏**」**逐字同归**（字节坏不得一半拦一半放） |
+| grill 报告正文 | **拦 / 红** | 统一口径「**读不出 ⇒ 不可核验 ⇒ 不完备**」 |
+
+⚠️ **对**接入方**是行为变更**：损坏的证据文件此前会**崩溃**（`guard` ⇒ 退 1 被当 block 误拦；`check` ⇒ traceback），
+现在变成**确定性结论**（`guard` 拦 / `check` 干净的红）。`check` **退出码语义不变**（仍非 0 = 未通过）。
+⚠️ **可诊断性小缺口**：`guard` 侧对「**坏** manifest」与「**无** manifest」文案相同（都是「无 stage=grill 的
+manifest（现有 stage：…）」）；`check` 侧会**点名**文件（`manifest 无法解析：<file>`）。

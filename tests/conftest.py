@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from witnessloop.cli import main
+from witnessloop.entry import main
 
 
 def git(repo: str | Path, *args: str, check: bool = True) -> str:
@@ -46,7 +46,7 @@ def repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def cli(capsys):
-    """在进程内跑 CLI，返回 (退出码, stdout, stderr)。"""
+    """在进程内跑 CLI（走真实**进程入口** entry.main），返回 (退出码, stdout, stderr)。"""
 
     def _run(*argv: str) -> tuple[int, str, str]:
         code = main(list(argv))

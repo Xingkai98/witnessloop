@@ -9,8 +9,10 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+import witnessloop
 from witnessloop import constants as C
 
 from conftest import commit_all, git
@@ -171,3 +173,95 @@ def test_shim_allows_when_the_cli_is_missing(tmp_path: Path):
 
 def test_shim_allows_when_the_event_has_no_file_path(tmp_path: Path):
     assert _run_shim(tmp_path, cli_exit=C.EXIT_FAIL, file_path="") == 0
+
+
+def test_shim_allows_the_internal_error_code(tmp_path: Path):
+    """issue #9 / D2：`guard` 崩溃走 `EXIT_INTERNAL`(4) ⇒ shim **放行**（不自造 block）。"""
+    assert _run_shim(tmp_path, cli_exit=C.EXIT_INTERNAL) == 0
+
+
+# --------------------------------------------- 崩溃兜底（issue #9 / D1+D3）
+# 真崩溃用**真正未预期**的异常触发；可归一的解码失败走下面的读点用例。
+
+
+def test_guard_survives_an_arbitrary_internal_error(repo: Path, cli, monkeypatch):
+    """B1：判定过程中抛未预期异常 ⇒ 经**进程入口**退 `EXIT_INTERNAL`（非 1）。"""
+    _onboarded_on_branch(repo, cli, f"{CHANGE}/2026-10-11")
+    commit_content(repo, CHANGE)
+    write_review(repo, CHANGE, stage="grill")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "witnessloop.evidence.grill_evidence_findings_in_change", boom
+    )
+    code, _, err = _guard(cli, repo, "src/x.py")
+    assert code == C.EXIT_INTERNAL
+    assert code != BLOCKED  # 关键：崩溃**绝不能**被当成「拦」
+    assert "内部错误" in err
+
+
+def test_guard_survives_a_broken_submodule_import(repo: Path, cli, monkeypatch):
+    """B2：`from witnessloop import guardcmd` 抛 ImportError ⇒ 同一兜底接住。
+
+    只设 `sys.modules[...]=None` **不够**——整份 suite 里 `guardcmd` 早已是 `witnessloop` 的**属性**，
+    `from ... import` 会走 `getattr` 而不抛（R3 M4 实测）⇒ 必须同时 `delattr`。
+    """
+    _onboarded_on_branch(repo, cli, f"{CHANGE}/2026-10-11")
+    commit_content(repo, CHANGE)
+    monkeypatch.setitem(sys.modules, "witnessloop.guardcmd", None)
+    monkeypatch.delattr(witnessloop, "guardcmd", raising=False)
+
+    code, _, err = _guard(cli, repo, "src/x.py")
+    assert code == C.EXIT_INTERNAL
+    assert "内部错误" in err
+
+
+# --------------------------------------------- 读点归一（D4/D5 · Q1 裁定=甲案）
+
+
+def test_policy_decode_failure_is_not_a_block(repo: Path, cli):
+    """D5：policy 读不出 ⇒ 与「policy 非法」同归 ⇒ **放行**（连受管控范围都读不出 ⇒ 不执行）。"""
+    _onboarded_on_branch(repo, cli, f"{CHANGE}/2026-10-11")
+    commit_content(repo, CHANGE)
+    (repo / ".witnessloop" / "policy.json").write_bytes(b'{"schema": "\xff\xfe"}')
+
+    code, _, err = _guard(cli, repo, "src/x.py")
+    assert code == C.EXIT_PASS
+    assert "policy" in err
+
+
+def test_byte_bad_manifest_matches_json_bad_manifest(repo: Path, cli):
+    """D4-2：**字节坏** manifest 必须与 **JSON 坏** manifest **逐字同归**（不得一半拦一半放）。
+
+    断言**两案输出相等**（而非钉某个字符串）——这才钉得住「同归」。
+    """
+    _onboarded_on_branch(repo, cli, f"{CHANGE}/2026-10-11")
+    commit_content(repo, CHANGE)
+    write_review(repo, CHANGE, stage="grill")
+    manifest = repo / "openspec" / "changes" / CHANGE / "reviews" / "grill.manifest.json"
+
+    manifest.write_bytes(b'{"stage": "grill", "broken": "\xff\xfe"}')
+    byte_code, _, byte_err = _guard(cli, repo, "src/x.py")
+
+    manifest.write_text("{ not json", encoding="utf-8")
+    json_code, _, json_err = _guard(cli, repo, "src/x.py")
+
+    assert byte_code == json_code == BLOCKED
+    assert byte_err == json_err
+
+
+def test_report_decode_failure_blocks_with_a_clear_message(repo: Path, cli):
+    """D4-3（甲案）：报告正文读不出 ⇒ 确定性 verdict（**拦** + 点名报告），**不是**崩溃。"""
+    _onboarded_on_branch(repo, cli, f"{CHANGE}/2026-10-11")
+    commit_content(repo, CHANGE)
+    write_review(repo, CHANGE, stage="grill")
+    (repo / "openspec" / "changes" / CHANGE / "reviews" / "grill-review.md").write_bytes(
+        b"# Grill\n\xff\xfe"
+    )
+
+    code, _, err = _guard(cli, repo, "src/x.py")
+    assert code == BLOCKED
+    assert "报告无法解码" in err
+    assert "Traceback" not in err

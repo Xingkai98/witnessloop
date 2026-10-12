@@ -32,7 +32,7 @@ witnessloop manifest build --change add-retry --stage building \
 # CI 入口（fail-closed）
 witnessloop check --base origin/main --head HEAD
 
-# 本地守卫：写目标命中 require_change_for 且缺 grill 证据 → 拦（exit 2）
+# 本地守卫：写目标命中 require_change_for 且缺 grill 证据 → 拦（CLI 退 1；host shim 再映射成 CC 的 2）
 # 通常由 host 的 PreToolUse hook 自动调（见下），也可手动/脚本调
 witnessloop guard --path src/x.py
 

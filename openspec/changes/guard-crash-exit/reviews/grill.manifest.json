@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "guard-crash-exit",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-guard-crash-exit-2026-10-12",
+  "author_run_id": "author-guard-crash-exit-2026-10-12",
+  "base_sha": "642e4115e80a26234d2f181a0e715fd1aacce275",
+  "head_sha": "c1d724e08f3c678619372fb8059d034dfcd6d783",
+  "tasks_hash": "36a4087dbe6d539dc1b9c0439f53b6f6ca2bac3578c5cb6f7ee68703e088a2cc",
+  "spec_hash": "fda552e2f525a50dd99acfe164d9db56f43e1ba9540d94ee5b9bc410c4cd144c",
+  "diff_hash": "36b7769d6c1b8240a4975a8a41653b649a409d327856512e9ee98b355ff3b82d",
+  "report_hash": "0753f9a0daf4f4728cdd9052a57d27e00d676f269fde32c934dd28b37ad13bcb",
+  "report_path": "reviews/grill-review.md"
+}

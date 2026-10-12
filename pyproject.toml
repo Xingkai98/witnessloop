@@ -8,7 +8,8 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.scripts]
-witnessloop = "witnessloop.cli:main"
+# 进程入口走 entry（崩溃兜底：见 docs/adr/0002 与 src/witnessloop/entry.py）。
+witnessloop = "witnessloop.entry:main"
 
 [build-system]
 requires = ["hatchling"]

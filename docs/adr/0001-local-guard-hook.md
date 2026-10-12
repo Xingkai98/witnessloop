@@ -13,7 +13,7 @@ v1 的既定决策是「**强制落 CI（merge boundary），agent hooks 只作�
 ## 决策
 
 **新增本地守卫**：`witnessloop guard` 动词（host 中立）+ 随 plugin 分发的 CC PreToolUse hook。
-写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ 拦（exit 2）。
+写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ 拦（**CLI 退 1**；`plugin/hooks/guard.sh` 再映射成 CC 的 2 —— 见 change `guard-crash-exit` 与 [ADR 0002](./0002-entry-point-fail-open-guard.md)）。
 
 ## 备选
 
