@@ -127,9 +127,11 @@
       ⚠️ **对抗轮 R3 的 N-6（实测）**：E0b 的追加会让 **`grill` 那份 manifest 也变 stale**（实测 5 条 finding
       里 2 条指向它，因为 `report_hash` 绑的是报告字节）——**E1 会一并重建**，但那之前 `check` 是红的，
       **属预期**，别以为实现错了。
-- [ ] E1（收尾步骤，在 build 证据**之后**执行）两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
-- [ ] E2 独立 `review-loop`（PASS 或 3 轮封顶）
-- [ ] E3（收尾步骤，在 build 证据**之后**执行）PR（branch protection）→ 合入 → 关 issue **#16**
+- [x] E1 **两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿**（已做 · 本轮内）
+- [x] E2 **独立 `review-loop`**：第 1 轮即 **PASS**（零记忆审阅者，8 组变异无逃逸；报告 `reviews/building-review.md`）
+- [ ] E3（`check` 绿**之后**执行）PR（branch protection）→ 合入 → 关 issue **#16**
+      ⚠️ **本框刻意留空**：PR/合入是**证据提交之后**的动作，回填本行会让 `tasks_hash` 立刻 stale
+      （#12 的实测教训）。合入后只在 issue 与 PR 里记录，不回改本文件。
 
 ## 明确不做（本 change）
 
@@ -149,5 +151,6 @@ archive 门禁 · `ChangeType` · **verdict 文本判据（Q2 定案：不解析
 - **`guard` 零改动**：`uv run witnessloop guard --root . --path src/witnessloop/checkcmd.py` 在设计证据
   （`stage=grill` manifest）落地后**退 0 放行**——证实「先放行、后重跑 manifest」这条链**无自锁**
   （与 grill / 对抗轮的实测一致）。
-- **`check` 在本 change 上的当前状态**：实现提交后 `check` 会红（E0 的三份 manifest 因内容改动判 stale，
-  且缺 `stage=building`）——**属预期**，E1 两段提交 + 重建三份 manifest 后转绿。
+- **`check` 在本 change 上的当前状态**：实现提交后一度**红**（E0 的 manifest 因内容改动判 stale、且缺
+  `stage=building`）——**属预期**；E1 重建三份 manifest 后 **`check：通过 ✓`（exit 0）**。
+- **审阅闭环**：`review-loop` **第 1 轮 PASS**（无阻塞；8 条非阻塞已收口，见「审阅修复」节）。
