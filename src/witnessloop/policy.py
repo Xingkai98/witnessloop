@@ -57,6 +57,7 @@ class Policy:
     events_file: str
     protected_write_event_types: tuple[str, ...]
     grill_stage: str
+    building_stage: str
 
     @property
     def archive_root(self) -> str:
@@ -112,6 +113,9 @@ class Policy:
             ),
             grill_stage=str(
                 evidence.get("grill_stage") or C.DEFAULT_GRILL_STAGE
+            ),
+            building_stage=str(
+                evidence.get("building_stage") or C.DEFAULT_BUILDING_STAGE
             ),
         )
 

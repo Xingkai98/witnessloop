@@ -146,6 +146,9 @@ git merge-base HEAD <主干>         # base，manifest 用
   只挡「显式把同一个值喂给两个角色」。**审阅者必须独立于作者**是**流程要求**，
   上一行不代你保证它（要见证真身份就设 `WITNESSLOOP_RUN_ID`）。
 - **verdict 三态**：`BLOCKED` 时停下报告、**不自行修复**。
+- **门禁口径（甲案）**：`check` 的 `building` 门禁只要求**证据存在**（manifest + 报告）且**审在最终 revision 上**，
+  **不解析报告里的 verdict 文本** ⇒ 它不替代本闭环的判定：`CHANGES_REQUESTED` 该修还是要修，
+  三轮封顶时该停下交人判断还是要停（`docs/gate.md §9`）。
 - **批次 aware**：`tasks.md` 标「后续批」的 `[ ]` 不是缺陷。
 - **manifest 是权威证据**：审阅结论以它为准，报告与它成对。
 - 审阅者对 change 状态**只读**，**不得持有自己的状态文件**。
