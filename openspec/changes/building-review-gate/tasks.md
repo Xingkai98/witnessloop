@@ -17,11 +17,14 @@
 - [ ] B5 单测（先红）：**不**触发——纯文档改动 / 只动 change 目录（无实现）⇒ 不要求 building 证据
 - [ ] B6 单测（先红）：building stage 拼错（如 `buildings`）⇒ 红且**点名现有 stage**
 - [ ] B7 单测（先红·回归）：**审阅后再改代码** ⇒ 既有 `_check_git_span` 判 **stale**（钉住这半边已生效）
-- [ ] B8 实现：`checkcmd` 的 change 循环接入（触发条件 = 本次 diff 触及 `require_change_for`）
+- [ ] B8 实现：`checkcmd` 的 change 循环接入（触发条件 = 本次 diff 触及 `require_change_for`）；
+      文案经 `reason` 参数传入（**参数化**，非第二份实现）
+- [ ] B9 单测（先红）：**多 change 同 PR 边界**——本 PR 改代码 + 顺带新增纯文档 change
+      ⇒ 该文档 change 也被要求 building 证据（**这是刻意的**，Q2 裁定「一 PR 一 change」前提）
 
-## C. 自伤面（D6 / R1）—— **必有，且量可能不小**
+## C. 自伤面（D6）—— **grill 实测：0 条新增失败**（原「一批会红」已被证伪）
 
-- [ ] C1 盘点并逐条修既有用例的期望：改动代码的用例需补 `stage=building` 证据（或显式断言红）
+- [ ] C1 **确认**既有用例无需改动（grill 在 `/tmp` 副本实测 404 passed 逐条相同；不投入盘改）
 - [ ] C2 回归：本仓三个 active change（`dogfood-bootstrap` / `grill-evidence-gate` / `guard-crash-exit`）
       的证据仍判**合格**
 - [ ] C3 回归：`guard` **不**受影响（仍只查 grill；写码前不要求 building）

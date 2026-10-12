@@ -21,14 +21,17 @@
 | 代码必须挂 change | `checkcmd._require_change`（`checkcmd.py:92-120`） | 改了 `require_change_for` 路径 ⇒ 必须有 change 目录 |
 | 受保护写入 | `checkcmd._protected_writes`（`checkcmd.py:122-180`） | 需 `workflow-events.jsonl` 解释事件 |
 
-⇒ **`building` 这个 stage 在 `src/` 里 0 命中**（全树 grep）——**跳过 review-loop 的 PR 照样绿**。
+⇒ **`building` 这个 stage 在 `src/` 里 0 处功能性命中**（`grep -rn building src/` 只命中 `cli.py:107,111` 的 `--help` 文案；grill 实测纠正——原稿写"0 命中"字面不成立）——**跳过 review-loop 的 PR 照样绿**。
 
 **已有的一半（很关键）**：`contract._check_git_span`（`contract.py:272-352`）要求 manifest 的 `head_sha`
 是**被检 head 的祖先**、且 `head_sha..被检 head` 之间的改动**只许是证据文件**。⇒
 **审阅之后再改任何非证据文件 ⇒ 该 manifest 判 stale ⇒ 红**。所以「审完又改代码」**已经**被堵住了；
 本 change 只补「**必须存在**」这一半。
 
-**与 asterwynd 的先例对比**（`scripts/check_openspec_artifacts.py:1009-1048`，已读）：
+**与 asterwynd 的先例对比**（**按函数名定位** `_check_review_manifests`；实测在 `scripts/check_openspec_artifacts.py:1110-1145`——
+⚠️ **不按行号引用**：跨仓行号随对方 git 漂移即失效，grill 实测原稿引的 `:1009-1048` 已漂）：
+
+
 
 ```python
 requires_building_review = (
@@ -43,7 +46,7 @@ if requires_building_review and not review_report.exists():
 1. **它要求存在，不解析 verdict 文本**（全文件无 verdict/PASS 解析；注释里的 “produced a PASS manifest” 指
    **被 manifest 绑定的那份证据**）。⇒ 「PASS 硬门」的实质是「**闭环必须跑过**」。
 2. 它的触发条件含 `_tasks_all_complete`（**tasks.md 全部勾选**）——**这是自声明**：**不勾选就能绕过**
-   （asterwynd 自己也为此写了「post-PASS tasks edits」的应对，见其 `:1409`）。**witnessloop 不宜照抄。**
+   （asterwynd 自己也为此写了「post-PASS tasks edits」的应对——**按函数名**定位，实测在其 `:1716`）。**witnessloop 不宜照抄。**
 3. 它另有 `change_type != "docs"` / `_changed_capabilities`（有 spec delta）两个豁免面——witnessloop 的 change
    契约**本就**要求 `specs/` 齐备，没有 `ChangeType` 概念，故这两条在本仓**不存在对应物**。
 
@@ -68,6 +71,14 @@ if requires_building_review and not review_report.exists():
   「改了受管控代码」是**客观事实**（来自 git diff），不可通过不勾选规避。
 - 边界（须写明）：**纯文档 / 纯 change 目录改动**（提案期、还没实现）⇒ **不要求** building 证据。
   否则每个 in-flight change 都会红（asterwynd 的注释里也专门提了这点）。
+- ⚠️ **多 change 同 PR 的边界（grill Q2 / R-new-1，高；原稿只覆盖单 change）**：触发是**全局**的
+  （只看「本次 diff 有没有触及 `require_change_for`」），而要求施加在**每个** `change_id` 上
+  ⇒ **一个 PR 改了代码 + 顺带新增另一个纯文档 change，那个文档 change 也会被要求 building 证据**（grill 实测 S2′ 复现）。
+  **定案**：**不**去猜「代码属于哪个 change」（witnessloop 无此概念，硬做会引入第二套「什么算代码」的口径）。
+  改为**显式化流程约束**：「**一个 PR 推进一个 change**」是前提（与既有的「内容/证据分属两提交、单提交 PR 不被支持」
+  同族，`docs/gate.md:172-177`），并在 spec 里**加 Scenario 把多 change 边界钉死**：
+  「本 PR 触及 `require_change_for` ⇒ 本 PR 触及的**每个** change 都要 building 证据；要免除就把 change 拆到单独 PR」。
+  **不加** `building_exempt_changes` 豁免名单——豁免名单是**新的绕过面**。
 
 ### D2 判据：**必须有 `stage=building` 的 manifest**（policy 轴 `evidence.building_stage`，默认 `building`）
 
@@ -105,13 +116,17 @@ if requires_building_review and not review_report.exists():
 - `templates/review-loop.md`：若选**乙**，须在此规定多轮报告的最终裁定形态；选**甲**则补一句「本门禁只要求证据存在，
   结论由人/流程负责」。
 
-### D6 回归红线
+### D6 回归红线（**原稿的风险评估被 grill 实测证伪**）
 
-本仓三个 active change **都有** `building.manifest.json`（实测）⇒ 接上后不得把它们的 grill/building 证据判红。
-⚠️ 直接注入的具体形态：`tests/test_*` 里造 change 的既有 helper（`helpers.write_review(stage="building")`）
-**已经**会写 building 证据——但**多数既有用例只写 grill**（`commit_evidence(stages=("grill","building"))` 是默认，
-`write_review(stage="grill")` 的单写也不少）⇒ **接上后一批既有用例会变红**，属**预期的自伤面**，
-须**逐条改期望**（不是 bug，是行为变更的落地）。**实现清单必须含这一步。**
+本仓三个 active change **都有** `building.manifest.json`（实测）⇒ 接上后不得把它们的证据判红。
+
+⚠️ **原稿（R1/本节的旧稿）声称「接上后一批既有用例会变红、须逐条改期望」——grill 在 `/tmp` 副本实测证伪**：
+按本 design 真打补丁后跑全量 = **404 passed，与基线逐条相同，0 条新增失败**。根因：
+D1 的触发条件是「diff 触及 `require_change_for`」，而既有用例里**凡触及 `src/**` 的都已写了 building 证据**
+（`helpers.commit_evidence` 默认 `stages=("grill","building")`，`helpers.py:214`；
+`write_review` 默认 `stage="building"`，`helpers.py:116`）；**只写 `stage="grill"` 的用例只动 change 目录**，
+不触及 `require_change_for` ⇒ 不触发。⇒ tasks 的 C1「逐条修既有用例的期望」会**空转**，
+应缩为「**确认无需改动** + 只加新增用例」（grill R-new-2）。
 
 ## 3. 接线点（实现清单）
 
@@ -120,17 +135,30 @@ if requires_building_review and not review_report.exists():
 - `src/witnessloop/evidence.py`：把「必须有 stage=X 的 manifest」抽成**参数化助手**（现有 grill 那条是硬编码 `grill_stage`），
   **两处共用**——本仓最忌「两边各写一套」（`constants.HASHED_ARTIFACTS` 就是这么来的）。
   ⚠️ **实现细节**：现有函数还**顺带**校验报告正文（grill 专有）⇒ 抽取时须让「只要求存在」的调用方**不**触发正文校验。
+  **切法（grill D-F 实测可行）**：`stage_manifest_findings_in_change(change_dir, *, stage, manifest_glob, label, reason, verify_body=False)`
+  ——`verify_body=False` 时执行到「报告解析得到且 `is_file()`」为止就返回；grill 分支传 `verify_body=True` 才走到正文读点。
+  ⚠️ **R-new-3**：抽参后 grill 那句文案（`evidence.py:203`「grill 决策记录必须有对应的审阅证据」）若被做成**通用措辞**，
+  等于削弱诊断性；故把 `reason` 做成**参数**（各 stage 传自己的那句子串）——**参数 ≠ 第二份实现**，spec 的「共用同一实现」仍成立。
 - `src/witnessloop/checkcmd.py`：change 循环里加 building 那条（触发条件见 D1）。
-- `tests/`：新增判定用例 + **改既有受影响用例的期望**（D6 自伤面）。
+- `tests/`：**只加**新增用例（grill 实测既有用例**无需改动**）；另加一条「多 change 同 PR」的边界用例（D1/Q2）。
 - `docs/gate.md` / `README.md` / `templates/review-loop.md`（D5）。
 
 ## 4. 风险
 
-1. **R1（高，自伤面）**：接上后**既有用例大面积变红**（很多 change fixture 只有 grill 证据）⇒ 逐条改期望（D6）。
+1. ~~**R1（高，自伤面）**~~ → **已降级为「观测到 0 条」**（grill 实测 404 passed 不变，见 D6）。
+   留存价值：它提醒我们「**风险要实测，不要照直觉估**」。
 2. **R2（中）**：D1 的触发条件若写错（如把「change 目录被改」也算成实现）⇒ 提案期 change 被误伤。
 3. **R3（中）**：D3 选乙 ⇒ 多轮格式规范 + 历史回填 + 「封顶交人」出路，三者缺一不可。
 4. **R4（中）**：与 grill 那条**共用助手**若抽错（把 grill 的正文校验泄漏给 building）⇒ building 被要求写 grill 式正文。
-5. **R5（低）**：`require_change_for` 为空的仓（显式关掉该规则）⇒ D1 永不触发 ⇒ building 门禁**静默失效**。须写明。
+5. **R5（**低 → 中**，grill 升级）**：`require_change_for=[]`（或没覆盖真实代码路径）的仓 ⇒ D1 永不触发 ⇒
+   building 门禁**静默失效**；grill 实测更狠：它**连 `_require_change`（改代码必须挂 change）一起失效**（S4′ 实测 `check` 绿）
+   ⇒ 关掉的是**整条代码门禁**，不只是 building。须在 `docs/gate.md §2` 与 spec 显式声明。
+   （是否再加「`require_change_for` 为空时 warning」见 **Q4**——那会把 `tests/test_require_change.py::test_empty_require_change_for_disables_the_rule`
+   从绿改红，是**有意**的契约变更。）
+6. **R6（低，诚实边界 · grill R-new-5）**：本门禁只保证「**有一份可绑定的 manifest 存在**」，
+   **不保证**真跑了一次独立 run——兜底路径下 `reviewer_run_id ≠ author_run_id` **结构性恒真**（`docs/gate.md:121-123`），
+   一个 agent 即可自造 manifest 满足它。⇒ 对外表述须限定为「**证据存在性**机械、**审阅真实性**不机械」（与 grill 同一边界）。
+7. **R7（低）**：asterwynd 跨仓引用**改按函数名**，不按行号（见 §1）。
 
 ## 5. 测试策略（TDD）
 
@@ -144,15 +172,37 @@ if requires_building_review and not review_report.exists():
 
 ## 7. Pre-Implementation Review
 
-> 待 grill + 对抗验证后填写。
+**已确认决策（grill 逐条自核 · 来源 `grill-reviewer-building-review-gate-2026-10-12`）**：
+D-A 触发条件选 `require_change_for`（客观 git 事实）✅；D-B「审阅须在最终实现之后」这半边**已存在**
+（`contract._check_git_span` 逐份判 stale，grill **实测**：审后再改一行 `src/` ⇒ 两份 manifest 都被点名 stale）✅；
+D-C §1 的「多轮 / verdict 记法不统一」表**属实**（逐份打开确认）✅；D-E 与 asterwynd 的先例对比实质成立 ✅；
+D-F 共用助手的切法（`verify_body` 开关）实测可行 ✅。
+
+**被 grill 证伪并已修正**：
+- **自伤面（原 R1/D6）「一批既有用例会变红」→ 实测 0 条**（404 passed 不变）⇒ 已改写 D6 + tasks C1 缩为「确认无需改动」。
+- §1「`building` 在 `src/` 0 命中」**字面不成立**（`cli.py:107,111` 有 `--help` 文案）⇒ 改为「0 处**功能性**命中」。
+- asterwynd 引用行号**已漂移**（原 `:1009-1048` → 实测 `:1110-1145`）⇒ 改**按函数名**引用。
+- **新发现（高）**：D1 触发是**全局**的、而要求施加在**每个** change 上 ⇒ **多 change 同 PR 会误伤纯文档 change**（实测 S2′）
+  ⇒ 已补 D1 边界 + Q2。
+- R5 严重性**由低升中**：`require_change_for=[]` 会连 `_require_change` 一起失效（实测 `check` 绿）。
+
+**Code-Resolved 结论**：`_check_git_span` 与 stage 无关、逐份判 stale；参数化助手不撞既有断言
+（唯一断言 stage 文案的 `test_check_grill_evidence.py:53` 仍保留）；`docs/gate.md` 的 §6/§8 引用正确。
 
 ## 8. Open Questions（停轮待用户确认）
 
-- **Q1** **verdict 文本是否机械判 PASS**？甲（不解析，与 asterwynd 先例一致，推荐）/ 乙（要求最终裁定 = PASS，
-  但须先定多轮格式 + 给「三轮封顶交人」一个记录式出路 + 回填本仓 3 份历史报告）。
-- **Q2** 触发条件是「**本次 diff 触及 `require_change_for`**」（推荐，客观事实）还是「**tasks.md 全部勾选**」
-  （asterwynd 口径，但可被「不勾选」绕过）？
-- **Q3** 对**既有接入方**的行为变更怎么落：只写文档告知，还是提供一个「过渡开关」？（我倾向**只写文档**——
-  开关=绕过面。）
+> 已按 grill 收敛重排（原 Q2 的「触发条件」被 grill 证伪为**表述不全**——真问题是**多 change 同 PR**；
+> 新增 Q4 由 grill 提出）。
+
+- **Q1** **verdict 文本是否机械判 PASS**？
+  **甲（推荐）**：不解析——与 asterwynd 先例一致（它只要证据存在），避开「格式规范 + 历史回填 + 覆盖机制」三笔成本。
+  **乙**：要求最终裁定 = PASS。代价：3 份历史报告**最终裁定形态不一致**（`- 裁定: **PASS**` ×2 与 `## Verdict` + `**PASS**（无阻塞项）` ×1）
+  ⇒ 须先规范一种机器可读形态并回填；且与 `templates/review-loop.md:99-100`「三轮封顶 → 停下交人判断」**直接冲突**，
+  出路得是**被 manifest 绑定**的一份 `reviews/<stage>-override.md`（而非报告内自由文本——那是新的手写绕过面）。
+- **Q2** **多 change 同 PR** 怎么办？**推荐**：显式化「一个 PR 推进一个 change」前提 + spec 钉死边界
+  （本 PR 触及代码 ⇒ 本 PR 触及的**每个** change 都要 building 证据；要免除就拆 PR）。**不加豁免名单**（=绕过面）。
+- **Q3** 对**既有接入方**的行为变更怎么落？**推荐**：**只写文档** + 明确「对**接入方**是行为变更」，**不加过渡开关**（开关=静默绕过面）。
+- **Q4**（grill 新提）`require_change_for=[]` 让**整条代码门禁**静默失效——只写文档够吗？
+  **推荐**：至少写进 `docs/gate.md §2` + spec；是否加「为空时 warning」请用户定（会让一条既有用例**有意**变红）。
 
 （每条的具体例子与推荐答案见 `reviews/grill-review.md` 的 `## Open Questions`。）
