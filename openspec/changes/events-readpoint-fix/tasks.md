@@ -52,9 +52,9 @@
 
 - [x] **E0** 停轮拿到 Q1/Q2 答复 → 写 `## User Confirmation` → `manifest build --stage grill` 放行 `src/**` →
       内容提交后**必须重跑**（否则 stale 红）
-- [x] E1 两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
+- [ ] E1（收尾步骤，在 build 证据**之后**执行）两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
 - [x] E2 独立 `review-loop`（PASS 或 3 轮封顶）
-- [x] E3 PR（branch protection）→ 合入 → 关 issue **#12**
+- [ ] E3（收尾步骤，在 build 证据**之后**执行）PR（branch protection）→ 合入 → 关 issue **#12**
 
 ## 明确不做（本 change）
 
@@ -64,9 +64,9 @@
 
 - **419 passed**（基线 413 + 6 新增）——**既有用例 0 条变红**。
 - **6 条新用例实现前 5 红 1 绿**（绿的正是「合法 events 行为不变」那条回归）；实现后全绿。
-- **端到端实测**（真仓 + 非法 UTF-8 events）：修前 、
-  修后  ——**且  现在能打印完整 finding 列表**
-  （修前崩在  之前，一条都不打）。
-- ⚠️ **实现期踩坑**： 的短锚点是**子串**，把  插到了  那处（缩进错），
-  靠  自检 + 用**注释锚定**两处同名调用点修好。
-- **E1/E3 仍留空**（收尾步骤在 build 证据之后执行； 是非证据文件，回填会让  立刻 stale）。
+- **端到端实测**（真仓 + 非法 UTF-8 events）：修前 `witnessloop：内部错误（UnicodeDecodeError…）`、
+  修后 `1. .：事件文件无法解析：<abs>/workflow-events.jsonl 无法解码：…` ——**且 `check` 现在能打印完整 finding 列表**
+  （修前崩在 `_report` 之前，一条都不打）。
+- ⚠️ **实现期踩坑**：`str.replace` 的短锚点是**子串**，把 `try:` 插到了 `_already_initialized` 那处（缩进错），
+  靠 `ast.parse` 自检 + 用**注释锚定**两处同名调用点修好。
+- **E1/E3 仍留空**（收尾步骤在 build 证据之后执行；`tasks.md` 是非证据文件，回填会让 `tasks_hash` 立刻 stale）。
