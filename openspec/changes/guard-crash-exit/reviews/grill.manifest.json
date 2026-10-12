@@ -5,10 +5,10 @@
   "reviewer_run_id": "grill-reviewer-guard-crash-exit-2026-10-12",
   "author_run_id": "author-guard-crash-exit-2026-10-12",
   "base_sha": "642e4115e80a26234d2f181a0e715fd1aacce275",
-  "head_sha": "b51fddbe3f7953aab20996d0b5d57c3aa5813784",
-  "tasks_hash": "bb020ab18d1db45f58bd62ff1c76144a4ad6a376245653a755146c6c4e1514c4",
+  "head_sha": "25e90f3233e370631011eca5d448d236f3b9d693",
+  "tasks_hash": "36a4087dbe6d539dc1b9c0439f53b6f6ca2bac3578c5cb6f7ee68703e088a2cc",
   "spec_hash": "fda552e2f525a50dd99acfe164d9db56f43e1ba9540d94ee5b9bc410c4cd144c",
-  "diff_hash": "bda75fc8250c4039d673099e849515ee6b844b762a7aa6ea88097d453c176cb3",
+  "diff_hash": "79907459f3f88ceca8698a559b58193ae106d21086e0dc990f970b72b3e71f1f",
   "report_hash": "0753f9a0daf4f4728cdd9052a57d27e00d676f269fde32c934dd28b37ad13bcb",
   "report_path": "reviews/grill-review.md"
 }
