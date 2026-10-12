@@ -5,10 +5,10 @@
   "reviewer_run_id": "grill-reviewer-grill-adversarial-gate-2026-10-12T141224Z",
   "author_run_id": "author-grill-adversarial-gate-2026-10-12",
   "base_sha": "f77edf0236d5b0df9c93c758da0323d63f694672",
-  "head_sha": "1394f59c5873a44a52c7271ec5b1ce7d32c848ad",
-  "tasks_hash": "b225a458e122fb54968ecac2cd380cd8022db4725a162248152e2cd5910fa599",
-  "spec_hash": "34a00f7800d2431acf296a9e57f000c80098d7b161672130d58da85a1a5680f1",
-  "diff_hash": "61f4143d51b58386e22a94f549d467fd336eb055c04447da2a6acdb06c2a488b",
+  "head_sha": "551b81605dd1ff0fe417b0c1e20491e87c599a7a",
+  "tasks_hash": "1f717a03f685d81e443b1745e1cd44b7789fd7377ce8bb6d4a37f17a5987dbcb",
+  "spec_hash": "a5253b5978066dadfa1cad4446f79c829f447a1657939cc021f2925033771240",
+  "diff_hash": "d4027acef2f1e2ee0fcec15a69f29772f051ed2e5c4f675e3dced9d75c96b990",
   "report_hash": "a8ec2ac25997e2c224d8cf0bd70ae88123a5baa83351046a4a99490c1eba6471",
   "report_path": "reviews/grill-review.md"
 }
