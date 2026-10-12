@@ -5,10 +5,10 @@
   "reviewer_run_id": "building-reviewer-grill-adversarial-gate-573ddc3",
   "author_run_id": "author-grill-adversarial-gate-2026-10-12",
   "base_sha": "f77edf0236d5b0df9c93c758da0323d63f694672",
-  "head_sha": "551b81605dd1ff0fe417b0c1e20491e87c599a7a",
-  "tasks_hash": "1f717a03f685d81e443b1745e1cd44b7789fd7377ce8bb6d4a37f17a5987dbcb",
+  "head_sha": "ac9a40ae088aa822e375acadda6afdfd964fec14",
+  "tasks_hash": "ab6062116e4807ed6351ef83e5a78d420733304ba4208664d172f9a0262e54b1",
   "spec_hash": "a5253b5978066dadfa1cad4446f79c829f447a1657939cc021f2925033771240",
-  "diff_hash": "d4027acef2f1e2ee0fcec15a69f29772f051ed2e5c4f675e3dced9d75c96b990",
+  "diff_hash": "268fda8332310b2d578092107a20d5ef16c11bcd2425acb4bdb7fbf59b7387a5",
   "report_hash": "c25d27df9ea5c62927f35ab46a8ceac5766ce4b3d40bf8a0d42e3f52891d0b76",
   "report_path": "reviews/building-review.md"
 }
