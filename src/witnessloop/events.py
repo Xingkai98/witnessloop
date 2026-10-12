@@ -47,8 +47,16 @@ class Event:
 
 
 def load_events_file(path: Path) -> list[Event]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # issue #12：读点无 try ⇒ 读失败会冒泡成「工具故障」（`witnessloop：内部错误`）。
+        # 归一到 EventError（与「不是合法 JSON」同类型、同出路）⇒ `checkcmd` 既有的 except 把它
+        # 变成**一行点名文件**的 finding。文案按成因分（与 `evidence.py` 同一对词）。
+        why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+        raise EventError(f"{path} {why}：{exc}") from exc
     events: list[Event] = []
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for lineno, line in enumerate(text.splitlines(), 1):
         line = line.strip()
         if not line:
             continue

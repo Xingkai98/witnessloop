@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "events-readpoint-fix",
+  "stage": "building",
+  "reviewer_run_id": "building-reviewer-events-readpoint-fix-2026-10-12",
+  "author_run_id": "author-events-readpoint-fix-2026-10-12",
+  "base_sha": "9210d9c3f1bf02648812f06fc10d1a565e4b7bb1",
+  "head_sha": "2a5a8b49529323ed7eab103c11ad9be237623575",
+  "tasks_hash": "32b8d670a7d75801f9c969aac1a8158ac14ab6ce5a7ee5b4e4ff1129fe74ec24",
+  "spec_hash": "0a63d5547af14b3b386829f35750e8f954e5a6e0057886ab0390233fd6140d7e",
+  "diff_hash": "6d0f1f853e1dc0a77e8e18e1541155aa6dca4e77bb401b08cdb8b3d9bd1d2b66",
+  "report_hash": "cb2c62c7a14e54929b2a963551bdff56aa07d4a4d677f7a85a669fca78b6e7ba",
+  "report_path": "reviews/building-review.md"
+}

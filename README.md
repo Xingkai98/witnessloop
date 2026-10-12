@@ -105,6 +105,10 @@ grill 证据不完备就不许写代码路径（**写文档豁免**，否则永�
 **此前没有这道校验**；历史 change 若缺 `stage=grill` manifest 会**新增一条红**。详见
 [docs/gate.md §8](docs/gate.md)。
 
+⚠️ **对**接入方**还有一条报错形态变更**（issue #12）：损坏的 `workflow-events.jsonl`
+（解码失败 / 读不到）此前会表现为**工具故障**——`witnessloop：内部错误（UnicodeDecodeError…）`，
+现在是一行**点名文件**的 finding（`事件文件无法解析：… 无法解码：…`）。**退出码不变**（仍非 0）。
+
 ⚠️ **对**接入方**还有两条行为变更**（`building` 门禁）：**改了代码**（触及 `policy.require_change_for`）的 PR
 现在**必须**有一份 `stage=building` 的审阅证据（= 跑过 review-loop），**否则红**；
 且**一个 PR 同时触及多个 change**（只要它触及了代码）时，**每个** change 都要 building 证据（要免除就把 change 拆到单独 PR）。

@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "events-readpoint-fix",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-events-readpoint-fix-2026-10-12",
+  "author_run_id": "author-events-readpoint-fix-2026-10-12",
+  "base_sha": "9210d9c3f1bf02648812f06fc10d1a565e4b7bb1",
+  "head_sha": "2a5a8b49529323ed7eab103c11ad9be237623575",
+  "tasks_hash": "32b8d670a7d75801f9c969aac1a8158ac14ab6ce5a7ee5b4e4ff1129fe74ec24",
+  "spec_hash": "0a63d5547af14b3b386829f35750e8f954e5a6e0057886ab0390233fd6140d7e",
+  "diff_hash": "6d0f1f853e1dc0a77e8e18e1541155aa6dca4e77bb401b08cdb8b3d9bd1d2b66",
+  "report_hash": "b5a2e950abe0d1923441c5ed1a4f3a3aad1c587332f98217b9aa757bdd66ccc4",
+  "report_path": "reviews/grill-review.md"
+}
