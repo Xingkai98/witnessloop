@@ -107,7 +107,7 @@ grill 证据不完备就不许写代码路径（**写文档豁免**，否则永�
 
 ⚠️ **对**接入方**还有两条行为变更**（`building` 门禁）：**改了代码**（触及 `policy.require_change_for`）的 PR
 现在**必须**有一份 `stage=building` 的审阅证据（= 跑过 review-loop），**否则红**；
-且**一个 PR 同时触及多个 change** 时，**每个** change 都要 building 证据（要免除就把 change 拆到单独 PR）。
+且**一个 PR 同时触及多个 change**（只要它触及了代码）时，**每个** change 都要 building 证据（要免除就把 change 拆到单独 PR）。
 **注意**：这道门只保证「**闭环跑过 + 审在最终 revision 上**」——**报告里的 verdict 文本不参与判定**，
 `PASS` / `CHANGES_REQUESTED` 都能过（§9 有完整口径）。
 

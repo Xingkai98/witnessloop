@@ -43,6 +43,7 @@ def default_policy_doc() -> dict:
             "events_file": C.DEFAULT_EVENTS_FILE,
             "protected_write_event_types": list(C.DEFAULT_PROTECTED_EVENT_TYPES),
             "grill_stage": C.DEFAULT_GRILL_STAGE,
+            "building_stage": C.DEFAULT_BUILDING_STAGE,
         },
     }
 

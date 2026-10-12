@@ -360,6 +360,8 @@ review manifest。缺失 ⇒ **红**并**点名现有 stage**。
   （前提是「**一个 PR 推进一个 change**」；要免除就把 change 拆到单独 PR）。**不提供**豁免名单——那就是绕过面。
 - **纯文档 / 纯 change 目录改动 ⇒ 不要求**（否则每个提案期的 in-flight change 都会被红）。
 - **`guard` 不受影响**：写码**之前**不可能有「实现后」的审阅，强加会**自锁**。
+- ⚠️ **别把 `building_stage` 配成与 `grill_stage` 相同**：两处会指向同一份 manifest ⇒ building 门禁**退化**
+  （grill 的 manifest 同时充当实现后审阅），等于悄悄关掉本门禁。
 - **与 grill 那条共用同一实现**（`evidence.stage_manifest_findings_in_change`，一处实现、两种深度：
   building 只到「存在」为止，grill 再校验报告正文）。
 

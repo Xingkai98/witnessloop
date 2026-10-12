@@ -155,3 +155,38 @@ def test_shared_helper_reports_missing_stage_with_the_given_reason(repo: Path, c
     assert "stage=building" in findings[0].message
     assert "（building 的理由）" in findings[0].message
     assert "现有 stage：grill" in findings[0].message
+
+
+# ---------------------------------------------------------------- 参数化轴（补审阅发现的覆盖缺口）
+
+
+def test_building_stage_is_configurable(repo: Path, cli, read_json):
+    """`policy.evidence.building_stage` **可覆写**（文档承诺的轴必须有测试钉住——
+    审阅的变异检查 M11「让覆写失效、恒用默认」曾**全绿逃逸**）。"""
+    import json
+
+    from conftest import git
+
+    cli("init", "--root", str(repo))
+    policy_path = repo / C.POLICY_PATH
+    doc = read_json(policy_path)
+    doc["evidence"]["building_stage"] = "review"
+    policy_path.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    commit_all(repo, "把 building_stage 换成 review")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    commit_content(repo, CHANGE, spec_writes=CODE_WRITE)
+    write_review(repo, CHANGE, stage="grill")
+    write_review(repo, CHANGE, stage="building")  # 只有默认 stage 的证据 ⇒ 应红
+    commit_all(repo, "内容 + grill + building 证据")
+
+    code, _, err = check(repo, cli)
+    assert code == C.EXIT_FAIL
+    assert "stage=review" in err  # 点名的是**配置**的那个 stage
+
+    write_review(repo, CHANGE, stage="review")  # 补上配置 stage 的证据 ⇒ 转绿
+    commit_all(repo, "补 stage=review 的证据")
+    code, _, err = check(repo, cli)
+    assert code == C.EXIT_PASS, err

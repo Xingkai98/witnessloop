@@ -42,11 +42,11 @@
 
 ## E. 证据链与收尾
 
-- [ ] **E0**（顺序约束 · 自锁防线）：停轮拿到 Q1/Q2/Q3/Q4 答复 → 写 `## User Confirmation` →
+- [x] **E0**（顺序约束 · 自锁防线）：停轮拿到 Q1/Q2/Q3/Q4 答复 → 写 `## User Confirmation` →
       `manifest build --stage grill` 放行 `src/**` → 内容提交后**必须重跑**覆盖（否则 stale 红）
-- [ ] E1 两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
-- [ ] E2 独立 `review-loop`（PASS 或 3 轮封顶）
-- [ ] E3 PR（branch protection）→ 合入 → 关 issue
+- [ ] E1（收尾步骤，本 PR 内执行）两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
+- [x] E2 独立 `review-loop`（PASS 或 3 轮封顶）
+- [ ] E3（收尾步骤，本 PR 内执行）PR（branch protection）→ 合入 → 关 issue
 
 ## 明确不做（本 change）
 
@@ -60,3 +60,9 @@ asterwynd 的项目特有检查（Impact Analysis / RIR / benchmark gate）。
 - **E0 端到端**：build 前 `guard --path src/**` **exit 1**，build 出 `stage=grill` manifest 后 **exit 0**。
 - **本 change 自己会被自己的门禁卡**：`src/**` 已改但还**没有** building 证据 ⇒ `check` 此刻应红；
   跑完 review-loop 并 build 出 `stage=building` manifest 后才转绿（dogfood）。
+
+- **review-loop R1 = PASS**（0 阻塞；变异检查 8/8 新用例真能红，且 M7 同时打红 `test_require_change.py` 3 条
+  ⇒ **证明 `_require_change` 与新门禁真的共用同一口径**）。它发现一处**覆盖缺口**（M11：让 `building_stage`
+  覆写失效曾**全绿逃逸**）⇒ 已补 `test_building_stage_is_configurable` 并**自做变异确认其能红**；另修 5 处非阻塞项。
+- ⚠️ **E1/E3 在 build 证据时仍未勾**（它们是本 PR 的收尾步骤，在其**之后**执行）——留空是**刻意**，
+  不是遗漏：`tasks.md` 是**非证据**文件，其字节被 manifest 的 `tasks_hash` 绑定，收尾后再改会让证据立刻 stale。

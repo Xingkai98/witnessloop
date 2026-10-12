@@ -87,7 +87,7 @@ def run(args: argparse.Namespace) -> int:
             label=f"{pol.changes_root.rstrip('/')}/{change_id}",
         )
         # building-review-gate / issue #13：只要求**证据存在**（+ 复用既有的 revision 绑定保证
-        # 「审阅必须发生在最终实现之后」）。**不解析报告里的 verdict 文本**——见 docs/gate.md §8。
+        # 「审阅必须发生在最终实现之后」）。**不解析报告里的 verdict 文本**——见 docs/gate.md §9。
         if code_hits:
             findings += evidence_mod.stage_manifest_findings_in_change(
                 contract.change_dir(root, pol, change_id),
