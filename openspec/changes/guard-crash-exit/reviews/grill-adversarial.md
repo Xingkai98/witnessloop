@@ -587,3 +587,106 @@ R3 点名的 over-claim 是「**同一处 × 两个 site**」：`spec.md:39-40` 
    - 先 `import witnessloop.guardcmd`（成包属性）后再置 `None` ⇒ **不抛**，`from witnessloop import guardcmd` **返回旧模块**（`hasattr` 为真）⇒ 对应 guard 退 0、用例不稳。
    - 追加 `delattr(witnessloop, "guardcmd")` 后 ⇒ **恢复抛** `ImportError`。⇒ `tasks.md` B2 的修法**正确且必要**。
 5. **M2/M3 grep**：`F0` 在四个 change 文本 **0 命中**；`G0` 命中 `tasks.md:57` + `design.md:139,208,221`；`待 R2` / `R1 已整合` 在正文 **0 命中**（仅历史记录文件）。
+
+---
+
+# 第 5 轮（R5）
+
+> 立场：**收窄轮**——只审 commit `a5c761d`（停轮确认 Q1=甲 / Q2=修掉 ⇒ **D3 重写为进程入口兜底** + ADR 0002）这一改动。
+> 默认它有错，逐条证伪；能实测的都在 `/tmp` 造**打补丁副本**实测。**未在仓库留文件、未 commit**（`/tmp` 之外无产物）。
+> **关键前提**：`a5c761d` **只改 docs**（`design.md`/`proposal.md`/`spec.md`/`tasks.md`/`grill-review.md` + 新增 ADR 0002），
+> **未动 `src/**`、`pyproject.toml`、`src/witnessloop/__main__.py`、`tests/conftest.py`**（`git show --stat a5c761d` 核实）⇒
+> 本轮是**设计期**审阅：D3 是**待实现的设计**（`tasks.md` B 段），我按它打补丁后**实测**其行为与覆盖。
+
+## Reviewer
+- run id: grill-adversarial-reviewer-guard-crash-exit-2026-10-12-r5
+- 时间: 2026-10-12T09:05:00Z
+
+## Verdict
+
+**PASS**
+
+D3 的**覆盖面经实测成立**（坏 `constants.py` / 坏 `cli.py` 经**真实入口**跑 `guard` ⇒ 退 **4**；`check`/`init`/`manifest` ⇒ **1**）；
+入口改造**无回归**（`--help`/`--version`/用法错误仍以 `SystemExit(0/2)` 传播；补丁副本 **388 passed**；`uv build` + `uvx --from wheel --version` 通过）。
+指派我证伪的**「argparse 前缀缩写 ⇒ 误拦复活」经实测为假前提**——argparse **不**对子命令做前缀缩写（`gu`/`bu` 均 → `invalid choice` 退 **2**；
+`allow_abbrev` 只作用于长选项，`--vers` 可缩写退 0 对照）。
+无阻塞项。3 处**文档残留 / 测试缺口**（均不阻塞，可后修）：`design.md:234` 仍把「兜底落 `cli.main` guard 分支」列为**已确认决策**（与 D3 矛盾）；
+`design.md:155`（D8）仍写「`cli.main` 的 guard 分支及之后」（D3 已移除该分支）；「`SystemExit` 照常传播」这条**承重**性质**无任何测试钉住**。
+
+## 逐条对抗结论
+
+### 1. D3 的覆盖是否完整 → **是（实测成立）**
+
+- **声明**（`design.md:57-89` D3；`spec.md:6-40` Req1 + 3 个 Scenario；`ADR 0002:19-30`）：入口 `try` **同时**包住
+  (a) `from witnessloop.cli import main`（**含 `cli.py` 自身模块级 import 失败**）与 (b) `cli_main(argv)` 的运行期异常；
+  verb=`guard` ⇒ **4**、其余 ⇒ **1**。
+- **实测**（打补丁副本、**真实入口** `python -m witnessloop`，见「实测」2–3）：
+  - 坏 `constants.py`（`cli.py:15` 模块级 import 炸）⇒ `guard` **退 4**、`check`/`init`/`manifest` **各退 1**；
+  - 坏 `cli.py`（`__main__.py:3` 处 import 炸）⇒ `guard` **退 4**、`check` **退 1**；
+  - 运行期 `RuntimeError`（monkeypatch `guardcmd.run`）⇒ `entry.main(["guard",…])` 返 **4**、`["check",…]` 返 **1**。
+  ⇒ (a)/(b)/verb 分流三条断言**全部成立**；`cli.py:14-15` 的旧洞（R1–R4 反复复现的 `exit 1` 误拦）**已被入口兜底关闭**。
+- **argv 判 verb 的漏洞面（指派假设）→ 证伪**：`design.md:78-80` 按 **argv 第一词**判 verb。指派攻击为
+  「argparse 默认允许**子命令前缀缩写**，`witnessloop gu` 解析成 `guard`，但第一词是 `gu` ⇒ 判成非 guard ⇒ 退 1 ⇒ 误拦复活」。
+  **实测（Python 3.12.13，本仓 `build_parser()`）**：`gu` / `guar` / `g` / `che` /（`manifest bu`）**全部** `invalid choice` ⇒ `SystemExit(2)`；
+  经**真实入口**（`uvx` 装 wheel 后 `witnessloop gu`）**同退 2**。⇒ `allow_abbrev` **只作用于长选项**（`--vers` 可缩写、退 0），
+  **不作用于子命令 choice** ⇒ 该「误拦复活」路径**不存在**。
+  - **残留的（非本轮缺陷的）脆弱性**：verb 判据绑「argv 首词 = 规范动词」。今日顶层只有 `--version`/`-h`（都在 `parse_args` 里走 `SystemExit`、不落兜底），故成立；
+    但若日后顶层新增**可置于子命令之前的全局选项**（如全局 `--root`），`witnessloop --root x guard` 首词就成了 `--root` ⇒ 崩溃时判成「非 guard」退 1 ⇒ 误拦复活。
+    **当前不存在该选项**，故非缺陷（见非阻塞 6，建议留约束）。
+- **非 guard verb 的 fail-closed**：`check` 崩溃 ⇒ **1**（= 未通过）、`init`/`manifest` ⇒ **1**（= 失败）—— 实测成立，与 `spec.md:19-20,37-40` 一致。
+
+### 2. 入口改造有无回归 → **无（实测）**
+
+- **`SystemExit` 传播**：经真实入口 `--version` ⇒ **0**、`--help` ⇒ **0**、未知子命令 ⇒ **2** —— 不被 `except Exception` 吃掉（`SystemExit` ⊂ `BaseException`）。与 `design.md:81-82` / `ADR 0002:26` 一致。
+- **388 全绿**：`tests/conftest.py` 的 `cli` fixture 改调 `entry.main`（其余按 D3/D4/D5 落补丁）⇒ `uv run pytest -q` ⇒ **388 passed**（「实测」1）。
+- **`test_cli.py` 直接调 `cli.main` 的路由用例**（`:19,25,32,45,58,64`，`from witnessloop.cli import … main`）**不受 fixture 影响**（fixture 只被别的文件用）⇒ 仍直测进程内 API，符合 `design.md:174`「`cli.main` 仍是进程内 API」。
+- **打包 / CI**：`pyproject.toml:11` 改 `witnessloop.entry:main` 后，`uv build` 成功、`uvx --from dist/*.whl witnessloop --version` ⇒ **退 0 且打印 `witnessloop 0.1.0`**（与 `ci.yml:29-33` 的打包冒烟同款命令）；`python -m witnessloop --version` 同（`test_cli.py:69` 的 `test_console_script_is_installed` 也在 388 里绿）⇒ CI 不受影响。
+- **ⓘ 一处测量假象（非缺陷，记录以免误导下一轮）**：我首轮用 `uvx --from <本地 wheel>` 连跑时 `init`/`guard` 曾返回 1——**根因是 uvx 按 `name==version`（同为 `0.1.0`）缓存了旧环境**（原 wheel 与补丁 wheel 版本号相同）；清缓存重测即得预期值：未接入仓 `guard` ⇒ **3**（原/补丁 wheel 同值）、`init` ⇒ **0**、`bogus` ⇒ **2**。⇒ 与本次改动无关。
+
+### 3. 两处 `4` 的等值守卫 → **在位**
+
+- `spec.md:14`：「该常量 SHALL 在入口与 `constants` 两处**同值**（由测试钉住）」；`design.md:88-89`（D8）；`tasks.md:29`（**B10**：`entry._EXIT_INTERNAL == C.EXIT_INTERNAL == 4`）；`tasks.md:9`（A1：`C.EXIT_INTERNAL == 4 != EXIT_FAIL`）。三处齐备、口径一致。✅
+- `4` 今日仍空闲（`constants.py:80-83` 只有 0/1/2/3）；`grep -rn "sys.exit(1)\|SystemExit(1)\|return 1" src/witnessloop/` **0 命中**（D8 的「1 只由 `return C.EXIT_FAIL` 产生」结构性成立）。
+
+### 4. spec/tasks/design 与改动是否一致？→ **基本一致；2 处残留（非阻塞）**
+
+- **Req1 措辞 + Scenario**（`spec.md:6-45`）与 D3/ADR 同口径：进程入口、含 `cli` 自身 import 失败、非 guard ⇒ 1。✅
+- **B 段**（`tasks.md:12-29`）：B1/B2（guardcmd ImportError + `delattr` 注解，**R4 M4 在**）/B3（cli import）/B4（非 guard⇒1）/B5/B6/B7/B8/B10 —— 齐备且与 D3 一致。✅
+- **ADR 0002 事实**：`entry.py` 不 import witnessloop、argv 首词分流、只捕 `Exception`、单一兜底、两处 `4` 同值 —— 与 D3 逐条对得上。✅
+- **残留 ①（非阻塞）**：`design.md:234`（§7「已确认决策」）仍写「兜底落 **`cli.main` guard 分支**」——与 D3（入口）**直接矛盾**；紧邻的 `design.md:238` 又写「CD3 … **R5 起升级为『彻底关闭』**：兜底前移到进程入口」⇒ **§7 内部自相矛盾**。属「声明与实况不符」，但**不导致实现/测试失败、非 spec over-claim** ⇒ **不阻塞**。
+- **残留 ②（非阻塞）**：`design.md:155`（D8）「加注释声明不变量：『**`cli.main` 的 guard 分支及之后**，1 只由 `return C.EXIT_FAIL` 产生』」——D3 已**移除** `cli.main` 里的 guard 兜底分支，此措辞**所指的「分支」已不存在**（易被读成「去 `cli.main` 加分支」）。
+- **对照**：R3/R4 点名的两处 over-claim（`spec.md` 旧 Scenario「guard 点名该文件」、`design.md` 旧 §5「清单无法解码」）**已消**——`grep` 在 `spec.md`/`tasks.md` 无「guard 点名该文件」「清单无法解码」残留。✅
+
+### 5. 甲案（Q1）是否一致落地 → **是（实测）**
+
+- **报告读点 ⇒ 拦**：`spec.md:55` + `design.md:108-109`（D4-3）+ `tasks.md:39`（C5）一致；实测字节坏报告 ⇒ `guard` 退 **1** + 「报告无法解码：…」、无 traceback。
+- **manifest 读点 ⇒ 与 JSON 坏/缺失同归（拦 / 红）**：`spec.md:53-54` + `design.md:97-107`（D4-2）+ `tasks.md:35-38`（C3/C4）一致；实测 **字节坏** 与 **JSON 坏** manifest 的 `guard` 结论**逐字相同**（皆退 1、文案「无 stage=grill 的 manifest（现有 stage：（无））」）；`check` 侧字节坏 manifest ⇒ **干净红（退 1）且 finding 点名该文件**（`…/grill.manifest.json：manifest 无法解析：…`）、无 traceback。
+- **policy ⇒ 放**：`spec.md:52` + `design.md:130-132`（D5）+ `tasks.md:33-34`（C1/C2）一致；实测字节坏 policy ⇒ `guard` 退 **0**（放行，文案「policy 非法（.witnessloop/policy.json 无法解析：…）——不拦」）。
+- `grill-review.md:96-102` 的 `## User Confirmation` 已就位：**Q1=甲、Q2=修掉** —— 与 D3/D4 的定案一致。✅
+
+## 阻塞项
+
+**无。** 本轮未发现会让实现 / 测试失败、或使 spec over-claim 的硬问题。指派证伪的「argparse 前缀缩写 ⇒ 误拦」**经实测为假前提**。
+
+## 非阻塞建议
+
+1. **`design.md:234`**：把「兜底落 `cli.main` guard 分支」改为「兜底落**进程入口** `entry.py`」（消 §7 内部矛盾）。
+2. **`design.md:155`**：D8 不变量措辞里「`cli.main` 的 guard 分支及之后」已随 D3 失效 ⇒ 改为「`entry.py` 的 guard 兜底之后」。
+3. **补一条「`SystemExit` 不被吞」的测试**（当前 B 段 / `design.md §5` / `spec.md` 均**无**）：如 `entry.main(["--help"])` ⇒ `pytest.raises(SystemExit)` code 0、`entry.main(["bogus"])` ⇒ code 2。这是「`--help`/用法错误照常传播」这条**承重**性质（`design.md:81-82`、`ADR 0002:26`）**唯一**的机械保证；缺它则日后若有人把 `except Exception` 误改成 `except BaseException`，`--help` 会被吞成 1/4 而**无测试报警**。（性质与 R1 第 5 条同源：**写了但不可验证**。）
+4. **`design.md:61-71` 的 D3 代码片段缺 `import sys`**（却用 `sys.stderr` / `sys.argv`）：与 R1 抓过的「示例不能直接落地」同类——若实现者**逐字照抄**且 except 分支触发，会 `NameError: sys` ⇒ 冒泡 ⇒ **exit 1 ⇒ 误拦复活**。建议片段补 `import sys` 或标注「省略 stdlib import」。（**设计正文本身正确**；仅示例片段不完整，故不阻塞。）
+5. **`tests/conftest.py` 的 `cli` fixture 改走 `entry.main` 后**：`check`/`init`/`manifest` 用例里的**真崩溃**会被入口吞成**退出码 1** 而非 traceback ⇒ 测试失败时可诊断性下降（看到 exit 1 而非异常栈）。若接受该代价（换来 B 组走真实入口）则保留；否则可另留一个**直调 `cli.main`** 的 fixture 给非 guard 用例。
+6. **可选**：在 D3 留一句「verb 判据**假设子命令是 argv 首词**」的约束（防日后顶层加全局选项使首词错位 ⇒ 误拦，见「逐条 1」末）。
+
+## 我实测复现的
+
+均在 `/tmp` 内（`/tmp/r5` = 按 D3/D4/D5 落补丁的**完整副本**；`/tmp/r5badc`、`/tmp/r5badcli` = 坏 `constants.py` / 坏 `cli.py`；`/tmp/orig` = 未打补丁副本对照），**未在仓库留文件、未 commit**；真 CLI 走 `python -m witnessloop`（`PYTHONPATH` 指副本 `src`，已验证**优先于** editable 安装）。
+
+1. **基线 & 补丁全量**：本仓 `uv run pytest -q` ⇒ **388 passed**；补丁副本（`entry.py` + `constants.EXIT_INTERNAL` + `policy/evidence/contract` 补捕 + conftest 改 entry）⇒ **388 passed**。
+2. **D3 覆盖 · 坏 `constants.py`**（`cli.py:15` 模块级 import 炸）：`python -m witnessloop <verb>` ⇒ `guard` **退 4**、`check`/`init`/`manifest` **各退 1**，stderr 一行「witnessloop：内部错误（RuntimeError: broken install）」。
+3. **D3 覆盖 · 坏 `cli.py`**：`guard` **退 4**、`check` **退 1**。运行期异常（monkeypatch）⇒ `entry.main(["guard",…])`=**4**、`["check",…]`=**1**。
+4. **`SystemExit` 传播**：真实入口 `--version`=**0**、`--help`=**0**、`bogus`=**2**。
+5. **argparse 前缀缩写（证伪指派假设）**：`gu`/`guar`/`g`/`che`/`manifest bu` 全 → `invalid choice` ⇒ `SystemExit 2`；`--vers` → `SystemExit 0`（选项可缩写、子命令**不**可）；真实 wheel 上 `witnessloop gu` 同 ⇒ **2**。
+6. **甲案三读点**：字节坏报告 ⇒ `guard` **1**「报告无法解码」、`check` **非 0**（含 `report_hash 不匹配` + 报告无法解码）、均无 traceback；字节坏 manifest ⇒ `guard` **1**，与 **JSON 坏** manifest 输出**逐字相同**；`check` 侧字节坏 manifest ⇒ **干净红 + 点名文件**（`…/grill.manifest.json：manifest 无法解析：…`）；字节坏 policy ⇒ `guard` **0**（放行）。
+7. **打包 / CI**：`uv build` 成功；`uvx --from dist/*.whl witnessloop --version` ⇒ **0** / `witnessloop 0.1.0`；未接入仓 `guard` ⇒ **3**（原 / 补丁 wheel 同值）。
+8. **常量守卫就绪**：`entry._EXIT_INTERNAL == C.EXIT_INTERNAL == 4`（补丁副本断言通过）。
+9. **残留 grep**：`design.md:234`「兜底落 `cli.main` guard 分支」、`design.md:155`「`cli.main` 的 guard 分支及之后」命中（见非阻塞 1/2）；`spec.md`/`tasks.md` 无「guard 点名该文件」「清单无法解码」残留。

@@ -1,6 +1,6 @@
 # Tasks: guard-crash-exit
 
-> 依据 `design.md`（**已二次收敛**——对抗 R1–R4 逐轮整合 + **用户 Q1/Q2 已答**（Q1=甲、Q2=修掉⇒入口兜底）；**可开始实现**）。
+> 依据 `design.md`（**已收敛**——对抗 R1–R5（R5=PASS）+ 用户 Q1/Q2 已答（Q1=甲、Q2=修掉⇒入口兜底）。**开始实现**）。
 > 原则：**测试先行（TDD）**——每个能力先写失败测试再实现。
 > ⚠️ change 目录必须**全程完整**（本文件 + `specs/guard-exit-codes/spec.md`）；两段提交须在其齐备后才开始。
 
@@ -27,6 +27,8 @@
 - [ ] B9 注释/文档声明不变量：「拦」(1) 的唯一来源 = `guardcmd.run` 的显式 `return C.EXIT_FAIL`；
       入口只对 `guard` verb 的崩溃给 4、其余给 1
 - [ ] B10 守卫：`entry._EXIT_INTERNAL == C.EXIT_INTERNAL == 4`（两处字面量防漂移）
+- [ ] **B11（⚠️ R5）** 单测（承重性质，此前无覆盖）：`entry.main(["--help"])` / `["--version"]` ⇒ `SystemExit(0)`；
+      `entry.main(["bogus"])` ⇒ `SystemExit(2)`（**不被** `except Exception` 吞）
 
 ## C. 读点归一（D4/D5）—— 待实现（**Q1 已答：甲案**）
 

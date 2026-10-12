@@ -1,7 +1,7 @@
 # Design: guard-crash-exit
 
-> 状态：**设计已二次收敛**（grill + 对抗 R1–R4 逐轮整合；**用户 Q1/Q2 已答**：Q1=甲、Q2=修掉 ⇒ D3 重写为
-> 「入口兜底」；R5 待复核改动后的 D3）。
+> 状态：**设计已收敛**（grill + 对抗 **R1–R5**；R5 = **PASS**。**用户 Q1/Q2 已答**：Q1=甲、Q2=修掉 ⇒ D3 定为
+> 「进程入口兜底」。R5 实测否掉了「argparse 子命令前缀缩写」的风险假设，并补齐 3 处文档/测试缺口）。
 > 依据 `proposal.md`。流程出处 `templates/grill.md`。
 > 审阅证据：`reviews/grill-review.md`（决策记录）、`reviews/grill-adversarial.md`（对抗验证）。
 > 关联 issue：witnessloop **#9**（低、非阻塞）。
@@ -59,6 +59,7 @@
 - **形态**：新模块 `entry.py`，**刻意不 import witnessloop 任何东西**（它存在的意义正是「witnessloop 自己
   import 不起来时」仍能兜底）：
   ```python
+  import sys                  # ← 必需（R5 指出示例原缺）
   _EXIT_INTERNAL = 4          # 与 constants.EXIT_INTERNAL 同值；此处不 import 以免依赖坏包
   def main(argv=None) -> int:
       try:
@@ -152,7 +153,10 @@
 
 - **常量守卫**：断言 `C.EXIT_INTERNAL == 4` 且 `!= C.EXIT_FAIL`（今日全树无任何测试约束 4 的取值 ⇒ 漏改不红）。
 - **功能断言**（补「常量守卫挡不住 `sys.exit(1)`」的缺口）：B1–B3 三条用例直接断言**行为**（崩溃 ⇒ 4，非 1）。
-- 加注释声明不变量：「`cli.main` 的 guard 分支及之后，1 **只**由 `return C.EXIT_FAIL` 产生」。
+- 加注释声明不变量：「**入口**（仅 `guard` verb 的崩溃 ⇒ 4、其余 verb ⇒ 1）+ `guardcmd.run` 的显式 `return C.EXIT_FAIL`，
+  是「拦」(1) 的唯一来源」。
+- **「`SystemExit` 照常传播」是承重性质，须有测试**（R5 指出此前无）：`entry.main(["--help"])` / `entry.main(["--version"])`
+  ⇒ `SystemExit(0)`；`entry.main(["bogus"])` ⇒ `SystemExit(2)`（不被 `except Exception` 吞）。
 
 ### D9 自伤面与顺序约束
 
@@ -231,7 +235,7 @@
 ## 7. Pre-Implementation Review
 
 **已确认决策（grill 证伪后确认 · 来源 `grill-reviewer-guard-crash-exit-2026-10-12`）**：
-方向 A / `block` 保持 1；`EXIT_INTERNAL=4` 且 4 空闲；兜底落 `cli.main` guard 分支；shim 零改动；
+方向 A / `block` 保持 1；`EXIT_INTERNAL=4` 且 4 空闲；**兜底落进程入口 `entry.py`**（原「落 `cli.main` guard 分支」经 R1 收窄、再由用户 Q2 裁定升级为入口）；shim 零改动；
 不改 `check` 退出码语义；必须新增漂移守卫。
 
 **必须修改（已整合 · 来源 `grill-adversarial-reviewer-guard-crash-exit-2026-10-12`，R1 CHANGES_REQUESTED）**：
