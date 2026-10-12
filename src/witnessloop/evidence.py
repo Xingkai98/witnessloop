@@ -169,17 +169,23 @@ def _read_json(path: Path):
         return None
 
 
-def grill_evidence_findings_in_change(
+def stage_manifest_findings_in_change(
     change_dir: Path,
     *,
-    grill_stage: str = "grill",
+    stage: str,
+    reason: str,
     manifest_glob: str = "reviews/*.manifest.json",
     label: str | None = None,
+    verify_body: bool = False,
 ) -> list[Finding]:
-    """D9：校验 change 目录里 `stage=<grill_stage>` 的 manifest 所绑定报告的**正文**。
+    """要求 change 目录里存在 `stage=<stage>` 的 manifest（+ 其绑定的报告）。
 
-    找不到该 stage 的 manifest ⇒ **红（fail-closed）**，且文案点名**现有** stage
-    ——stage 拼错要**可诊断**，不能静默放过（否则 #2 的洞又开回来）。
+    **一处实现、两种深度**（change building-review-gate / D2）：
+    - `verify_body=False`（`building` 等）：只要求「**存在**且报告解析得到」；
+    - `verify_body=True`（`grill`）：再校验报告**正文**完备性（grill 专有判据，见 `grill_evidence_findings`）。
+
+    `reason` 由调用方传入（各 stage 不同的那句诊断文案）——**参数 ≠ 第二份实现**：
+    判定逻辑仍只有这一处，只是把文案参数化。找不到该 stage 时**点名现有 stage**（拼错可诊断）。
     """
     label = label or change_dir.name
     manifests: list[tuple[Path, dict]] = []
@@ -189,18 +195,15 @@ def grill_evidence_findings_in_change(
             manifests.append((path, doc))
 
     matching = [
-        (path, doc)
-        for path, doc in manifests
-        if str(doc.get("stage") or "") == grill_stage
+        (path, doc) for path, doc in manifests if str(doc.get("stage") or "") == stage
     ]
     if not matching:
         stages = sorted({str(doc.get("stage") or "?") for _, doc in manifests})
         return [
             Finding(
                 label,
-                f"无 stage={grill_stage} 的 manifest（现有 stage："
-                f"{', '.join(stages) or '（无）'}）——"
-                "grill 决策记录必须有对应的审阅证据",
+                f"无 stage={stage} 的 manifest（现有 stage："
+                f"{', '.join(stages) or '（无）'}）——{reason}",
             )
         ]
 
@@ -208,8 +211,11 @@ def grill_evidence_findings_in_change(
     report = contract.resolve_report_path(change_dir, doc.get("report_path"))
     if report is None or not report.is_file():
         return [
-            Finding(label, f"stage={grill_stage} 的 manifest 的 report_path 解析不到报告")
+            Finding(label, f"stage={stage} 的 manifest 的 report_path 解析不到报告")
         ]
+    if not verify_body:
+        return []
+
     try:
         rel_report = report.relative_to(change_dir.resolve()).as_posix()
     except ValueError:  # pragma: no cover - resolve_report_path 已保证在目录内
@@ -223,7 +229,29 @@ def grill_evidence_findings_in_change(
         return [
             Finding(
                 f"{label}/{rel_report}",
-                f"报告{why}（{type(exc).__name__}）：无法核验 grill 证据",
+                f"报告{why}（{type(exc).__name__}）：无法核验该 stage 的证据",
             )
         ]
     return grill_evidence_findings(text, report_path=f"{label}/{rel_report}")
+
+
+def grill_evidence_findings_in_change(
+    change_dir: Path,
+    *,
+    grill_stage: str = "grill",
+    manifest_glob: str = "reviews/*.manifest.json",
+    label: str | None = None,
+) -> list[Finding]:
+    """grill 证据 = 存在 `stage=grill_stage` 的 manifest **且**其报告**正文**完备。
+
+    薄封装（`verify_body=True`）——判定本体在 `stage_manifest_findings_in_change`，
+    与 `building` 那条**共用同一实现**（分两份实现必然漂移）。
+    """
+    return stage_manifest_findings_in_change(
+        change_dir,
+        stage=grill_stage,
+        manifest_glob=manifest_glob,
+        label=label,
+        reason="grill 决策记录必须有对应的审阅证据",
+        verify_body=True,
+    )

@@ -69,6 +69,10 @@ def run(args: argparse.Namespace) -> int:
     )
 
     change_ids = contract.changed_change_ids(changes, pol.changes_root)
+    # building-review-gate：**本次 diff 落了实现**（触及 require_change_for）⇒ 每个被触及的 change
+    # 都要有实现后的独立审阅证据。触发用**客观的 diff 事实**，不用「tasks 是否勾选」那种自声明
+    # （不勾选就能绕过）。**多 change 同 PR 时每个都要**——「一个 PR 推进一个 change」是前提。
+    code_hits = _code_hits(pol, changes)
     findings: list[contract.Finding] = []
     for change_id in change_ids:
         findings += contract.validate_change_dir(root, pol, change_id)
@@ -82,11 +86,40 @@ def run(args: argparse.Namespace) -> int:
             manifest_glob=pol.review_manifest_glob,
             label=f"{pol.changes_root.rstrip('/')}/{change_id}",
         )
+        # building-review-gate / issue #13：只要求**证据存在**（+ 复用既有的 revision 绑定保证
+        # 「审阅必须发生在最终实现之后」）。**不解析报告里的 verdict 文本**——见 docs/gate.md §9。
+        if code_hits:
+            findings += evidence_mod.stage_manifest_findings_in_change(
+                contract.change_dir(root, pol, change_id),
+                stage=pol.building_stage,
+                manifest_glob=pol.review_manifest_glob,
+                label=f"{pol.changes_root.rstrip('/')}/{change_id}",
+                reason="本 change 改了受管控代码，必须有实现后的独立审阅证据（review-loop）",
+            )
     findings += _require_change(pol, changes, change_ids)
     findings += _protected_writes(root, pol, changes)
 
     _report(base, head, changes, change_ids, findings)
     return C.EXIT_FAIL if findings else C.EXIT_PASS
+
+
+def _code_hits(pol: policy_mod.Policy, changes) -> list[str]:
+    """本次 diff 里命中 `policy.require_change_for` 的路径。
+
+    「**什么算代码**」的**唯一**口径——`_require_change`（改代码必须挂 change）与本 change 新增的
+    `building` 门禁（落了实现必须有实现后审阅）**共用它**。分两份实现必然漂移（本仓已因
+    「两边各写一套」踩过坑）。
+    """
+    if not pol.require_change_for:
+        return []
+    return sorted(
+        {
+            pathutil.normalize(path)
+            for change in changes
+            for path in (change.path, change.old_path)
+            if path and pathutil.matches_any(pathutil.normalize(path), pol.require_change_for)
+        }
+    )
 
 
 def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contract.Finding]:
@@ -95,17 +128,9 @@ def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contrac
     没有这条时，`check` 只保证「**如果你**动了 change 目录/受保护路径，它要齐备」，
     于是最省事的绕过方式是什么都不建——只改 `src/` 的 PR 直接放行。
     """
-    if change_ids or not pol.require_change_for:
+    if change_ids:
         return []
-
-    hits = sorted(
-        {
-            pathutil.normalize(path)
-            for change in changes
-            for path in (change.path, change.old_path)
-            if path and pathutil.matches_any(pathutil.normalize(path), pol.require_change_for)
-        }
-    )
+    hits = _code_hits(pol, changes)
     if not hits:
         return []
 

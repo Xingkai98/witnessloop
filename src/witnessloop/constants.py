@@ -43,6 +43,11 @@ DEFAULT_REVIEW_MANIFEST_GLOB = "reviews/*.manifest.json"
 DEFAULT_EVENTS_FILE = "workflow-events.jsonl"
 DEFAULT_PROTECTED_EVENT_TYPES = ("protected_path_write",)
 
+# 承载「实现后独立审阅」的阶段名（policy.evidence.building_stage 可覆写）。
+# `check` 在**本次 diff 触及 require_change_for**（= 落了实现）时要求它的 manifest 存在
+# （change building-review-gate / issue #13）。它只要求**证据存在**——不解析报告里的 verdict 文本。
+DEFAULT_BUILDING_STAGE = "building"
+
 # 承载 grill 决策记录的审阅阶段名（policy.evidence.grill_stage 可覆写）。
 # `check` 校验「该 stage 的 manifest 所绑定报告」的正文完备性（见 evidence.py）。
 DEFAULT_GRILL_STAGE = "grill"

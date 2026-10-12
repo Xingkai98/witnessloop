@@ -69,7 +69,10 @@ fail 并点名命中的文件。没有它时，`check` 只保证「**如果你**
 语义细节：
 
 - **缺省**（字段不存在）→ 用出厂默认，老 policy 不会静默失去这条规则；
-- 显式写 `[]` → **关掉**这条规则（逃生口）；
+- 显式写 `[]` → **关掉**这条规则（逃生口）。⚠️ **注意它关掉的不止一条**：`require_change_for` 为空时，
+  「改代码必须挂 change」（`_require_change`）**与本节的 building 门禁**一并**静默失效**（实测：`check` 退 0）。
+  反过来，若它**没覆盖该仓真实的代码路径**（例如真代码在 `services/**` 而这里只写了 `src/**`），效果相同——**静默通过**。
+  这是**声明出来的逃生面**，不是遗漏；接入时请确认它覆盖了你真正的代码目录；
 - 默认刻意**不含** `docs/**` / `tests/**`：纯文档、纯测试改动不该被拦。
 - 判定看整个 diff（含删除与改名的旧路径），所以「删掉源码」同样算改了代码。
 
@@ -261,7 +264,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / 受保护写入无解释 / base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺 building 审阅证据** / 受保护写入无解释 / base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 
@@ -340,3 +343,32 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 现在变成**确定性结论**（`guard` 拦 / `check` 干净的红）。`check` **退出码语义不变**（仍非 0 = 未通过）。
 ⚠️ **可诊断性小缺口**：`guard` 侧对「**坏** manifest」与「**无** manifest」文案相同（都是「无 stage=grill 的
 manifest（现有 stage：…）」）；`check` 侧会**点名**文件（`manifest 无法解析：<file>`）。
+
+## 9. `building` 门禁：实现后独立审阅是硬门（change `building-review-gate`）
+
+**触发**：本次 diff 触及 `policy.require_change_for` 下的路径（= **落了实现**）⇒ 被触及的 change
+**必须**有一份 **`stage=<building_stage>`**（默认 `building`，`policy.evidence.building_stage` 可覆写）的
+review manifest。缺失 ⇒ **红**并**点名现有 stage**。
+
+- **判据只有「证据存在」**（manifest + 其 `report_path` 解析得到的报告）。**不解析报告里的 verdict 文本**——
+  `PASS` / `CHANGES_REQUESTED` **不参与任何判定**（与 asterwynd 先例同口径：它的「PASS 硬门」实质是
+  「**闭环必须跑过**」）。⇒ 换句话说：**「PASS 不是硬门」这件事没有被本门禁改变**。
+- **「审阅必须发生在最终实现之后」是既有能力**：§3 的 revision 绑定（`head_sha` 之后只许证据文件改动）
+  已经保证「审完又改代码 ⇒ 判 stale ⇒ 红」。本门禁只补「**必须存在**」那一半。
+- **触发用客观的 diff 事实**，**不**用「`tasks.md` 是否全部勾选」——勾选是自声明，**不勾就能绕过**。
+- **多 change 同 PR**：本 PR 触及代码 ⇒ 本 PR 触及的**每个** change 都要 building 证据
+  （前提是「**一个 PR 推进一个 change**」；要免除就把 change 拆到单独 PR）。**不提供**豁免名单——那就是绕过面。
+- **纯文档 / 纯 change 目录改动 ⇒ 不要求**（否则每个提案期的 in-flight change 都会被红）。
+- **`guard` 不受影响**：写码**之前**不可能有「实现后」的审阅，强加会**自锁**。
+- ⚠️ **别把 `building_stage` 配成与 `grill_stage` 相同**：两处会指向同一份 manifest ⇒ building 门禁**退化**
+  （grill 的 manifest 同时充当实现后审阅），等于悄悄关掉本门禁。
+- **与 grill 那条共用同一实现**（`evidence.stage_manifest_findings_in_change`，一处实现、两种深度：
+  building 只到「存在」为止，grill 再校验报告正文）。
+
+⚠️ **对**接入方**是两条行为变更**：
+① 「改了代码但没跑 review-loop」的 PR 从**绿变红**；
+② **多 change 同 PR** 时**每个** change 都要 building 证据（此前可以「一个 PR 捎带一个纯文档 change」）。
+
+⚠️ **诚实边界**：本门禁只保证「**有一份可绑定的 manifest 存在**」，**不保证**真跑了一次独立 run——
+兜底路径下 `reviewer_run_id ≠ author_run_id` **结构性恒真**（§3），一个 agent 即可自造 manifest 满足它。
+即「**证据存在性**机械、**审阅真实性**不机械」。
