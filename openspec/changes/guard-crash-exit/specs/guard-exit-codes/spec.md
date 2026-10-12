@@ -36,8 +36,8 @@ change 的 grill 证据不完备」这一显式判定产生。内部错误的退
 一个确定性的结论：
 
 - `.witnessloop/policy.json` 解码失败 ⇒ SHALL 归一为 `PolicyError` ⇒ `guard` **放行**（与「policy 非法」同归）；
-- `review manifest` 解码失败 ⇒ SHALL 产出一条**可诊断**的 finding（点名该文件）⇒ `guard` **拦**、
-  `check` **红**（与「manifest 缺失 / JSON 语法坏」一致）；
+- `review manifest` 解码失败 ⇒ SHALL 与「manifest 缺失 / JSON 语法坏」**同归**（`guard` **拦**、`check` **红**）；
+  `check` 侧的 finding SHALL 点名该文件（`guard` 侧沿用既有文案、不额外点名文件）；
 - grill 报告正文解码失败 ⇒ SHALL 产出一条可诊断的 finding ⇒ **拦**（采用「读不出 ⇒ 不可核验 ⇒ 不完备」的统一口径）。
 
 ### Scenario: 报告无法解码不得被当崩溃

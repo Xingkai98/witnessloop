@@ -331,3 +331,151 @@ R1 的 5 条**整合到位**（逐条见下，均有 `文件:行号` 核对）�
    build ⇒ 证据提交 ⇒ `check` **通过 ✓**；**不重跑** ⇒ `check` 退 1「审阅的是旧 revision」。
 8. **字节坏 policy**（甲副本）：`guard` 退 **0**（放行，`policy 非法…不拦`）；`check` 退 **1** 干净
    （`policy 非法`）——与 `design.md:82-86` D5 一致。
+
+---
+
+# 第 3 轮（R3）
+
+> 立场：同 R1/R2——**默认修订稿仍有错**，逐条证伪。先核验 R2 的 N1/N2 **是否真被整合**（读文件 + 实测，不信声明），
+> 再对**修订后**设计找**新**洞、走新增攻击角度。隔离副本在 `/tmp/r3`（`/tmp/r3orig` = 未打补丁、`/tmp/r3ev` = 只打 `evidence.py`），
+> **未在仓库留文件**；仅改本文件，未 commit。真 CLI 走 `python -m witnessloop`（`PYTHONPATH` 指副本 `src`），真 git 仓。
+
+## Reviewer
+- run id: grill-adversarial-reviewer-guard-crash-exit-2026-10-12-r3
+- 时间: 2026-10-12T08:20:00Z
+
+## Verdict
+
+**CHANGES_REQUESTED**
+
+R2 的两条（N1/N2）**整合到位**，且我按 R2 的修法**实测复现**了「字节坏 manifest 在 `check` 下与 JSON 坏**同归**」——
+N1 的修法有效。R1 的 5 条**全部未回退**。**但**修订稿仍残留**一处同类 over-claim**（与 R2 N1 同构：**spec/tasks 承诺的 finding 形态，其接线做不到**）：
+
+- **M1（阻塞）**：`spec.md:39-40` Req2 与 `spec.md:48-51` Scenario 要求 `review manifest` 解码失败时 `guard` 的 finding
+  **「点名该文件」**，`tasks.md` C4 进一步钉死「文案点名**『清单无法解码』**」。但 C3 的修法（`evidence.py:165` `_read_json`
+  **补 `UnicodeDecodeError`**）**实测产出的文案是「无 stage=grill 的 manifest（现有 stage：（无））」**——**不含文件名、不含「清单无法解码」**。
+  ⇒ **C4 自相矛盾**：它同时要求「文案点名『清单无法解码』」**与**「（与 JSON 坏 / 缺失**一致**）」，而 JSON 坏 / 缺失的文案恰是
+  「无 stage=grill 的 manifest」——byte-bad **不可能**既说「清单无法解码」又「与 JSON 坏一致」。**照 C3 落地 ⇒ C4 必红**。
+- **M2/M3/M4（非阻塞，但须一并订正）**：`F0`↔`G0` 标签错位；`design.md:3`/`tasks.md:3` 状态行 stale；
+  B2 的 `sys.modules[...]=None` 技法**依赖导入序**（实测在「`guardcmd` 已被导入」时**不触发** ImportError）。
+
+## R2 的 N1/N2 整合核验（逐条 · 读文件 + 实测）
+
+### N1 → 整合**到位**，且**修法实测成立**
+
+- **落点齐全**：`design.md:19-25`（§1 读点表新增 row：`contract.py:176` `_bound_report` / `contract.py:230` `_validate_one`）、
+  `design.md:75-77`（D4-2 ⚠️ R2）、`design.md:144-145`（§3 接线点：`contract.py:176,230` 补 `UnicodeDecodeError`）、
+  `tasks.md:28-31`（**C7** 实现 + **C8** 单测）**都在**。`spec.md` 未写行号（spec 不该写行号），其 `check` 侧口径见 Req2 正文。
+- **行号核对**：`contract.py:176` = `_bound_report` 的 `json.loads(manifest_path.read_text(...))`；`contract.py:230` = `_validate_one` 的同款读——
+  **两处 `except (OSError, json.JSONDecodeError)` 均漏 `UnicodeDecodeError`**，与 N1 断言一致。
+- **实测（本仓新副本）**：`check` 遇**字节坏** `reviews/grill.manifest.json`：
+  - **未打补丁**（`/tmp/r3orig`）⇒ **traceback**，崩在 `contract.py:230`（`_validate_one`，经 `validate_review_manifests` → `checkcmd.py:75`）——**复现 N1**。
+  - **只打 `evidence.py`**（`/tmp/r3ev`，≈ C3 原样）⇒ `check` **仍 traceback**（`contract.py:230`）；`guard` 已干净（拦）。
+    ⇒ **「只改 `evidence.py` 不够」属实**（N1 的根因坐实）。
+  - **按 R2 修法补 `contract.py:176,230`**（`/tmp/r3`）⇒ `check` **退 1 且无 traceback**，三条 finding 与 **JSON 坏逐条同归**：
+    `① …/grill.manifest.json：manifest 无法解析：<错>`、`② …/grill-review.md：孤儿报告…`、`③ …：无 stage=grill 的 manifest`。
+  ⇒ **N1 整合正确、修法有效**（`design.md:76-77` 的「不同归」判断与「归一须同时覆盖 `contract.py:176,230`」**属实**）。
+
+### N2 → 整合**到位**（假前提已删、按事实重写）
+
+- `design.md:79-88` D4 已把 (a)、(b) 两条假前提**标为「伪」并改写**（`design.md:83-87`），并给出**甲/乙真实差别表**（`design.md:89-94`）。
+- `grill-review.md:59-69` Q1 理由**同步重写**（`~~…~~ → 伪`）。
+- **grep 复核**（`无法干净实现` / `变绿`）：两词在 `design.md`/`grill-review.md` 中**仅以「被证伪」形态出现**（`——**伪**` / `~~…~~`），
+  **无残留的假陈述**。⇒ N2 **达标**。
+
+## R1 的 5 条 → **全部未回退**（逐条复核）
+
+1. **D3 over-claim 收窄** → 在。`design.md:30-34`（§1「修完仍存的边界」）、`design.md:56-59`（D3「不覆盖 `cli.py:14-15` 模块级 import」）、
+   `design.md:225-226`（Q2）、`spec.md:15-16`（Requ1「已知边界（不在本要求内）」）。
+2. **读点归一（policy/manifest/报告）** → 在，且已扩到 `contract.py`。`design.md:66-102`（D4/D5）、`spec.md:38-41`（Req2）、`spec.md:55-56`。
+   实测三读点行为与设计逐点一致（见下「实测」）。
+3. **doc-sync 两处** → 在。`design.md:110-119`（D7）、`tasks.md:48`（F3）**都**含 `README.md:35` **与** `docs/adr/0001-local-guard-hook.md:16`。
+   **实测两处当前文本**确写「拦（exit 2）」（`README.md:35`、ADR:16），而代码 `guardcmd.py:129` = `C.EXIT_FAIL` = **1**（`constants.py:81`）⇒ 确为漂移。
+4. **F0 顺序约束** → 在（**label 见 M2**）。`tasks.md:53-54`（G0）。
+5. **spec 的 `check` Scenario 补用例** → 在。`tasks.md:27`（C6）、`spec.md:81-85`（Req4 Scenario）。⇒ 原「写了但不可验证」已消。
+
+## R3 新证伪
+
+### M1（阻塞）`guard` 侧 manifest 解码 finding 的**文案 over-claim**——C4 与 C3 互斥
+
+- **声明**：`spec.md:39-40` Req2「`review manifest` 解码失败 ⇒ SHALL 产出一条**可诊断**的 finding（**点名该文件**）⇒ `guard` 拦」；
+  `spec.md:48-51` Scenario「结论与 JSON 坏**一致**（拦 + **点名该文件**）」；`tasks.md:25` C4「字节坏 manifest ⇒ `guard` 退 1 且**文案点名『清单无法解码』**（与 JSON 坏 / 缺失一致）」；
+  `tasks.md:24` C3「`_read_json` **补捕** ⇒ 产出 Finding「清单无法解码：`<file>`」」；`design.md:73` D4-2 同款文案；`design.md:142` §3「`_read_json` 补 `UnicodeDecodeError` + 可诊断 Finding」。
+- **实测（`/tmp/r3`，按 C3 = 仅给 `_read_json` 的 `except` 加 `UnicodeDecodeError`）**：字节坏 manifest ⇒ `guard` **退 1**，stderr 文案
+  = **「无 stage=grill 的 manifest（现有 stage：（无））——grill 决策记录必须有对应的审阅证据」**。**无文件名、无「清单无法解码」**。
+  **与 JSON 坏 / manifest 缺失的文案逐字相同**。
+- **根因**：`_read_json`（`evidence.py:163-167`）对**任何** JSON 解码失败（JSON 语法坏**或**字节坏）**都返回 `None`**⇒ 该 manifest 被静默跳过
+  ⇒ `grill_evidence_findings_in_change`（`evidence.py:194-203`）走**通用**「无 stage=grill 的 manifest」分支，`Finding` 的 `path` 是 **change id 而非文件名**。
+  **「补捕」只改变「崩 / 不崩」，不改变 finding 文案**。
+- **矛盾点**：C4 同时要求「文案点名『清单无法解码』」**与**「（与 JSON 坏 / 缺失一致）」——而 JSON 坏 / 缺失文案是「无 stage=grill 的 manifest」。
+  ⇒ 二者**不可兼得**：byte-bad 若真产出「清单无法解码」，就**与 JSON 坏不再一致**（除非 JSON 坏侧也改文案）。
+  ⇒ **照 C3 落地，C4 必红**；照 C4 落地，得改的**不止** C3（要动共享函数 `grill_evidence_findings_in_change` 的文案逻辑，且会牵动 `check` 侧）。
+- **修法（二选一，须同步 4 处）**：
+  - **(a) 收窄文案（推荐，改动最小、与 R1 提案一致）**：把 `spec.md:39-40` 的「（点名该文件）」与 `spec.md:48-51` 的「点名该文件」
+    限定到 **`check` 侧**（`contract._validate_one` 的 finding **确实**点名 manifest 文件——实测 finding `path` = `…/reviews/grill.manifest.json`），
+    `guard` 侧改为「与 JSON 坏 / 缺失同归：**无 stage=grill 的 manifest**」；C4 断言改为 `guard 退 1 且文案含「无 stage=grill 的 manifest」`；
+    `design.md:73,142` 的「清单无法解码：`<file>`」同步改为「`guard`：无 stage=grill 的 manifest；`check`：manifest 无法解析：`<file>`」。
+  - **(b) 扩 C3（改动大）**：让 `grill_evidence_findings_in_change` 对**无法解析**的 manifest **按文件名**产 finding，且 **byte-bad 与 JSON-bad 都如此**
+    （才保「同归」），并**防 `check` 侧** `contract`（`_validate_one`）与 `evidence`（共享函数）**对同一文件重复报**。此路须在 design/tasks 写明，非「补捕」二字可覆盖。
+
+### M2（非阻塞）`F0` ↔ `G0` 标签错位
+
+- `design.md:135`「`tasks.md` 记此为 **F0**」、`design.md:199`「**`tasks.md` 补 F0**」、`design.md:212`「F0 与两段提交不互斥」——但 `tasks.md:53` 的该步**标为** **G0**（§F 是「文档」，F1–F4，**无 F0**）。
+  ⇒ design 两处交叉引用**指错标签**。修法：`design.md:135,199,212` 的 `F0` 统一改成 `G0`（或把 `tasks.md` 的 `G0` 改名 `F0`）。
+
+### M3（非阻塞）状态行 stale
+
+- `design.md:3`「…R1 CHANGES_REQUESTED → 已整合 → **待 R2**」——R2 已整合（commit `025e682`），应改「R2 已整合 → **待 R3/用户确认**」；
+  `tasks.md:3`「**R1** 已整合」同滞后，应含 R2。**理由错（声明与实况不符）**是本仓红线，宜顺手订正。
+
+### M4（非阻塞）B2 的 `sys.modules[...]=None` **依赖导入序**
+
+- `design.md:173`/`tasks.md:15`/`spec.md:23-26` 用 `sys.modules["witnessloop.guardcmd"] = None` 造 `ImportError`。**实测**：
+  - **新进程**（`guardcmd` 从未导入）⇒ `from witnessloop import guardcmd` **抛 `ModuleNotFoundError`** ⇒ 底 ⇒ 退 **4** ✅。
+  - **`guardcmd` 已被导入过一次**（`witnessloop.guardcmd` 已成了 `witnessloop` 包的**属性**）⇒ `from witnessloop import guardcmd` **直接取属性、不再查 `sys.modules`**
+    ⇒ **不抛** ⇒ `guard` 正常跑 ⇒ 退 **0**（实测；非 4）。⇒ **B2 若照抄，在完整 suite 里（任一 `guard` 调用先跑过即会污染）会红/不稳**。
+- 修法：B2 同时 **删除包属性**（`monkeypatch.delattr(sys.modules["witnessloop"], "guardcmd", raising=False)`）再置 `sys.modules[...]=None`，或**改用隔离子进程**。
+  （**注**：这不是「B2 场景不成立」——它在隔离下成立；是**技法对导入序敏感**，须写死。）
+
+### 走查过的角度：**无**新洞（特此记录，避免下一轮重复）
+
+- **孤儿报告规则**（R3 点名角度）：字节坏 manifest 使 `contract._bound_report` 归一后返回 `None` ⇒ 其应对应的报告进不了 `bound` ⇒ `_check_orphan_reports`
+  **确实额外报一条「孤儿报告」**。**但** JSON 坏 manifest **同样**触发该条（`_bound_report` 对 JSON 坏也返回 `None`）⇒ **两案仍逐条同归**，**非新不一致**（实测三条 finding 逐字相同）。
+  语义上也非纯误导：「manifest 无法解析」+「报告无人绑定」是两条**互补**信息。⇒ **无需**顺带处理（若想更精准可另立 issue，**不阻塞**）。
+- **`manifest build` 自己读 manifest 吗**（R3 点名角度）：**否**。`manifestcmd.run_build` 只读 policy / change 目录 / **report 字节**（`sha256_tree`）/ git；
+  **不读任何 manifest**，且对同名 manifest **直接覆写**（`manifestcmd.py:152`）。**实测**：预置字节坏 manifest 后 `manifest build` **退 0**（覆写成功，无崩溃）。⇒ **无漏覆盖**。
+- **D3 兜底与读点归一的交互**：归一后 `guard` **仍能**撞到 `EXIT_INTERNAL`，且**有真实（非 monkeypatch）触发源**——`git` 不在 `PATH` ⇒ `gitutil._run` 抛 `FileNotFoundError` ⇒ 底 ⇒ **退 4**（实测 `PATH=/nonexistent`）。
+  B1（monkeypatch `RuntimeError`）是通用底**好代表**；B2 技法须修正（M4）。`design.md:27` 已括注 `gitutil._run` 这一潜在读点，**无遗漏**。
+  grep 复核：全树**无**硬编码 `sys.exit(1)`/`raise SystemExit`/`return 1` ⇒「1 只由 `return C.EXIT_FAIL` 产生」在归一后**结构性成立**。
+- **`design.md §5` 测试策略 vs C 段**：一致（报告字节坏「甲退 1 / 乙退 4」= C5；manifest 字节坏「退 1 与 JSON 坏/缺失同归」= C4；check 侧「干净红」= C8）。
+  §5 的 TBD 措辞「（按 Q1 结果二选一）」**属预期**（Q1 是**未决**的 Open Question），非缺陷。
+- **spec 逐条 ↔ tasks 用例**：9 个 Scenario **都有**对应用例（Req1×3↔B1/B2/E1、Req2×3↔C5/**C4**/C2、Req3×2↔D1/D2、Req4↔C6）。
+  唯一「写了但形态对不上」的是 **M1**（Req2 正文/Scenario 的 `guard` 侧「点名该文件」）。
+- **`contract.py` 单测归属**：`design.md:149` 已点名 `tests/test_check_manifest.py` / `test_check_grill_evidence.py`（`check` 对无法解码 evidence 的干净红 = C8 的落点）
+  ⇒ **有**归属文件（`tasks.md` C7/C8 未重复点名，非缺陷）。
+- **甲案角落（Q1）**：报告在 manifest **之后**损坏 ⇒ **甲** `check` 退 1（`report_hash 不匹配` + **「报告无法解码」**）；**「重建 manifest 于字节坏报告」后** ⇒ **甲仍退 1**（`报告无法解码`，实测）
+  ——**甲确封住**该角落，`design.md:92` 的对比**属实**。
+
+## 必须修改（R3）
+
+1. **消灭 M1（唯一阻塞）**：二选一并**同步** `spec.md:39-40`、`spec.md:48-51`、`tasks.md:24-25`(C3/C4)、`design.md:73,142`——
+   (a) **收窄文案**至实测形态（`guard`：无 stage=grill 的 manifest；`check`：manifest 无法解析：`<file>`），把「点名该文件」限定到 `check` 侧；或
+   (b) **扩 C3** 为「按文件名产 finding（byte-bad 与 JSON-bad 一致）+ 防 `check` 侧重复报」。**不可**保留「补捕 ⇒ 点名该文件 / C4 文案『清单无法解码』」这套与实际接线互斥的措辞。
+2. **订正 M2 标签**：`design.md:135,199,212` 的 `F0` → `G0`（或反向改名）。
+3. **刷新 M3 状态行**：`design.md:3`、`tasks.md:3` 的 R1/R2 口径。
+4. **加固 M4 技法**：B2 补 `delattr(sys.modules["witnessloop"], "guardcmd")` 或改隔离子进程。
+
+## 我实测复现的（均在 `/tmp/r3*`，未在仓库留文件）
+
+1. **基线**：本仓 `uv run pytest -q` ⇒ **388 passed in 19.23s**。
+2. **甲副本全量**（按 design 落 `EXIT_INTERNAL=4` + `cli.py` guard 兜底 + `policy.py`/`evidence.py`/`contract.py:176,230` 补捕）⇒ **388 passed**（`/tmp` 模板路径假象用真 `templates/` + `.github/` 修正后消失，与代码无关）⇒ **无回归**。
+3. **N1 复现与修复对照**（字节坏 `grill.manifest.json`）：
+   - 未打补丁：`check` **traceback**（`contract.py:230`）；只改 `evidence.py`：`check` **仍 traceback**（`contract.py:230`）；补 `contract.py:176,230` 后：`check` **退 1 干净**。
+   - 同修后 `check` 的三条 finding 与 **JSON 坏逐字相同**；`guard` 两案均退 1、文案「无 stage=grill 的 manifest」。
+4. **M1**：`guard` 遇字节坏 manifest ⇒ 文案 = 「无 stage=grill 的 manifest（现有 stage：（无））…」——**不含**文件与「清单无法解码」（对照 `spec.md:39-40`/`tasks.md:25`）。
+5. **报告字节坏**（甲）：`guard` 退 1「报告无法解码：reviews/grill-review.md（UnicodeDecodeError）」；`check` 退 1（`report_hash 不匹配` + `报告无法解码`）——无 traceback。
+6. **甲角落**：报告字节坏 **且重建 manifest** ⇒ `check` **退 1**（`报告无法解码`）——甲封住该角落。
+7. **policy 字节坏**：`guard` 退 **0**（放行，`policy 非法…不拦`）；`check` 退 **1** 干净（`policy 非法`）。
+8. **D3 兜底**：B1（monkeypatch `RuntimeError`）⇒ **退 4**；`sys.modules[...]=None`（**新进程**）⇒ 退 **4**，**（`guardcmd` 已导入）⇒ 退 0**（M4）；`git` 不在 `PATH` ⇒ 退 **4**（真实源）。
+9. **shim 映射**（真 `guard.sh`）：`1→2`、`4→0`、`0/2/3/127→0`。
+10. **`manifest build` 容忍预置字节坏 manifest**：退 **0**（覆写）。

@@ -1,6 +1,6 @@
 # Design: guard-crash-exit
 
-> 状态：**设计已收敛**（grill + 对抗验证 R1 CHANGES_REQUESTED → 已整合 → 待 R2）。停轮待用户确认。
+> 状态：**设计已收敛**（grill + 对抗验证 R1/R2/R3 三轮 CHANGES_REQUESTED → 逐轮已整合；R3 收尾项已修）。停轮待用户确认。
 > 依据 `proposal.md`。流程出处 `templates/grill.md`。
 > 审阅证据：`reviews/grill-review.md`（决策记录）、`reviews/grill-adversarial.md`（对抗验证）。
 > 关联 issue：witnessloop **#9**（低、非阻塞）。
@@ -69,8 +69,12 @@
   1. `policy.py:128`（**policy 读不出**）→ 归一为 `PolicyError` ⇒ `guardcmd.py:86-88` **放行**。
      **与既有「policy 非法 ⇒ 不拦」完全一致，无争议，直接采纳。**
   2. **manifest = 证据容器**：`evidence.py:165`（`guard` 侧）+ **`contract.py:176` / `contract.py:230`（`check` 侧）**
-     → 捕 `UnicodeDecodeError`，产出一条**可诊断**的 finding「清单无法解码 / manifest 无法解析：<file>」
-     ⇒ **拦 / 红**。与既有契约一致（manifest **缺失 / JSON 语法坏** ⇒ 拦，`evidence.py:184-203`）。
+     → 捕 `UnicodeDecodeError`，**与既有「manifest 缺失 / JSON 语法坏」同归** ⇒ **拦 / 红**。
+     ⚠️ **R3 M1 修正（原稿文案自相矛盾）**：原稿要 `guard` 侧的 finding 文案是「清单无法解码：<file>」**又要**「与 JSON 坏同归」——
+     二者不可兼得（`_read_json` 捕到即返回 `None` ⇒ 走的是既有的「**无 stage=grill 的 manifest（现有 stage：…）**」文案，
+     JSON 坏与字节坏**逐字相同**）。**定案**：`guard` 侧**不新增文案、不点名文件**（= 与 JSON 坏/缺失**逐字同归**，
+     这是硬要求）；**「点名该文件」只落在 `check` 侧**（`contract.py:230` 的既有 `manifest 无法解析：<file>`）。
+     代价：`guard` 侧对「坏 manifest」与「无 manifest」文案相同（轻微不可诊断）——记入 §4 R8，可另立 issue 改进。
      ——**这修掉 R1 实测出的裂缝**：今日「字节坏 manifest ⇒ 放（崩溃退 4）」与「JSON 坏 manifest ⇒ 拦」自相矛盾。
      ⚠️ **R2 修正：`check` 的 manifest 读点不在 `evidence.py`**——`checkcmd.py:75` 的 `validate_review_manifests`（→ `contract.py:230`）
      **先于** `:78` 的 `evidence` 调用。**只改 `evidence.py` 不够**：R2 实测「字节坏 manifest ⇒ `check` 仍 traceback（`contract.py:230`）」，
@@ -132,7 +136,7 @@
   故**写 `src/**` 前，盘上必须已有一个 passing 的 `stage=grill` manifest**（否则 `guard --path src/…` 退 1）。
   而 `src/witnessloop/{constants,cli,guardcmd}.py` **都在** `require_change_for` 内（`constants.py:27-36`）。
   ⇒ 实施顺序：**先停轮拿确认 → 写 `## User Confirmation` → `manifest build --stage grill` 放行 → 再写 `src/**`
-  → 内容提交后重跑 build 覆盖成最终 manifest**。`tasks.md` 记此为 **F0**。
+  → 内容提交后重跑 build 覆盖成最终 manifest**。`tasks.md` 记此为 **G0**（该文件 G 段首步）。
 
 ## 3. 接线点（实现清单）
 
@@ -164,6 +168,11 @@
 5. **R5（低）**：`check` 侧只改**读点归一**（崩溃→干净红），**不动其退出码语义**（仍 1 = 未通过）。
 6. **R6（低）**：读点清单可能仍不完备 ⇒ 通用兜底覆盖未枚举者（这正是选「通用兜底」而非「逐点 try」的理由）。
 7. **R7（低）**：改 `plugin/**` 会触发 guard（`plugin/**` 在 `require_change_for`）——正常流程证据先齐，不自锁。
+8. **R8（低，可诊断性小缺口 · R3 记）**：`guard` 侧对「**坏 manifest**」与「**无 manifest**」文案相同
+   （`_read_json` 捕到即 `None` ⇒ 走既有的「无 stage=grill 的 manifest（现有 stage：…）」）⇒ 用户看不出「是坏了还是没写」。
+   这是 D4-2 的**有意代价**（换取「与 JSON 坏逐字同归」）。**本 change 不修**；如要改进（让坏 manifest 点名文件）
+   须连带让 JSON 坏也点名、并防 `check` 侧重复报 —— 另立 issue。
+   （注：`check` 侧**有**点名——`contract.py:230` 的既有 `manifest 无法解析：<file>`。）
 
 ## 5. 测试策略（TDD）
 
@@ -196,7 +205,7 @@
 - **读点枚举修正**：≥3 处（`evidence.py:216` / `evidence.py:165` / `policy.py:128`），非「一处」（§1 + D4/D5）。
 - **`README.md:35` 也在写 `exit 2`**（grill 漏、对抗验证证伪其「README 不含退出码叙述」）⇒ D7 纳入订正。
 - **裁定「解码失败」语义**（D4 甲案）并落 spec。
-- **`tasks.md` 补 F0**（实现前须先有 passing grill manifest；自锁已实测复现）。
+- **`tasks.md` 补 G0**（实现前须先有 passing grill manifest；自锁已实测复现）。
 - **spec 的 check Scenario 补测试**（原为「写了但不可验证」）。
 
 **必须修改（已整合 · 来源 `grill-adversarial-reviewer-guard-crash-exit-2026-10-12` R2，CHANGES_REQUESTED）**：
@@ -209,7 +218,7 @@ R2 确认 R1 的 5 条**全部到位**，但**新证伪两条**（均已整合�
   ②「乙 ⇒ `check` 变绿」在真实场景下伪（报告在 manifest **之后**损坏 ⇒ `report_hash` **独立**判红，
   只有「把坏报告重 build 进 manifest」这一角落才绿）⇒ **D4 的对比表重写**（不再用假前提引导 Q1）。
 - **未发现新洞**：甲不自锁、无 check 回归（甲/乙副本均 388 passed）、`design.md §1` 的 `guard` 读点表完整
-  （无第 5 读点）、F0 与两段提交不互斥（但**重跑 build 是承重的**：不重跑 ⇒ stale 红）。
+  （无第 5 读点）、G0 与两段提交不互斥（但**重跑 build 是承重的**：不重跑 ⇒ stale 红）。
 
 **Code-Resolved 结论**：
 `guard` 不校验 hash（`guardcmd.py:108` ⇒ `evidence.py:170-217`）⇒ 覆写报告能直达崩溃点；

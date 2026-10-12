@@ -1,6 +1,6 @@
 # Tasks: guard-crash-exit
 
-> 依据 `design.md`（**已收敛**——grill + 对抗验证 R1 已整合；**Q1/Q2 未确认前不得动实现代码**）。
+> 依据 `design.md`（**已收敛**——grill + 对抗验证 R1/R2/R3 已逐轮整合、R3 收尾项已修；**Q1/Q2 未确认前不得动实现代码**）。
 > 原则：**测试先行（TDD）**——每个能力先写失败测试再实现。
 > ⚠️ change 目录必须**全程完整**（本文件 + `specs/guard-exit-codes/spec.md`）；两段提交须在其齐备后才开始。
 
@@ -12,7 +12,9 @@
 ## B. 崩溃兜底（D1/D3）—— 待实现
 
 - [ ] B1 单测（先红）：monkeypatch `evidence.grill_evidence_findings_in_change` 抛 `RuntimeError` ⇒ `guard` 退 `EXIT_INTERNAL`（非 1）
-- [ ] B2 单测（先红）：`from witnessloop import guardcmd` 的 `ImportError`（`sys.modules[...]=None`）⇒ 退 `EXIT_INTERNAL`
+- [ ] B2 单测（先红）：`from witnessloop import guardcmd` 的 `ImportError` ⇒ 退 `EXIT_INTERNAL`
+      ——⚠️ **R3 M4**：**只** `sys.modules[...]=None` **不够**：整份 suite 里 `guardcmd` 早已被导入、且是 `witnessloop` 包的属性
+      ⇒ `from witnessloop import guardcmd` 走 `getattr` **不抛**、退 0、用例不稳 ⇒ 必须**同时** `monkeypatch.delattr(witnessloop, "guardcmd", raising=False)`
 - [ ] B3 实现：`cli.py` guard 分支包 `try/except Exception`（含 lazy import）；**`cli.py:15` 的 import 必须加 `EXIT_INTERNAL`**（否则 `NameError` ⇒ 在 except 里退 1 ⇒ bug 复活）
 - [ ] B4 实现：`guardcmd.py` docstring 记「兜底在 `cli.main` 的 guard 分支」+ **边界**（`cli.py` 自身 import 失败不覆盖，见 Q2）
 - [ ] B5 注释声明不变量：`cli.main` guard 分支及之后，1 **只**由 `return C.EXIT_FAIL` 产生
@@ -21,8 +23,10 @@
 
 - [ ] C1 实现：`policy.py:129` 补 `UnicodeDecodeError` ⇒ 抛 `PolicyError`（D5，无争议）
 - [ ] C2 单测（先红）：字节坏 **policy** ⇒ `guard` 退 `EXIT_PASS`（放行，与 policy 非法同归）
-- [ ] C3 实现：`evidence.py:165`（`_read_json`）补捕 ⇒ 产出**可诊断** Finding「清单无法解码：<file>」（D4-2）
-- [ ] C4 单测（先红）：字节坏 **manifest** ⇒ `guard` 退 **1** 且文案点名「清单无法解码」（与 JSON 坏 / 缺失一致）
+- [ ] C3 实现：`evidence.py:165`（`_read_json`）补捕 `UnicodeDecodeError` ⇒ **与 JSON 坏/缺失同归**（走既有「无 stage=grill…」finding）
+      ——⚠️ **R3 M1**：**不要**在这里新造「清单无法解码：<file>」文案（既要求点名文件、又要求与 JSON 坏同归是**不可兼得**的）
+- [ ] C4 单测（先红）：字节坏 **manifest** ⇒ `guard` 退 **1**，且其结论**与「JSON 坏 manifest」逐字相同**
+      （断言**两案输出相等**，而非钉某个固定字符串——这才钉得住「同归」）
 - [ ] C5 实现 + 单测（**按 Q1 结果**）：报告读点（`evidence.py:216`）⇒ 甲案「拦 + 文案『报告无法解码』」/ 乙案「放」
 - [ ] C6 单测（先红·补 spec 的不可验证 Scenario）：`main(["check",…])` 遇无法解码的 evidence **不返回 0**（仍 fail-closed）
 - [ ] **C7（⚠️ R2 N1）** 实现：`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）补 `UnicodeDecodeError`
