@@ -13,8 +13,7 @@ witnessloop 的卖点是「**机械强制、不靠自觉**」（README / design 
 - 实证：change `guard-crash-exit`（PR #11）的 review-loop R1 抓到「**一行回退 `pyproject` 就能静默拆掉 issue #9 的修复本体**」
   与一条**假测试**——抓得很准，**但如果我不跑它，门禁一样放行**。⇒ 与「不靠自觉」的自述**自相矛盾**。
 
-**与 asterwynd 的差距（已读源码核对）**：asterwynd 的 `_check_review_manifests`
-（`scripts/check_openspec_artifacts.py:1009-1048`）要求——
+**与 asterwynd 的差距（已读源码核对；**按函数名**引用 `_check_review_manifests`，不引行号——跨仓行号会漂）**：它要求——
 
 ```python
 requires_building_review = (

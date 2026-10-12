@@ -185,3 +185,64 @@ asterwynd 就在本机：`/home/happy/my-agent/scripts/check_openspec_artifacts.
     「全文件无 verdict/PASS 解析」逐条核实。
 11. **还原确认**：`git checkout -- .` → `git status --porcelain | wc -l` = **0**；补丁残留 grep 全 **0**；
     再跑 `uv run pytest -q` → **404 passed**。**未 commit。**
+
+---
+
+# 第 2 轮（R2）
+
+## Reviewer
+- run id: grill-adversarial-reviewer-building-review-gate-r2-2026-10-12
+- 时间: 2026-10-12T07:19:12Z
+- 方式: 独立**零记忆**审阅者（**无** R1 记忆），**默认 R1 的结论有错**，逐条开门核。
+  实测在 `/tmp`（`/tmp/multi2_r2.py`，**复用本仓 `tests/helpers.py` 的原语**，**不**复用 R1 的脚本）；
+  本 worktree **未打任何源补丁**，只写本文件（写前 `git status --porcelain -uall` = 0 行；未 commit）。
+- **范围（作者刻意收窄）**：只核 commit `0f1f81e` 对 R1 的整合 + 确认最终 revision。
+
+## Verdict
+**CHANGES_REQUESTED** —— 阻塞项**只有 1 条，一行改完**（`tasks.md` D3）。
+
+R1 的阻塞项**确已消解**（那条 Scenario 在 `spec.md:29`，且与 design D1、tasks B9 **三方对得上**）；
+框定纠正、D3.1、§7 记账三处**全部到位**。**但 R1「必须修改」第 2 条只做了一半**：
+design D5 写明了**两条**行为变更，而**产出 README 的那条任务**（`tasks.md:36` D3）仍只有**一条** ⇒
+实现者照 tasks 逐条勾选会**漏发**一条对**接入方**的绿→红预警。change 的**技术核心仍站得住**
+（我独立复现了它依赖的前提：多 change 同 PR **今天确实绿**）。
+
+## 逐条核验（R1 要求 → 本轮实测落点）
+| # | R1 的要求 | 落在哪 | 核验 |
+|---|---|---|---|
+| 1 | **（阻塞）** spec 补「多 change 边界」Scenario | `spec.md:29-33` | ✅ **到位**。规范性内容与 design D1 的定案（`design.md:82-83`）**同义**，且**操作句逐字相同**（「要免除就把 change 拆到单独 PR」「不提供 `building_exempt_changes` 之类的豁免名单」）；Given 把「每个」具体化成了 A/B 两个 change（Scenario 必须如此），措辞非字面照抄 |
+| 1b | 既有「提案期 / 纯文档」Scenario 的括注改精确 | `spec.md:24` | ⚠️ **基本到位**：限定落在**标题**「（单 change 情形）」，Given 括注原文未动（见 N3）。因紧邻其下就是覆盖它的那条 Scenario，**误读路径已封死** ⇒ 不拦 |
+| 2 | D1：承认「一 PR 一 change」是**新造**约束（非同族） | `design.md:79-81` | ✅ 到位：「对抗验证纠正」段明写「那条约束的是**提交顺序**，这条约束的是 **change 数量**，是**本 change 新造**」+ 实测 `exit 0 → exit 1` |
+| 2b | D5 写**两条**行为变更，且 **tasks D3 同步** | `design.md:125-127` ✅ ／ `tasks.md:36` ❌ | ❌ **tasks 那半边未做** ⇒ **本轮的阻塞项** |
+| 3 | 新增 D3.1（选甲须显式声明「PASS 不成为硬门」） | `design.md:109-115` | ✅ 到位，措辞是**条件式**（「**若** Q1 选**甲**」），未写成已定案 |
+| 3b | `proposal.md` 加「边界声明」 | `proposal.md:40-46` | ✅ 到位，带条件标记「（**选甲时**；见 design D3/D3.1）」⇒ 在 Q1 未裁定时**未** over-claim |
+| 4 | §7 记入 R1 的结论 | `design.md:201-206` | ✅ 到位，且与 R1 原文**逐条相符**（阻塞项／自伤面 0 条独立复现／Q1 不阻塞／R6 成立／无自锁），无 over-claim |
+
+**「规范件说 A、设计说 B」残留**：实质 1 处（阻塞项 2b：`design.md:125` ↔ `tasks.md:36`）+ 引用 1 处（N1：design「**不**按行号引用」↔ `proposal.md:17` 仍引**已漂移**的行号）。
+
+## 阻塞项
+**（唯一）`tasks.md` D3 缺第二类行为变更** —— 与 design 明文要求不一致，且会让实现产物漏掉一条接入方预警。
+
+- **事实**：`design.md:125` 明写 README 要写**两条**（① 「改了代码没跑 review-loop」的 PR 绿→红；② **多 change 同 PR** 时**每个** change 都要 building 证据）；`design.md:81` 亦写这条新约束「**须与 D5 那条一并写进 README**」。
+  而**唯一**产出 README 的任务 `tasks.md:36`（D3）括注里**只有 ①**（`grep -rn 行为变更` 全 change 目录：design 5 处、tasks **1 处**）。
+- **为什么这是阻塞而不是措辞**：本 change 对**既有接入方**的**唯一**缓解手段**就是文档**（design §8 Q3 的定案：「**只写文档** + 明确『对接入方是行为变更』，**不加**过渡开关」）⇒ 文档漏一条 = 缓解机制缺一半；且实现者按 tasks 逐条勾选，D3 是 README 的**全部**指令来源。
+- **修法（一行，与 design D5 逐字对齐）**：`tasks.md:36` 改为
+  「- [ ] D3 `README.md`：写明**对**接入方**是行为变更**（①「改了代码没跑 review-loop」的 PR 从绿变红；② **多 change 同 PR** 时**每个** change 都被要求 building 证据——原本可捎带的纯文档 change 也会红）」
+
+## 非阻塞观察（建议与阻塞项同批改，我**不**据此拦）
+- **N1**：`proposal.md:17` 仍引 asterwynd 的**漂移行号** `:1009-1048`，而 design §1 / R7 已把口径改成「**按函数名**定位、**不**按行号」（`design.md:31-32`、`:196`）⇒ 同一事实**两份规范件说法不一**（R1 已实测真值 `:1110-1145`）。design 自己把 R7 定级「低」，**我同意不拦**，但顺手改掉最省。
+- **N2**：`tasks.md:23`（B9）写「**Q2 裁定**「一 PR 一 change」前提」——Q2 仍是**待用户裁定**的 Open Question（`design.md:221` 只是「**推荐**」；`tasks.md:3` 自己也写「Q1/Q2/Q3 确认前不得写实现代码」）⇒「裁定」是**过头话**，建议改「Q2 **推荐**」。注意：**spec 照 design D1 的定案**把该边界钉死，是 R1 **明确要求**的（R1 判「Q2 的方向对，缺的只是把边界写进 spec」）⇒ 那一处**不算** over-claim。
+- **N3**：R1 指的是改 **Given 括注**，实际限定落在**标题**（`spec.md:24`），Given（`spec.md:25`）仍是「（只改文档或只动 change 目录）」。因 `spec.md:29-33` 立即明写覆盖，**误读已基本封死**；若顺手，把 Given 改成「（**本 PR 只涉及这一个 change 时**：只改文档或只动 change 目录）」更稳。
+- **N4**：`design.md:72` 的边界 bullet（「纯文档 / 纯 change 目录改动…⇒ **不要求**」）自身没有「单 change」限定，靠紧接的 ⚠️（`design.md:74-84`）兜住 ⇒ **不构成矛盾**，但与 spec 标题的限定**不对称**，可顺手加「（单 change 情形）」。
+- **已核无误（不构成不一致）**：新 Scenario 与「提案期 / 纯文档不误伤」**不冲突**（两条的 Given 互斥：一条要求「**未**触及 `require_change_for`」，另一条要求「既触及代码、又触及**另一个** change 目录」）；Requirement 正文「要求**被触及的** change 存在…manifest」（`spec.md:8-10`）本就蕴含多 change 语义，与 Scenario 一致；`spec.md:12`「SHALL **不**由 tasks.md 勾选触发」与 design D1（否决 asterwynd 的 `_tasks_all_complete`）一致；D3.1 ↔ D5 ↔ proposal 边界声明**口径统一**（都是「证据**存在性**机械 / verdict 文本不参与」）。
+
+## 我实测的
+1. **基线**：`uv run pytest -q` → **`404 passed in 50.22s`**（与要求一致）。
+2. **独立复现「多 change 同 PR 今天可行」**（= D5② 「原本可以…」与新 Scenario 的**前提**，也是 R1 §2(a) 的实测）：
+   自写 `/tmp/multi2_r2.py`，**复用本仓 `tests/helpers.py` 原语**（`write_change` / `write_review` / `commit_all`，与既有用例走**同一条**代码路径，避免自造 manifest 引入我自己的偏差）；造仓：`init` → feature 分支 → **单一内容提交**（change `impl-a` + `src/a.py`；change `b-doc` **纯目录、无实现**）→ **单一证据提交**（`impl-a`：grill + building；`b-doc`：**只有 grill**）→ `check --base main --head HEAD`
+   ⇒ **`check：通过 ✓`，exit 0**（15 个变更文件 / 2 个 change 目录：`b-doc, impl-a`）。
+   ⇒ 「一个 PR 捎带一个纯文档 change」**今天确实是绿的** ⇒ design D5② 的「原本可以」**不夸大**，新 Scenario 是**真的行为变更**（而非把现状写成规范）。
+   **未重跑打补丁那半**（诚实边界）：R1 已用自写补丁测到 `exit 0 → exit 1`（唯一 finding = `b-doc` 缺 building manifest），我**只核机制**——`checkcmd.py:73-84` 的循环是**逐 change**、触发（`_code_hits` / `_require_change`，`checkcmd.py:92-120`）**只看本次 diff** ⇒ 「触发全局 × 要求逐 change」必然产生该误伤，**代码结构上成立**，spec 那条 Scenario 的 Then 属实。
+3. **规范件形态**（会不会卡实现）：`uv run witnessloop check`（对**本仓自身**）⇒ **仅 2 条** finding，都是**预期**的「本 change 还没有 manifest」（`reviews/` 下确实只有两份 `.md`、无 `*.manifest.json`）；`validate_change_dir` **无**抱怨 ⇒ spec delta / change 目录**形态合格**，不会卡住实现。
+4. **引用抽查**（自己开门核，不采信任何一侧的声明）：`contract.py:89` `validate_change_dir` ✓、`:121` `validate_review_manifests` ✓、`:272` `_check_git_span` ✓；`checkcmd.py:92` `_require_change` ✓、`:123` `_protected_writes`（design 引 `:122-180`，起点早一行，**无实质影响**）；`evidence.py:203` 逐字 = 「grill 决策记录必须有对应的审阅证据」✓；`helpers.py:116` `stage: str = "building"` ✓、`:214` `stages=("grill","building")` ✓；`docs/gate.md:121-123` 逐字含「结构性不同…不挡蓄意伪造」✓、`:172-177` 逐字含「内容与证据必须分属两个提交；单提交 PR 不被支持」✓。
+5. **还原确认**：本 worktree **未打源补丁**，`git status --porcelain -uall` 在写本报告前 = **0 行**；`/tmp` 实验产物在仓外，不影响。**未 commit。**

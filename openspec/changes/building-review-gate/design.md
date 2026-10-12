@@ -19,7 +19,7 @@
 | 有 manifest | `contract.validate_review_manifests`（`contract.py:121-149`） | **至少一份** `reviews/*.manifest.json`；每份过 hash/revision/reviewer≠author；**孤儿报告**不许有 |
 | grill 证据 | `evidence.grill_evidence_findings_in_change`（`checkcmd.py:78-84`） | **必须有 `stage=grill` 的 manifest**，且其报告正文合格 |
 | 代码必须挂 change | `checkcmd._require_change`（`checkcmd.py:92-120`） | 改了 `require_change_for` 路径 ⇒ 必须有 change 目录 |
-| 受保护写入 | `checkcmd._protected_writes`（`checkcmd.py:122-180`） | 需 `workflow-events.jsonl` 解释事件 |
+| 受保护写入 | `checkcmd._protected_writes`（`checkcmd.py:123-180`） | 需 `workflow-events.jsonl` 解释事件 |
 
 ⇒ **`building` 这个 stage 在 `src/` 里 0 处功能性命中**（`grep -rn building src/` 只命中 `cli.py:107,111` 的 `--help` 文案；grill 实测纠正——原稿写"0 命中"字面不成立）——**跳过 review-loop 的 PR 照样绿**。
 

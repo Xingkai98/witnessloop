@@ -20,7 +20,7 @@
 - [ ] B8 实现：`checkcmd` 的 change 循环接入（触发条件 = 本次 diff 触及 `require_change_for`）；
       文案经 `reason` 参数传入（**参数化**，非第二份实现）
 - [ ] B9 单测（先红）：**多 change 同 PR 边界**——本 PR 改代码 + 顺带新增纯文档 change
-      ⇒ 该文档 change 也被要求 building 证据（**这是刻意的**，Q2 裁定「一 PR 一 change」前提）
+      ⇒ 该文档 change 也被要求 building 证据（**这是刻意的**，Q2 的**推荐**口径「一 PR 一 change」前提；待用户裁定）
 
 ## C. 自伤面（D6）—— **grill 实测：0 条新增失败**（原「一批会红」已被证伪）
 
@@ -33,7 +33,9 @@
 
 - [ ] D1 `docs/gate.md §6`：`check` 红项清单加「缺 building 审阅证据」
 - [ ] D2 `docs/gate.md §8`：新增 building 门禁小节（触发 + 判据 + 边界）
-- [ ] D3 `README.md`：写明**对**接入方**是行为变更**（改了代码没跑 review-loop 的 PR 从绿变红）
+- [ ] D3 `README.md`：写明**对**接入方**是两条**行为变更（design D5 明列两条，**别只写一条**）：
+      ① 「改了代码但没跑 review-loop」的 PR 从**绿变红**；
+      ② **多 change 同 PR** 时**每个** change 都要 building 证据（原本可「一个 PR 捎带一个纯文档 change」，现在会红；实测 `exit 0 → exit 1`）
 - [ ] D4 `templates/review-loop.md`：依 **Q1** 结果（甲：补一句「只要求证据存在」；乙：规定多轮最终裁定形态）
 
 ## E. 证据链与收尾
