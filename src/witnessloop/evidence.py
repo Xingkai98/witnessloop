@@ -218,10 +218,12 @@ def grill_evidence_findings_in_change(
         text = report.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         # 甲案（用户 Q1 裁定）：证据内容**读不出** ⇒ 不可核验 ⇒ 不完备（**拦/红**），而不是崩溃出栈。
+        # 文案按成因分：解码失败 ≠ 文件读不到（权限等）——后者写「无法解码」会误导。
+        why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
         return [
             Finding(
                 f"{label}/{rel_report}",
-                f"报告无法解码（{type(exc).__name__}）：无法核验 grill 证据",
+                f"报告{why}（{type(exc).__name__}）：无法核验 grill 证据",
             )
         ]
     return grill_evidence_findings(text, report_path=f"{label}/{rel_report}")
