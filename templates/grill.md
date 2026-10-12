@@ -192,6 +192,13 @@ witnessloop manifest build --change <id> --stage grill-adversarial \
 实现后的审阅阶段同理：`reviews/building-review.md → reviews/building.manifest.json`。
 **没被任何 manifest 绑定的报告就是孤儿报告**，门禁会拦下（见 `docs/gate.md §3`）。
 
+⚠️ **对抗轮那份 manifest 现在是 `check` 的机械要求**：本次变更命中 `policy.require_change_for`
+（默认 `src/**` 等 ⇒ **落了实现**）时，该 change **必须**有 `stage=grill-adversarial` 的 manifest，
+否则 CI 红。触发面与实现后审阅（`stage=building`）**完全相同**。判据只到「**证据存在**」为止——
+**不解析 verdict 文本、不校验报告正文**（空文件亦合格），也**不保证**对抗轮发生在**写码之前**
+（manifest 之间不做先后比较）。⇒ 本节的「先收敛、后停轮」是**流程规定**，机械门只保证
+「**有一份绑在最终 revision 的对抗轮证据**」。见 `docs/gate.md §10`。
+
 ## 硬约束
 
 - **缺证据不得进入实现**。四件事**全部**满足之前，**不得**开始写代码：

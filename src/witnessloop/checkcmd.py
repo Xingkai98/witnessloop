@@ -86,9 +86,19 @@ def run(args: argparse.Namespace) -> int:
             manifest_glob=pol.review_manifest_glob,
             label=f"{pol.changes_root.rstrip('/')}/{change_id}",
         )
-        # building-review-gate / issue #13：只要求**证据存在**（+ 复用既有的 revision 绑定保证
-        # 「审阅必须发生在最终实现之后」）。**不解析报告里的 verdict 文本**——见 docs/gate.md §9。
+        # building-review-gate / issue #13 + grill-adversarial-gate / issue #16：本次 diff 落了实现 ⇒
+        # 该 change 的**设计环**（对抗验证轮）与**实现环**（独立审阅）**两端**都要有证据。
+        # 两者**共用同一条 `code_hits` 触发**（一个概念，不引入第二套「什么算代码」），且都只要求
+        # **证据存在**（+ 复用既有 revision 绑定保证「发生在最终 revision 之上」）——
+        # **不解析报告里的 verdict 文本**、不校验正文（见 docs/gate.md §9）。
         if code_hits:
+            findings += evidence_mod.stage_manifest_findings_in_change(
+                contract.change_dir(root, pol, change_id),
+                stage=pol.grill_adversarial_stage,
+                manifest_glob=pol.review_manifest_glob,
+                label=f"{pol.changes_root.rstrip('/')}/{change_id}",
+                reason="设计阶段的对抗验证轮（grill 之后、停轮之前的证伪环节）必须有审阅证据",
+            )
             findings += evidence_mod.stage_manifest_findings_in_change(
                 contract.change_dir(root, pol, change_id),
                 stage=pol.building_stage,

@@ -123,12 +123,20 @@ def write_review(
 
     ``report_body=None``（默认）时按 stage 取默认正文：``grill`` 用**合格**决策记录
     （`check` 会校验它），其余用一句 PASS。``report_rel`` 可把报告放到别处。
+
+    默认报告名对齐**本仓真实约定**（`templates/grill.md` 的产物小节）：
+    ``grill-adversarial`` 用 ``reviews/grill-adversarial.md``，其余用 ``reviews/<stage>-review.md``。
     """
     if report_body is None:
         report_body = VALID_GRILL_REPORT if stage == "grill" else _DEFAULT_REPORT_BODY
     directory = change_dir(repo, change_id)
     (directory / "reviews").mkdir(parents=True, exist_ok=True)
-    report_rel = report_rel or f"reviews/{stage}-review.md"
+    if report_rel is None:
+        report_rel = (
+            "reviews/grill-adversarial.md"
+            if stage == "grill-adversarial"
+            else f"reviews/{stage}-review.md"
+        )
     report_file = directory / report_rel
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text(report_body, encoding="utf-8")
@@ -211,7 +219,7 @@ def commit_evidence(
     repo: str | Path,
     change_id: str,
     *,
-    stages: tuple[str, ...] = ("grill", "building"),
+    stages: tuple[str, ...] = ("grill", "grill-adversarial", "building"),
     events: tuple[str, ...] = (),
     message: str = "证据",
     **review_kwargs,

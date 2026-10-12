@@ -274,7 +274,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺 building 审阅证据** / 受保护写入无解释 / base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 
@@ -362,6 +362,7 @@ manifest（现有 stage：…）」）；`check` 侧会**点名**文件（`manif
 **触发**：本次 diff 触及 `policy.require_change_for` 下的路径（= **落了实现**）⇒ 被触及的 change
 **必须**有一份 **`stage=<building_stage>`**（默认 `building`，`policy.evidence.building_stage` 可覆写）的
 review manifest。缺失 ⇒ **红**并**点名现有 stage**。
+（§10 的对抗轮门禁**共用同一条触发**——两者是同一个时点的**两端证据**。）
 
 - **判据只有「证据存在」**（manifest + 其 `report_path` 解析得到的报告）。**不解析报告里的 verdict 文本**——
   `PASS` / `CHANGES_REQUESTED` **不参与任何判定**（与 asterwynd 先例同口径：它的「PASS 硬门」实质是
@@ -385,3 +386,40 @@ review manifest。缺失 ⇒ **红**并**点名现有 stage**。
 ⚠️ **诚实边界**：本门禁只保证「**有一份可绑定的 manifest 存在**」，**不保证**真跑了一次独立 run——
 兜底路径下 `reviewer_run_id ≠ author_run_id` **结构性恒真**（§3），一个 agent 即可自造 manifest 满足它。
 即「**证据存在性**机械、**审阅真实性**不机械」。
+
+## 10. `grill-adversarial` 门禁：设计对抗轮是硬门（change `grill-adversarial-gate`）
+
+**触发**：与 §9 **共用同一条判定**——本次 diff 触及 `policy.require_change_for` 下的路径（= **落了实现**）
+⇒ 被触及的 change **必须**有一份 **`stage=<grill_adversarial_stage>`**（默认 `grill-adversarial`，
+`policy.evidence.grill_adversarial_stage` 可覆写）的 review manifest。缺失 ⇒ **红**并**点名现有 stage**。
+
+它补的是设计环的**中间那一环**：grill 决策记录（§8）与实现后审阅（§9）此前都是硬门，而中间的
+**对抗验证轮**（grill 之后、停轮之前）只有自觉——本 change 之前 `grep -rn "grill-adversarial" src/`
+在 `src/` 里 **0 处功能性命中**。而这一环恰恰最贵：本仓最近 4 个 change 里，它抓到的**全是设计结论层面**的错
+（自相矛盾的决策、被实测证伪的推断、「修正只落一份 artifact」）。
+
+- **为什么触发面与 §9 相同**（而不是「每个 change 都要求」）：这样**一个触发概念**（`code_hits`）就够，
+  「提案期 / 纯文档 change 不受这道门约束」这一**可表达**的语义得以保留；若改成无条件，
+  那条语义就没了——「只动 change 目录」的场景**只能被空正文报告满足**（见下面 ①③）。
+- **判据只有「证据存在」**（manifest + 其 `report_path` 解析得到的报告）。**三条诚实边界**：
+  1. **verdict 不参与判定**：`PASS` / `CHANGES_REQUESTED` **都合格**。非 `PASS` 收尾本身是
+     `templates/grill.md` 的**规定行为**（轮数封顶 → 交人判断），机械判据区分不了「封顶后交人」与「跑一轮就收工」。
+  2. **只保证证据存在、且绑在最终 revision**——**不保证**对抗轮发生在**写码之前**
+     （manifest 之间**不做先后比较**；`templates/grill.md` 的写码前硬条件 #2 仍**无机械判据**）。
+  3. **报告正文不校验——空文件亦合格**（判据止于「文件存在」）。别把「证据存在即满足」读成「至少有一份**有内容**的报告」。
+- **多 change 同 PR / 纯文档不误伤 / 与 grill 共用同一实现**：同 §9（共用 `evidence.stage_manifest_findings_in_change`，
+  一处实现、两种深度——对抗轮只到「存在」为止）。
+- **`guard`（本地守卫）不受影响，这是一个**已知缺口**：`guard` 仍只查 grill 证据（§8），
+  写码前**不**要求对抗轮证据。理由是守卫只覆盖 `Write|Edit`、用 Bash 写文件即可绕过 ⇒ 补上也不消除缺口，
+  只会多一条可绕过、且与「停轮确认 → 才写码」时序纠缠的条件。真锚仍是 CI required check。
+- ⚠️ **别把 `grill_adversarial_stage` 配成与 `grill_stage`（或 `building_stage`）相同**：两处会指向同一份
+  manifest ⇒ 其中一条门禁**退化**（等于悄悄关掉它）。
+- ⚠️ **与 asterwynd 的差异（别照抄它的做法）**：asterwynd **有**这道门，但①挂在**归档点**
+  （`_check_archived_completion_gate`，只对 `archive/<dir>` 跑）；②判据更窄（`primary != "docs"` ∧
+  `DESIGN_TYPES` ∧ 有 spec delta）；③证据形态是**裸文件**（`reviews/grill-adversarial.md` 存在即可）。
+  本仓**无 archive 门禁、无 `ChangeType`、`specs/` 恒备**，且**裸报告会被孤儿规则判红**（§3）⇒
+  形态**必须**是 manifest；触发面也**必然**与它不同。
+
+⚠️ **对**接入方**是行为变更**：**改了代码**（触及 `require_change_for`）的 PR 现在**必须**有
+`stage=grill-adversarial` 的审阅证据（= 跑过设计阶段对抗验证），**否则红**。**没有过渡开关**
+（开关 = 静默绕过面）。

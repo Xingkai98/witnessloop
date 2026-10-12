@@ -48,8 +48,9 @@ def test_red_when_code_changed_without_building_evidence(gated: Path, cli):
 def test_green_when_building_evidence_present(gated: Path, cli):
     commit_content(gated, CHANGE, spec_writes=CODE_WRITE)
     write_review(gated, CHANGE, stage="grill")
+    write_review(gated, CHANGE, stage="grill-adversarial")  # 设计环的另一半（issue #16）
     write_review(gated, CHANGE, stage="building")
-    commit_all(gated, "内容 + 两份证据")
+    commit_all(gated, "内容 + 三份证据")
 
     _green(check(gated, cli))
 
@@ -109,6 +110,7 @@ def test_code_change_after_the_review_is_stale(gated: Path, cli):
     """
     commit_content(gated, CHANGE, spec_writes=CODE_WRITE)
     write_review(gated, CHANGE, stage="grill")
+    write_review(gated, CHANGE, stage="grill-adversarial")  # 设计环的另一半（issue #16）
     write_review(gated, CHANGE, stage="building")
     commit_all(gated, "内容 + 证据")
 
@@ -179,8 +181,9 @@ def test_building_stage_is_configurable(repo: Path, cli, read_json):
 
     commit_content(repo, CHANGE, spec_writes=CODE_WRITE)
     write_review(repo, CHANGE, stage="grill")
+    write_review(repo, CHANGE, stage="grill-adversarial")
     write_review(repo, CHANGE, stage="building")  # 只有默认 stage 的证据 ⇒ 应红
-    commit_all(repo, "内容 + grill + building 证据")
+    commit_all(repo, "内容 + grill + adversarial + building 证据")
 
     code, _, err = check(repo, cli)
     assert code == C.EXIT_FAIL
