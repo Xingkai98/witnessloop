@@ -61,7 +61,8 @@ def load_policy_override(path_str: str) -> dict:
         raise ValueError(f"--policy 文件不存在：{path}")
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
+        # `ValueError` 涵盖 `JSONDecodeError` 与 `UnicodeDecodeError`（本仓多数派 idiom）。
         raise ValueError(f"--policy 文件无法解析为 JSON：{exc}") from exc
     if not isinstance(doc, dict):
         raise ValueError("--policy 的 JSON 根必须是对象")
@@ -115,7 +116,13 @@ def conflicting_files(root: Path, desired: dict[str, str]) -> list[tuple[str, st
     for rel, want in desired.items():
         path = root / rel
         if path.exists():
-            current = path.read_text(encoding="utf-8")
+            try:
+                current = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                # 读不出就判不了「冲突与否」⇒ fail-closed：抛给调用方报一行诊断并退 1。
+                # **绝不**把 `None`/占位塞给 `render_diff`（那会产出 `AttributeError … splitlines`）。
+                why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+                raise ValueError(f"{rel} {why}：{exc}") from exc
             if current != want:
                 out.append((rel, current, want))
     return out
@@ -129,7 +136,7 @@ def ledger_gate_ref(manifest_path: Path) -> str | None:
     """
     try:
         doc = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return None
     return doc.get("gate_ref") if isinstance(doc, dict) else None
 
@@ -160,7 +167,11 @@ def run(args: argparse.Namespace) -> int:
         return _already_initialized(root, desired, manifest_path)
 
     # 只增不改：目标文件已存在且内容不同 → 冲突，报 diff 并拒绝。
-    conflicts = conflicting_files(root, desired)
+    try:
+        conflicts = conflicting_files(root, desired)
+    except ValueError as exc:
+        print(f"init：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
     if conflicts:
         print("init：检测到冲突（只增不改，拒绝覆盖已有文件）：", file=sys.stderr)
         for rel, current, want in conflicts:
@@ -199,7 +210,7 @@ def _already_initialized(
     """幂等：已接入且台账未漂移 → 无改动退出 0；漂移 → 报 diff 退出 1。"""
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (OSError, ValueError) as exc:
         print(f"init：{C.INIT_MANIFEST_PATH} 无法解析：{exc}", file=sys.stderr)
         return C.EXIT_FAIL
 
@@ -213,7 +224,14 @@ def _already_initialized(
             drift.append((rel, "", desired.get(rel, "") or ""))
             continue
         if entry.get("sha256") and sha256_bytes(path.read_bytes()) != entry["sha256"]:
-            drift.append((rel, path.read_text(encoding="utf-8"), desired.get(rel, "")))
+            try:
+                current = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                # 内容确实变了（sha 不符），但读不出来 ⇒ 报成因、不硬编 diff。
+                why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+                drift.append((rel, f"（{why}）", desired.get(rel, "")))
+            else:
+                drift.append((rel, current, desired.get(rel, "")))
 
     if drift:
         print(
@@ -234,7 +252,11 @@ def _already_initialized(
     # 是不是另一份」（如 ``--policy`` 换了内容、``--gate-ref`` 换了）。
     # 早先只看台账 hash，于是「已接入后再 init --policy <不同>」会被判幂等并 exit 0
     # ——用户的 policy 被悄悄忽略（change dogfood-bootstrap 对抗验证 CRQ-B / R2）。
-    conflicts = conflicting_files(root, desired)
+    try:
+        conflicts = conflicting_files(root, desired)
+    except ValueError as exc:
+        print(f"init：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
     if conflicts:
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"

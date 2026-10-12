@@ -28,7 +28,7 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (OSError, ValueError) as exc:
         print(f"uninit：{C.INIT_MANIFEST_PATH} 无法解析：{exc}", file=sys.stderr)
         return C.EXIT_FAIL
 
@@ -72,12 +72,14 @@ def run(args: argparse.Namespace) -> int:
         print("uninit：以下文件被改动过，拒绝删除：", file=sys.stderr)
         for rel, path in conflicts:
             if rel in desired:
-                print(
-                    initcmd.render_diff(
-                        rel, path.read_text(encoding="utf-8"), desired[rel]
-                    ),
-                    file=sys.stderr,
-                )
+                try:
+                    current = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    # 读不出就报成因（与下面那条 `!` 同一形状），不硬编 diff。
+                    why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+                    print(f"  ! {rel} {why}", file=sys.stderr)
+                else:
+                    print(initcmd.render_diff(rel, current, desired[rel]), file=sys.stderr)
             else:
                 print(f"  ! {rel} 内容与 init 台账的 sha256 不符", file=sys.stderr)
         print(

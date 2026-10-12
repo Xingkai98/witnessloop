@@ -218,6 +218,15 @@ witnessloop manifest build \
 连不变集都能被绕开。`reason` / `approved_by` 去空白后必须非空。
 事件里的 `change_id` 是 informational，check 不消费它。
 
+**读不出来怎么办**（change `events-readpoint-fix` / issue #12）：文件**解码失败或读不到**时，
+`check` 给**一行点名文件**的 finding（`事件文件无法解析：<path> 无法解码|无法读取：…`）——
+**不再**表现为工具故障（`witnessloop：内部错误（…）`）。退出码语义不变（仍非 0）。
+⚠️ **代价（刻意接受）**：一个坏 events 文件会让**受保护写入那一整块**不再被评估
+（`load_all` 是那块的第一句）⇒ 你只会看到这一条 finding。**它仍然是红，不是绿**，所以没有绕过面——
+只是**归因不完整**：先修 events 再重跑，才知道还剩几条。
+⚠️ **覆盖范围是 active change 目录**：`archive/**` 下的 events 文件**既不会被读、也不提供豁免**
+（既有行为）。
+
 ## 5. 受保护写入的两档规则
 
 | 路径来源 | 新增 (A) | 修改 (M) / 删除 (D) |
@@ -338,9 +347,12 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 | `.witnessloop/policy.json` | **放行** | 连受管控范围都读不出 ⇒ **不执行**（与既有「policy 非法 ⇒ 不拦」同归） |
 | `review manifest` | **拦 / 红** | 与「manifest **缺失** / **JSON 语法坏**」**逐字同归**（字节坏不得一半拦一半放） |
 | grill 报告正文 | **拦 / 红** | 统一口径「**读不出 ⇒ 不可核验 ⇒ 不完备**」 |
+| `workflow-events.jsonl`（**active** change 目录） | **红（一行点名文件）** | 归一到 `EventError`（与「不是合法 JSON」同出路）；⚠️ 该读点**与 diff 无关**，坏文件会让**每次** `check` 都短路（见 §4） |
 
-⚠️ **对**接入方**是行为变更**：损坏的证据文件此前会**崩溃**（`guard` ⇒ 退 1 被当 block 误拦；`check` ⇒ traceback），
-现在变成**确定性结论**（`guard` 拦 / `check` 干净的红）。`check` **退出码语义不变**（仍非 0 = 未通过）。
+⚠️ **对**接入方**是行为变更**：损坏的证据文件此前会**崩**（`guard` ⇒ 退 1 被当 block **误拦**；
+`check` ⇒ 一行 `witnessloop：内部错误（…）`——⚠️ **不是 traceback**：进程入口 `entry.py` 会兜住它，
+这是本句此前的错误说法，已按实测订正）。现在两类都变成**确定性结论**（`guard` 拦 / `check` 干净的红）。
+`check` **退出码语义不变**（仍非 0 = 未通过）。
 ⚠️ **可诊断性小缺口**：`guard` 侧对「**坏** manifest」与「**无** manifest」文案相同（都是「无 stage=grill 的
 manifest（现有 stage：…）」）；`check` 侧会**点名**文件（`manifest 无法解析：<file>`）。
 
