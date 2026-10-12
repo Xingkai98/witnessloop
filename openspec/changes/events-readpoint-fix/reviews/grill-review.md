@@ -74,7 +74,7 @@
 ## Open Questions
 
 - **Q1〔范围〕**：只修 `events.py`，还是一并修同族读点？若一并修，修到哪为止？
-  **具体场景**：`.witnessloop/policy.json` 被 `chmod 000` 后再跑 `witnessloop init` ⇒ 今天是一行 `witnessloop：内部错误（PermissionError: …）`（退 1，方向本就正确）；`init --policy <含 0xff 的 seed>` ⇒ 同样是「内部错误」（`initcmd.py:64` 的 `except` 漏 `UnicodeDecodeError`，实测路径见 `:62-65`）。
+  **具体场景**：`.witnessloop/policy.json` 被 `chmod 000` 后再跑 `witnessloop init` ⇒ 今天是一行 `witnessloop：内部错误（PermissionError: …）`（退 1，方向本就正确）；~~`init --policy <含 0xff 的 seed>` ⇒ 同样是「内部错误」~~ **【对抗验证 R1 回写 · 该观测是假的】**实测输出是 `init：'utf-8' codec can't decode byte 0xff …`（退 1），**不是**「内部错误」——漏捕的 `UnicodeDecodeError` 是 `ValueError` 子类，被 `initcmd.py:148` 的 `except ValueError` 接住了 ⇒ **`initcmd.py:63` 不是本 issue 的缺陷形态**（降级为「文案改善（可选）」）。⇒ 我（grill）在 Q1 里说「downgrade 不成立」的那条**依据作废**；**「一并修」的结论不变**（理由改用「改动成本 vs 漂移面」）。来源: grill-adversarial-reviewer-events-readpoint-fix-2026-10-12。
   **注意**：design Q1 的理由「它们的严重度**低一档**（崩 = 退 1 = 失败，方向本就正确）」**不成立**——events 那条**同样**是「退 1 = 失败、方向本就正确」（`proposal.md:22` 自己就这么写的）。四处的**实际**差别只有「谁在跟前」（`check` = CI 里给人看 vs `init`/`uninit` = 本地一次性命令），不是严重度档位。真正该用的判据是「**改动成本 vs 漂移面**」。
   - ➡️ **推荐答案**：**一并修**，范围钉成「`read_text` 文本读点、落在 `check`/`init`/`uninit` 主路径」：`events.py:51`（新 try）+ `initcmd.py:118/216`、`uninitcmd.py:77`（新 try）+ `initcmd.py:63/131/201`、`uninitcmd.py:30`（**补 except 元组，统一写成 `except (OSError, ValueError)`**，沿用 `policy.py:134` 的既有 idiom）——并把 `tasks.md` 的 B1 里 `:201` 从「无 try」改成「补元组」。`read_bytes` 两处（`initcmd.py:215`、`uninitcmd.py:59`）与 `sha256_tree`（`contract.py:373/386`）写进 `design.md` 的**非目标**并注明理由（不同族：无解码语义；且 `OSError` 的 message 自带文件名 ⇒ 今天的「内部错误」已可定位），免得下次再问「为什么这里崩那里不崩」。
 - **Q2〔短路 / R4〕**：坏 events 文件让受保护写入**整块**不再被评估——接受 + 写明，还是逐文件隔离？

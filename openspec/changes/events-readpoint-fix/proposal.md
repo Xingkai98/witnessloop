@@ -34,6 +34,9 @@ EXIT=1        ← 没有 Traceback
 另：这个读点是**全局的、与 diff 无关的**（`checkcmd.py:100` 无条件调 `_protected_writes`；**空 diff 也走这条路**）
 ⇒ 坏 events 文件会让该仓**每一次** `check` 都到不了 `_report`（**连其它 finding 一条都不打印**）。
 
+**（精确边界）**「没有任何产品路径会吐 traceback」对**非交互**调用成立（对抗验证穷举了坏文件的各种成因 × 各 verb/flag 组合，
+一次 traceback 都没找到）；**例外是 `KeyboardInterrupt`**——`entry.py` 只捕 `Exception` ⇒ Ctrl-C 会穿出去，真 traceback、退 130。
+
 **顺带实测发现同类更广**（立项时逐点核）：
 
 > **族边界**＝「`read_text` **文本**读点、落在 `check`/`init`/`uninit` 主路径」（原稿没定义，grill 要求补——见 design §2.5）。
@@ -42,11 +45,13 @@ EXIT=1        ← 没有 Traceback
 |---|---|---|
 | `events.py:51` | **无 try** | `check` 报「内部错误」（本 issue 主体） |
 | `initcmd.py:118`、`:216`、`uninitcmd.py:77` | **无 try** | `init`/`uninit` 报「内部错误」 |
-| `initcmd.py:63`（`--policy`）、`:131`、**`:201`** | 有 try，但 `except json.JSONDecodeError`，**同时漏 `OSError` 与 `UnicodeDecodeError`** | 同上 |
-| `uninitcmd.py:30` | `except json.JSONDecodeError`，**连 `OSError` 都漏** | 同上 |
+| `initcmd.py:131`、**`:201`**、`uninitcmd.py:30` | 有 try，但 `except json.JSONDecodeError` ⇒ **只漏 `UnicodeDecodeError`** | 同上 |
+| `initcmd.py:63`（`--policy`） | `:64` 是 `except (OSError, json.JSONDecodeError)` ⇒ **`OSError` 已捕**；漏的 `UnicodeDecodeError` 又被下游 `:148` 的 `except ValueError` 接住 | 测**不是**本 issue 的缺陷形态（今天已是 `init：<decode error>`、退 1）⇒ **降级为「文案改善（可选）」** |
 | ⚠️ **族外**：`initcmd.py:215`、`uninitcmd.py:59`（`read_bytes`）、`contract.py:373/386`（`sha256_tree`） | 无 try | **不同族**（无解码语义；`OSError` 的 message 自带文件名）。⚠️ 但 `contract.py:373/386` 在 **`check` 主路径**上、**早于** 正文守卫 ⇒「报告存在但不可读」仍报「内部错误」（**已知未覆盖**） |
 
-⇒ ⚠️ **原稿把 `initcmd.py:201` 归入「无 try」是分类错**（它 `:200-204` 有 try）——grill 实测纠正。
+⇒ ⚠️ **两轮审阅纠正了我三处分类错**：① `initcmd.py:201` 是「有 try」不是「无 try」（grill 纠）；
+② `:63`/`:131` **不是**「同时漏 `OSError` 与 `UnicodeDecodeError`」——`OSError` **已捕**，**只漏 `UnicodeDecodeError`**（对抗验证纠；
+grill 只纠了 `:201`，漏了这两处）；③ `:63` 连**缺陷形态都不是**（下游 `:148` 的 `except ValueError` 接住了）⇒ 降级为可选。
 
 ## 目标
 

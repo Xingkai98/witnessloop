@@ -23,7 +23,9 @@ EXIT=1                      ← **没有 Traceback**
 
 原因：change `guard-crash-exit` 加的**进程入口兜底**（`entry.py:35-41`）把它接住了 ⇒ 一行诊断、退 1
 （`pyproject.toml:12` / `__main__.py` / 连 `tests/conftest.py` 的 `cli` fixture 都走 `entry.main`）
-⇒ **没有任何产品路径会吐 traceback**。
+⇒ **没有任何「非交互」调用路径会吐 traceback**（对抗验证穷举了坏文件的各种成因 × 各 verb/flag 组合，一次都没找到）。
+⚠️ **例外**：`KeyboardInterrupt`（Ctrl-C）会**穿过** `entry.main`（它只捕 `Exception`）⇒ 真 traceback、退 130。
+本 change 不碰它，但**绝对句必须收成「非交互」**，免得日后被这句话反噬。
 
 ⇒ **真正的缺陷不是「有 traceback」**，而是这两条：
 
@@ -79,9 +81,11 @@ EXIT=1                      ← **没有 Traceback**
 
 - 全树 `read_text` 实测 **13 处**、出路**实测 6 种**（`EventError` / `ValueError` / `PolicyError` / 静默 `None` /
   `Finding` / `print+EXIT_FAIL`）⇒ 一个「统一 helper」要么带错误类型参数（省不了什么），要么把语义拍平。
-- ⚠️ **grill 补了更省的切法**：本仓**已有成文 idiom** —— `except (OSError, ValueError)`
-  （`policy.py:134`、`contract.py:177/232`、`evidence.py:166`；`policy.py:134-136` 还注释了
-  「`ValueError` 涵盖 `JSONDecodeError` **与** `UnicodeDecodeError`」）。
+- ⚠️ **grill 补了更省的切法，对抗验证又收紧了措辞**：本仓**三种 `except` 并存**（**不是**「已有唯一 idiom」）——
+  `(OSError, ValueError)` **5 处**（`policy.py:134`、`contract.py:177/232`、`evidence.py:166`、`paths.py:69`〔换序写法〕）、
+  `(OSError, json.JSONDecodeError)` **2 处**（`initcmd.py:64/132`）、`(OSError, UnicodeDecodeError)` **1 处**（`evidence.py:225`）。
+  选 `(OSError, ValueError)` 的理由是「**多数派 + 唯一带注释的那个**」（`policy.py:135-136` 明写
+  「`ValueError` 涵盖 `JSONDecodeError` **与** `UnicodeDecodeError`」）——**不是**「仓库里只有这一种写法」。
   ⇒ 若 Q1 一并修，**沿用这个 idiom**（一处补一个词），**不要**写成 `except (OSError, UnicodeDecodeError, json.JSONDecodeError)`
   ——那与既有 4 处**分叉**，正是 D3 想避免的漂移面。
 
@@ -100,6 +104,8 @@ EXIT=1                      ← **没有 Traceback**
   - `read_bytes` 两处：`initcmd.py:215`、`uninitcmd.py:59`（`sha256_bytes(path.read_bytes())`）——
     **不同族**：无解码语义；且 `OSError` 的 message **自带文件名** ⇒ 今天的「内部错误」**已可定位**。
   - 间接：`hashing.py:19/31/35`（`sha256_file`/`sha256_tree`）。
+  - 「已覆盖（无需动）」清单纯供参考：`policy.py:133`、`contract.py:176/231`、`evidence.py:165/224`、**`paths.py:69`**（共 5 处）。
+    ⚠️ **`read_bytes` 合计 4 处**（直接 2：`initcmd.py:215`/`uninitcmd.py:59`；间接 2：`hashing.py:19/35`）。
     ⚠️ 但要知道 **`contract.py:373/386`**（`sha256_tree`）在 **`check` 主路径**上、且**早于**
     `evidence.py:224` 的正文守卫 ⇒ **「报告文件存在但不可读」仍会退成一行「内部错误」**——
     **已知未覆盖**（R-G5），写进非目标。
@@ -107,20 +113,40 @@ EXIT=1                      ← **没有 Traceback**
 ## 3. 接线点（实现清单）
 
 - `src/witnessloop/events.py`：`load_events_file` 的读点包 try ⇒ 抛 `EventError`（D1/D4）。
-- **（依 Q1）** `initcmd.py:118/216`、`uninitcmd.py:77`：**新包 try**；
+- **（依 Q1）** `uninitcmd.py:77`、`initcmd.py:216`：**新包 try**；
+  ⚠️ **`initcmd.py:118` 必须写明读失败时调用方怎么办**——「新包 try」**不可实现**：它的返回值喂给
+  `render_diff`（内部 `current.splitlines()`），只把异常吞掉会产出**本 change 要消灭的形态**
+  （对抗验证按字面「读不出给 `None`」试过 ⇒ `witnessloop：内部错误（AttributeError: 'NoneType' … splitlines'）`）。
+  **定案**：读失败 ⇒ **报一行点名文件的诊断（`无法解码`/`无法读取`）并退 1，不进 diff**；
+  **不得**让 `None`（或异常）流进 `render_diff`。**若实现时觉得这超出本 change 的尺度，可把 `:118` 移进「非目标」并写明理由**（二选一，但**不能**留着不写）。
   `initcmd.py:63/131/201`、`uninitcmd.py:30`：**补 except 元组**（用 D3 的 idiom）。
   ⚠️ **`initcmd.py:201` 是「补元组」不是「无 try」**——原稿与 tasks B1 分类错（它 `:200-204` 有 try，只是
   `except json.JSONDecodeError`，**同时**漏 `OSError` 与 `UnicodeDecodeError`）。grill 实测纠正。
 - `tests/`：`events.py` 单测 + `check` 端到端（**可判定形态见 §5**）。
 - 文档：**只改 `docs/gate.md`**（§4 + §8）——见 R-G2。
 
+## 3.5 非目标（**明确登记，免得下次再问「为什么这里崩那里不崩」**）
+
+- **`read_bytes` 读点**（`initcmd.py:215`、`uninitcmd.py:59`，间接 `hashing.py:19/35`）：**不同族**——无解码语义；
+  且 `OSError` 的 message **自带文件名** ⇒ 今天的「内部错误」**已可定位**。
+- **`sha256_tree` 路径**（`contract.py:373/386`）：它在 **`check` 主路径**上、且**早于** `evidence.py:224` 的正文守卫
+  ⇒ 「报告文件**存在但不可读**」仍退成一行「内部错误」（对抗验证端到端复现过）。**已知未覆盖**。
+- ⚠️ **「半成品 `init`」（对抗验证新发现 · 中）**：`.witnessloop/init-manifest.json` 是**目录**时，`init` 会
+  **先写完** `.witnessloop/policy.json` 与 `.github/workflows/witnessloop.yml`，**再**在 `initcmd.py:181` 的写台账上炸
+  ⇒ 一行「内部错误」、退 1，**仓里留下半套接入物（且无台账可回滚）**。这是**写点**（不是读点）⇒ 在族边界**之外**；
+  它比「诊断难看」严重（**状态被改了一半**）。**登记为非目标**——但别让下一个 issue 又从零发现它。
+- **`KeyboardInterrupt` 的 traceback**（见 §1.1 的例外）：不在「坏文件」这一族。
+
 ## 4. 风险
 
 1. **R1（高·文档失真 · R-G1）**：若照原稿措辞把「此前**崩溃**（`check` ⇒ **traceback**）」写进 `README`/`docs/gate.md`，
    就是把**假历史**写进接入方文档。⚠️ **`docs/gate.md §8` 里已经有一句同样错的**（「`check` ⇒ traceback」，
    来自 change `guard-crash-exit`）——本 change **一并订正**为实测形态（一行「内部错误」、退 1、不点名文件）。
-2. **R2（高·自伤 · R-G2）**：PR 里出现**任何**别的 `openspec/changes/<other>/**` 编辑 ⇒ 那个 change 被算进
-   `changed_change_ids`，而本次 diff 落了 `src/**` ⇒ 它也被要求 `stage=building` manifest ⇒ **必红**（grill 实测）。
+2. **R2（高·自伤 · R-G2）**：PR 里出现**任何**别的 `openspec/changes/<other>/**` 编辑 ⇒ **必红**。
+   ⚠️ **机制由对抗验证纠正**：在**本仓真仓**上，红来自 **`_check_git_span` 的 stale 判定**
+   （改了别的 change 目录里的**非证据**文件 ⇒ 那 3 条 finding 是「`head_sha … 不是本次被检 revision 的祖先」），
+   **不是** building 门禁——因为 `guard-crash-exit` **已经有** building manifest。
+   （在**没** building 证据的仓上，才会同时吃 building 那条。两种都会红。）⇒ **行动指引不变**：只改 `docs/gate.md`。
    ⚠️ 原稿/tasks 指向的「非目标那一行」恰住在 `openspec/changes/guard-crash-exit/design.md:27`（**另一个 change 的文档**）
    ⇒ **收口时只改 `docs/gate.md`**，绝不编辑别的 change 目录。
 3. **R3（中·验收断言不可判定 · Q3）**：原稿的`「不抛异常 / 非 0 / 不含 Traceback」**今天就已经全绿**（grill 实测）
@@ -131,6 +157,8 @@ EXIT=1                      ← **没有 Traceback**
 6. **R6（中·假绿测试 · R-G4）**：用 `chmod 000` 造「读不到」，在 **root** 下 `open()` 会**成功** ⇒ 用例**假绿**。
    ⇒ 主用例改用**目录冒充 events 文件**（实测同样触发 `IsADirectoryError`，与 uid 无关）。
 7. **R7（低·族边界漂移 · R-G5）**：`sha256_tree` 那条（§2.5）——已写进非目标。
+9. **R9（中·写点 · 见 §3.5 第 3 条）**：`.witnessloop/init-manifest.json` 是目录 ⇒ `init` **留下半套接入物**再崩。
+   已登记为非目标（那超出「读点归一」的族）。
 8. **R8（低·诊断面形态 · Q4）**：events 那条 finding 的 `path` 是 `"."`、message 里是**绝对路径**，
    与 `check` 其余 finding 的**仓根相对**口径不一致（既有行为，非本 change 引入）。
    **本 change 不改**（保持与既有 JSON 坏那条逐字一致 ⇒ 不动 `checkcmd`，符合 D2），在此**记一笔接受**。

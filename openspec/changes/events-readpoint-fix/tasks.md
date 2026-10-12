@@ -17,13 +17,20 @@
 
 ## B. 同族剩余读点（**依 Q1 裁定**）
 
-- [ ] B1 实现（若 Q1 一并修）：**补 except 元组**（用 D3 的既有 idiom `except (OSError, ValueError)`——
-      **不要**逐点罗列异常名，那与既有 4 处分叉）到 `initcmd.py:63/131/201`、`uninitcmd.py:30`
-      （⚠️ `:201` 是**补元组**不是「无 try」——grill 实测纠正原稿）
-- [ ] B2 实现（若 Q1 一并修）：**新包 try** 在 `initcmd.py:118/216`、`uninitcmd.py:77`
-- [ ] B3 单测（若 B1/B2 做了）：`init` / `uninit` 各自「读不出 ⇒ 干净报错（**不含 `witnessloop：内部错误`**）+ 非 0」
-- [ ] B4 非目标登记（无论 Q1 怎么裁）：`read_bytes` 两处（`initcmd.py:215`/`uninitcmd.py:59`）与
-      `sha256_tree`（`contract.py:373/386`）写进 design 的**非目标**并注明理由（**不同族**）
+- [ ] B1 实现（若 Q1 一并修）：**补 except 元组**（用 `except (OSError, ValueError)`——本仓**多数派 + 唯一带注释**的那个；
+      **不要**逐点罗列异常名）到 `initcmd.py:131/201`、`uninitcmd.py:30`
+      （⚠️ 三处都是**补元组**不是「无 try」，且**只漏 `UnicodeDecodeError`**——`OSError` **已捕**；
+      `initcmd.py:63` **降级为可选**：它今天已是 `init：<decode error>`、退 1，不是本 issue 的缺陷形态）
+- [ ] B2 实现（若 Q1 一并修）：**新包 try** 在 `initcmd.py:216`、`uninitcmd.py:77`；
+      ⚠️ **`initcmd.py:118` 按 design §3 的定案写**（读失败 ⇒ 一行点名文件的诊断 + 退 1，**不进 diff**；
+      **不得**让 `None` 流进 `render_diff`——否则产出 `内部错误（AttributeError: … splitlines）`，正是本 change 要消灭的形态），
+      **或**把它移进非目标并写明理由（二选一，不许留着不写）
+- [ ] B3 单测（若 B1/B2 做了）：`init` / `uninit` 各自「读不出 ⇒ 干净报错（**不含 `witnessloop：内部错误`**）+ 非 0」。
+      ⚠️ **配方必须用「非法 UTF-8」造，不能用「目录冒充」**（对抗验证实测）：这两条路径上「目录」触发的**第一个**
+      失败点是**族外**的 `read_bytes`（`initcmd.py:215`/`uninitcmd.py:59`）⇒ 照目录写，用例会**在声明范围内永远红**，
+      实现者会以为补丁错了。（另：`uninit` + 台账**自身**是目录时 `:24` 的 `is_file()` 会直接放行 ⇒ EXIT=0，根本到不了读点。）
+- [ ] B4 ~~非目标登记~~（**已做**）：`read_bytes`（4 处）、`sha256_tree`、以及「半成品 init」（写点）
+      已写进 design 新增的 **§3.5 非目标**（design 此前**没有** `## 非目标` 段——对抗验证指出 tasks 的指向曾为空）
 
 ## C. 回归
 

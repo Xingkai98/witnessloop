@@ -1,0 +1,360 @@
+# Grill 对抗验证: events-readpoint-fix
+
+> **结论一句话**：**支点站得住**——我独立复核了 grill 的中心结论（今天 `check` **不吐 traceback**，
+> 是 `entry.py` 兜住的一行 `witnessloop：内部错误（…）`、退 1），**grill 没翻错，design 不用再翻第三次**。
+> 但 grill **自己**留下两处错，且其中一处是它**声称「实测」而实际为假**的观测；
+> 另有 3 处「实现细节未定 / 测试配方会让实现卡住」的洞。故 **CHANGES_REQUESTED**（改动很小、都是外科手术）。
+
+## Reviewer
+
+- run id: `grill-adversarial-reviewer-events-readpoint-fix-2026-10-12`
+  （`WITNESSLOOP_RUN_ID` 在本环境**未设**，故按 `templates/grill.md`「怎么取 run id」第 2 条走**确定性兜底**
+  形态 `<stage>-<role>-<anchor>`；与 `grill-reviewer-events-readpoint-fix-2026-10-12` **结构上必然不同**。）
+- 时间: **2026-10-12T08:47:12Z**
+- 零记忆审阅者：不读作者/grill 的会话历史，只读 change 目录文本 + 只读仓库内容。
+- 基线实测：`uv run pytest -q` ⇒ **413 passed**（与本 worktree 声明一致）。
+- **所有实测在 `/tmp` 下的真 git 仓上跑**；本 worktree 只在「验证补丁是否真能转绿」时**临时打过补丁**，
+  跑完已 `git checkout --` **全量还原**、`git status --porcelain` **为空**、**未 commit**（见末节第 12 条）。
+- 一律用 `uv run witnessloop …`（PATH 上的裸 `witnessloop` 是另一份 uv-tool 安装）。
+
+## Verdict
+
+**CHANGES_REQUESTED**
+
+**不阻塞的部分先说清楚**（免得读成「design 要重做」）：
+
+- **中心前提（支点）成立**：grill 的翻转是对的，**design 不需要再翻第三次**。
+- **D1 / D2 / D3 / D4 逐条复核后全部站得住**，且 D2「出路已现成」有更强证据（我用**未打补丁**的代码跑出了目标形态）。
+- **新 spec 断言真的可判定**：未修 = 红、修后 = 绿，我两端都实测了。
+- **读点族的边界（§2.5）实质完整**——但**分类**有两处错（见下）。
+
+**阻塞的只有「会让实现卡住 / 让用户拿到假证据」的那几条**：`grill-review.md` 的 Q1 里有一条**自称实测、
+实为假**的观测（会被直接端给用户拍板）；`proposal.md` 的读点表把两个**已经捕 `OSError`** 的点写成「漏 `OSError`」；
+`tasks.md` 的 B3 若照本 change 自己推荐的「目录冒充」配方写用例**在声明的范围内永远红**。
+
+## 逐条对抗结论
+
+### 1. 支点：「今天 `check` 是 traceback 还是一行『内部错误』？」→ **grill 对，站得住（我独立复核）**
+
+真 git 仓（`init` 接入 + `openspec/changes/demo/` + 含 `0xff` 的 `workflow-events.jsonl`）：
+
+```
+$ uv run witnessloop check --root /tmp/adv/repo --base base
+（stdout 为空）
+stderr: witnessloop：内部错误（UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 170: invalid start byte）
+EXIT=1        grep -c Traceback ⇒ 0
+```
+
+⇒ **没有 Traceback**。design §1.1 的改写（`entry.py:35-41` 兜底 ⇒ 一行、退 1、不点名文件）**属实**。
+两条附带结论也复核通过：
+
+- **① 空 diff 同样走这条路**：`--base base --head base`（0 变更文件）⇒ **同样的那一行、EXIT=1**，
+  且 stderr 里**连 `check：基线 …` 都没有** ⇒ `_report`（`checkcmd.py:102`）**一次都没跑到**。design §1.2 属实。
+- **② `archive/` 下的坏文件不参与**：把坏 events 文件只放在 `openspec/changes/archive/old/` ⇒ `check` **通过（EXIT=0）**，
+  实测 `root.glob("openspec/changes/*/workflow-events.jsonl")` **hits = []**。design §1.3 / R5 属实。
+- **③ 「没有任何产品路径会吐 traceback」——我没能证伪，但有一条边界**：
+  坏 events / 坏 policy / 坏 manifest / 坏报告 / 目录冒充 / mode-000 / `init` / `uninit` / 各 verb 组合，
+  我一律只拿到**一行**「内部错误」或**一行**干净诊断，**没有一次 traceback**。
+  连「stderr/stdout 编码不是 UTF-8」这条也没吐 traceback（`PYTHONIOENCODING=ascii` 与 `PYTHONUTF8=0 LC_ALL=C` 下
+  仍是**一行** `witnessloop：内部错误（UnicodeEncodeError: …）`、退 1）。
+  **唯一例外**：`cli_main` 里冒出的 **`KeyboardInterrupt`**（Ctrl-C）会**穿过** `entry.main`
+  （它只捕 `Exception`）⇒ 真 traceback、退 130。见「新发现的风险」第 2 条——**这不推翻支点**（支点讲的是
+  「坏文件 ⇒ 崩溃形态」，而 Ctrl-C 不是坏文件），但「没有任何产品路径」这句话作为**绝对句**是过宽的。
+
+### 2. 「真正的缺陷 = 报成工具故障 + 解码分支不点名文件」→ **站得住**
+
+实测对照（同一份坏 events 文件、只换成因）：
+
+| 触发方式 | 今天 stderr 里有没有路径 |
+|---|---|
+| 非法 UTF-8（`0xff`） | **没有**（`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff …`） |
+| `chmod 000`（uid 10001） | **有**（`PermissionError: [Errno 13] Permission denied: '<abs>'`） |
+| 目录冒充 | **有**（`IsADirectoryError: [Errno 21] Is a directory: '<abs>'`） |
+
+⇒ 「解码分支不点名文件」这条**实测成立**（不是修辞）。「把仓的问题报成工具故障」也成立
+（`check` 退 1 = 未通过 ⇒ **fail-closed 方向本就正确**，确实只是可用性/可诊断性缺陷）。design §1.1 的两条**都对**。
+
+### 3. D2「`check` 侧不改」→ **站得住，且比我预期的更强**
+
+**未打补丁**、只用**合法 UTF-8 + 坏 JSON** 的 events 文件：
+
+```
+7. .：事件文件无法解析：/tmp/adv/rjson/openspec/changes/demo/workflow-events.jsonl:2 不是合法 JSON：Expecting value: line 1 column 1 (char 0)
+```
+
+⇒ 目标形态**今天就已经现成**，`checkcmd.py:167` 一行都不用动。design §1.4 属实。
+
+### 4. D1／D3／D4 → **站得住**（D3 的两条措辞要收一收，见「必须修改」）
+
+- **D1**：`EventError` 全树**只有 3 个生产位置**（`events.py:24` 定义、`:58`/`:60` 抛、`checkcmd.py:167` 捕），
+  `load_events_file` 唯一调用点是 `events.py:76`，`guardcmd.py` **确实**不 import `events` ⇒ 「单点修好即全覆盖」属实。
+  「静默跳过 ⇒ 假红」这条我**用机制验了**：把解释事件整个拿掉（等价于 `known` 变小），
+  `check` 报 `openspec/specs/foo/spec.md：受保护路径被写入，但没有结构化解释事件`（退 1）
+  ⇒ 确实是**假红**（fail-closed 的错原因），不是放行。D1 的改写方向对。
+- **D4**：`evidence.py:225-228` 的两分支先例属实，措辞对是 `无法解码` / `无法读取`。
+  形态可区分也成立：既有条是**行级**（`events.py:58/60` 的 `f"{path}:{lineno} …"`），新增条是**文件级**。
+- **D3**：`read_text` 全树**实测 13 处**（与我 grep 完全一致）。
+  ⚠️ 但「本仓**已有成文 idiom** `except (OSError, ValueError)`」这句**把仓库说齐整了**——实际是**三种并存**：
+  `(OSError, ValueError)` **4 处**（`policy.py:134`、`contract.py:177/232`、`evidence.py:166`，**另有 `paths.py:69` 是同一 idiom 的换序写法** `(ValueError, OSError)`）、
+  `(OSError, json.JSONDecodeError)` **2 处**（`initcmd.py:64/132`）、`(OSError, UnicodeDecodeError)` **1 处**（`evidence.py:225`）。
+  **推荐本身仍然对**（`policy.py:135-136` 确实注释了「`ValueError` 涵盖 `JSONDecodeError` **与** `UnicodeDecodeError`」，
+  选它是选**多数派 + 有注释的那个**），只是理由要说成「选多数派」而不是「选唯一既有写法」。
+
+### 5. 读点清单：**族边界实质完整，但分类有两处错**（grill 只纠出 `:201`，**漏了 `:63`/`:131`**）
+
+全树 grep（`read_text` 13 + `read_bytes` 4）逐点核完：
+
+| 读点 | 归到哪 | 实测/读码结论 |
+|---|---|---|
+| `events.py:51` | 无 try | ✅ 分类对（本 issue 本体） |
+| `initcmd.py:118` | 无 try | ✅ 分类对（**但配方不完整，见「必须修改」第 4 条**） |
+| `initcmd.py:216` | 无 try | ✅ 分类对 |
+| `uninitcmd.py:77` | 无 try | ✅ 分类对 |
+| `initcmd.py:201` | 有 try、`except json.JSONDecodeError` | ✅ 分类对（grill 纠对了） |
+| `uninitcmd.py:30` | 有 try、`except json.JSONDecodeError` | ✅ 分类对 |
+| **`initcmd.py:63`** | 表里写「有 try，但 `except json.JSONDecodeError`，**同时漏 `OSError` 与 `UnicodeDecodeError`**」 | ❌ **错**：`:64` 是 `except (OSError, json.JSONDecodeError) as exc` ⇒ **`OSError` 已捕**，只漏 `UnicodeDecodeError` |
+| **`initcmd.py:131`** | 同上（表里同一行组） | ❌ **错**：`:132` 是 `except (OSError, json.JSONDecodeError)` ⇒ **`OSError` 已捕**，只漏 `UnicodeDecodeError` |
+| `policy.py:133` / `contract.py:176` / `contract.py:231` / `evidence.py:165` / `evidence.py:224` | 已覆盖 | ✅ 复核通过 |
+| `read_bytes` ×4（`hashing.py:19/35`、`initcmd.py:215`、`uninitcmd.py:59`） | 族外 | ✅ 已登记；`contract.py:373/386` 的 `sha256_tree` 在 `check` 主路径上、**早于** `evidence.py:224` 属实（见下） |
+
+两份**独立的实测**，证明「漏 `OSError`」这条是错的、且 `:63` 根本不是缺陷：
+
+```
+# initcmd.py:131（ledger_gate_ref）——真缺陷（漏 UnicodeDecodeError）
+$ uv run witnessloop init --root <含 0xff 的 .witnessloop/init-manifest.json 的仓>
+witnessloop：内部错误（UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte）   EXIT=1
+
+# initcmd.py:63（load_policy_override）——【不是缺陷】
+$ uv run witnessloop init --root <干净仓> --policy <含 0xff 的 seed>
+init：'utf-8' codec can't decode byte 0xff in position 0: invalid start byte      EXIT=1   ← 不是「内部错误」
+```
+
+`initcmd.py:63` 之所以不崩：漏捕的 `UnicodeDecodeError` **是 `ValueError` 的子类**，被 `run()` 的
+`initcmd.py:146-150`（`try: load_policy_override(...)` / `except ValueError as exc`）**接住了**，
+出去的是 `init：{exc}`。⇒ **`grill-review.md` 的 Q1「具体场景」里那句
+「`init --policy <含 0xff 的 seed>` ⇒ 同样是「内部错误」（…实测路径见 `:62-65`）」是假观测**
+（它甚至标了「实测」）。这一条会被原样端给用户拍板，**必须回写**。
+
+另两处**grill 也没说准**的细节：
+
+- **`:201` 在解码路径上被 `:131` 遮蔽**：`ledger_gate_ref`（`initcmd.py:156`）**先于** `_already_initialized`（`:160`）
+  读同一个台账 ⇒ 台账是非法 UTF-8 时**先炸在 `:131`**。所以「只补 `:201` 的元组」**修不好解码那条**
+  ——Q1 把 `:131` 与 `:201` 都列了 ✅（这点是运气好，不是分析对）。
+- **`uninitcmd.py:30` 的「漏 `OSError`」用「目录冒充」够不着**：`uninitcmd.py:24` 的 `is_file()` 挡在前面，
+  目录台账 ⇒ `uninit：未接入（或已回滚），无改动。`、**EXIT=0**（实测）。要触发它的 `OSError` 分支得用 **mode-000 文件**。
+
+### 6. 新 spec 断言：**真的可判定（今天红、修后绿）** —— 逐字实测
+
+我写了一条**独立**用例（自带造仓、直调 `witnessloop.entry.main`，不依赖本仓 `tests/conftest.py`）：
+
+- **未打补丁** ⇒ **2 failed / 1 passed**：`事件文件无法解析` **不在** stderr；stderr 就是那一行
+  `witnessloop：内部错误（UnicodeDecodeError: …）`；回归那条（合法 events 行为不变）**pass**。
+- **打补丁（只改 `events.py`，用 `except (OSError, ValueError)` + D4 的两分支措辞）** ⇒ **3 passed**：
+
+```
+7. .：事件文件无法解析：<abs>/openspec/changes/demo/workflow-events.jsonl 无法解码：'utf-8' codec can't decode byte 0xff …
+7. .：事件文件无法解析：<abs>/openspec/changes/demo/workflow-events.jsonl 无法读取：[Errno 21] Is a directory: '<abs>/…'
+```
+
+⇒ **「目录冒充触发 `IsADirectoryError`」实测成立**（不是别的异常），且修后走 `无法读取` 分支、与 `无法解码` 可区分。
+⇒ 打补丁后 `uv run pytest -q` **仍 413 passed**（回归无伤）。spec.md 的 Scenario 1/2/3 **都可判定**。
+
+**`chmod 000` 在 root 下假绿 —— 实测成立**（我不是 root，用 `unshare -r --map-root-user` 拿到了带 DAC_OVERRIDE 的 uid 0）：
+同一个 `chmod 000` 的 events 文件，在 ns 内被**正常读出**、`check` 一路走到别的 finding、**没有 `PermissionError`**
+⇒ 那条用例在 root 下确实**假绿**。R6 属实，且 R6 推荐的替代配方（目录冒充）**已实测可行**。
+
+**spec Scenario 4（与 diff 无关）也可判定**：坏 events 在 base 上、`--base base --head base` ⇒ 仍然报
+`1. .：事件文件无法解析：…`、EXIT=1（**未打补丁**时用坏 JSON 版本验的，机制同源）。
+
+### 7. Q1「一并修」的**动作**能落地 —— 但**两条理由错了**、**一处配方不完整**
+
+我把 Q1 推荐的范围**真的实现了一遍**（`events.py` + `initcmd.py:63/118/131/201/216` + `uninitcmd.py:30/77`）：
+
+- `init` + 非法 UTF-8 的 `.witnessloop/policy.json`（`:118`）⇒ **变干净**：`init：.witnessloop/policy.json 无法解码：…`
+- `init`（已接入）+ 非法 UTF-8 的台账（`:131`+`:201`）⇒ **变干净**
+- 全量 `uv run pytest -q` ⇒ **413 passed**
+
+⇒ 范围的**动作清单可行**。但三条问题：
+
+1. **理由错**（见第 5 条）：`:63`/`:131` **不是**「漏 `OSError`」。
+2. **`:63` 根本不坏**：它今天已经给出 `init：<decode error>`，不是「内部错误」。把它列进「一并修」最多算
+   **文案改善**（改成 `--policy 文件无法解析为 JSON：…`），**不能**用「否则报内部错误」当理由。
+3. **`:118` 的「新包 try」不是可实现的配方**：`conflicting_files`（`initcmd.py:108-121`）的返回值是
+   `(rel, current, want)`，调用方 `initcmd.py:166-167` 直接 `render_diff(rel, current, want)` ⇒ `current.splitlines()`。
+   我**故意**按最字面的「包一层 try、读不出给 `None`」实现了一次，结果**造出一个新的「内部错误」**：
+
+```
+init：检测到冲突（只增不改，拒绝覆盖已有文件）：
+witnessloop：内部错误（AttributeError: 'NoneType' object has no attribute 'splitlines'）
+```
+
+⇒ design 必须**指定读失败时调用方怎么办**（报一条干净的红 / 退回「`! {rel} 内容读不出」），否则实现者会
+**照字面实现出一个新的 `内部错误`**——正好是本 change 要消灭的形态。
+
+### 8. Q2「接受短路」→ **站得住**（实测两面）
+
+- **短路属实且后果如述**：打补丁后，坏 events 文件 + 一个**缺解释事件的受保护写入**同仓 ⇒
+  `check：未通过 ✗（1 项）`，**只有** `1. .：事件文件无法解析：…`，那条「受保护路径被写入，但没有结构化解释事件」
+  **被整块吞掉**（`checkcmd.py:167-168` 直接 `return`，`for change in changes`（`:171-205`）不执行）。
+- **无绕过**：那条 finding 自己就让 `check` 退 1 ⇒ **坏 events 文件不可能让 check 变绿**。
+- **现状更差**：未打补丁时 stdout **空空如也**（`_report` 在 `:102`，短路点在 `:100`）⇒ 其它 finding **一条都不打印**。
+- **否掉「逐文件隔离」的正确理由确实是「与 D2 冲突」**：逐文件隔离要么改 `load_all` 的返回契约
+  （如 `(events, errors)`），要么让 `checkcmd` 自己逐文件 catch ⇒ 两条都要动 `checkcmd`/契约，与 D2 直接冲突。
+  （design Q2 原稿说的「会把『事件坏了』混进『没有解释事件』」确实是错的——逐文件隔离**同时报两件事**、
+  信息更多。grill 的纠正是对的 ✅）
+- ⇒ 推荐「接受 + 写明**仍然红、不是绿**、且**与 diff 无关**」**站得住**。
+
+### 9. Q3「验收断言改写」→ **站得住**
+
+原稿那三条（`不抛异常` / `非 0` / `不含 Traceback`）**今天就已经全绿**——我实测确认：
+未修代码上 `grep -c Traceback` = **0**、`EXIT=1` ⇒ 它们**钉不住任何东西**（是假红先）。
+换成「stderr **不含** `witnessloop：内部错误`」则**今天红（含）、修后绿（不含）**，我两端都跑到了
+⇒ Q3 的改写方向与「措辞从『是』收成『含』」都对（实测 stderr 里还有 `check：未通过 ✗（N 项）` 表头与其它 finding）。
+
+### 10. Q4「本 change 不改诊断面形态」→ **站得住，且不会留下模糊 spec**
+
+- 现象属实：events 那条 finding 是 `path="."` + message 里**绝对路径**（实测 `7. .：事件文件无法解析：/tmp/…`），
+  与 `check` 其余 finding 的**仓根相对**口径不一致（`contract.py` 的 `Finding` docstring 明说相对）。
+- **spec 不因此变模糊**：`spec.md:11` 已经把要求钉在**错误信息**上（文件级、不带 `:lineno`、`无法解码`/`无法读取`），
+  修后产出的正是 `<abs path> 无法解码：…` ⇒ **可判定**。`path="."` 从来不在 spec 的射程里，
+  「本 change 不改它」= **不在 spec 里许下任何关于它的承诺**，不构成模糊要求。
+- 唯一要留意的是 `spec.md:12` 用「**与 `evidence.py` 相同的措辞**」做了**跨模块引用**——若哪天
+  `evidence.py:225-228` 改了词，spec 这句会 stale。因为同一句里**也写了字面词**（`无法解码`/`无法读取`），
+  判定不受影响，属可接受。
+
+### 11. R2（自伤）→ **结论站得住，但 design 说的机制不准**
+
+- **机制（building 门禁）属实**：stub 仓里「编辑另一个 change 目录 + 本次 diff 落 `src/**`」⇒
+  `7. openspec/changes/old-change：无 stage=building 的 manifest（…）` ⇒ **红**（`checkcmd.py:91-98`）。
+- **但在真仓里，红是另一条规则给的**：我在**真仓的 clone** 上复现了 R2 想防的动作
+  （改 `openspec/changes/guard-crash-exit/design.md` + 落 `src/**`）⇒ 红，但 3 条全是
+  `…/building.manifest.json：head_sha=… 不是本次被检 revision … 的祖先——审阅的是别的 revision`
+  ⇒ 是**stale / revision 绑定**那条（`guard-crash-exit` **已经有** building manifest，所以 building 门禁不响）。
+- 补充：**不落 `src/**` 也照样红**（只改另一个 change 目录 ⇒ 它进 `changed_change_ids` 就会被全套校）。
+- ⇒ **行动指引「只改 `docs/gate.md`、绝不编辑别的 change 目录」是对的**（`guard-crash-exit/design.md:27`
+  确实住着「本 change 非目标」那句，我核过），只是**别把机制只写成 building 门禁**。
+
+### 12. R6 / §1.5 / R-G5 / tasks D1 的复核 → **全部属实**
+
+- **R6**：见第 6 条（root 假绿 + 目录冒充可用）⇒ 属实。
+- **§1.5**：`EventError` 生产位置 = 3 ✅（同第 4 条）；`guardcmd.py` 不 import `events` ✅。
+- **R-G5**：端到端复现了——把一个**已 commit** 的报告 `chmod 000` 后跑 `check`：
+  `witnessloop：内部错误（PermissionError: [Errno 13] Permission denied: '<abs>/…/grill-review.md'）`
+  ⇒ `contract.py:373` 的 `sha256_tree`（`read_bytes`）**确实在** `evidence.py:224` 的正文守卫**之前**、且**未捕**。
+  （`manifestcmd.py:100/101` 共用同一个 `sha256_tree`，同族。）⇒ 写进「非目标」是对的。
+- **tasks D1**：`docs/gate.md §8` 的读点表**确实只有 3 行**（`:338-340` 的 policy.json / review manifest / grill 报告正文），
+  **没有 events 行** ⇒ 正确动作是**新增一行**；`docs/gate.md:342` 确实留着那句**错的**
+  「损坏的证据文件此前会**崩溃**（…；`check` ⇒ **traceback**）」⇒ R1/D1b 要订正的对象**确实存在**。
+
+## 必须修改
+
+1. **【阻塞·假证据】** `reviews/grill-review.md` 的 **Q1「具体场景」**里删掉/改写
+   「`init --policy <含 0xff 的 seed>` ⇒ 同样是「内部错误」（…实测路径见 `:62-65`）」。
+   实测输出是 `init：'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`（退 1），
+   **不是**「内部错误」——漏捕的 `UnicodeDecodeError` 被 `initcmd.py:148` 的 `except ValueError` 接住了。
+   `templates/grill.md` 第 5 步要求**停轮之前**把被证伪的结论回写。
+2. **【阻塞·分类错】** 把 `proposal.md:45`（表里 `initcmd.py:63`、`:131` 那格）与
+   `design.md:111` / `tasks.md:20-22`（B1）里的「**同时漏 `OSError` 与 `UnicodeDecodeError`**」
+   改成「**只漏 `UnicodeDecodeError`**（`initcmd.py:64`/`:132` 已是 `except (OSError, json.JSONDecodeError)`）」，
+   并把 `initcmd.py:63` 的动作从「补元组（否则报内部错误）」降级为「**文案改善（可选）**」——
+   它今天已经是 `init：<decode error>`、退 1，**不是**本 issue 的缺陷形态。
+3. **【阻塞·会让实现卡住】** 钉住 `tasks.md` **B3** 的用例配方：`init`/`uninit` 的「读不出」**必须用「非法 UTF-8」造，
+   ⚠️ 不能用 R6 推荐的「目录冒充」**。原因（实测）：在这两条路径上，「目录」触发的**第一个**失败点是
+   **族外**的 `initcmd.py:215` / `uninitcmd.py:59`（`read_bytes`）⇒
+   - `init`（已接入）+ `policy.json` 是目录 ⇒ 仍是 `witnessloop：内部错误（IsADirectoryError: …）`；
+   - `uninit` + 台账里某个文件是目录 ⇒ 仍是 `witnessloop：内部错误（IsADirectoryError: …）`；
+   而换成非法 UTF-8 后两条都**变干净**。照「目录」写 ⇒ 用例在**声明的范围内永远红**，实现者会以为补丁错了。
+   （顺带：`uninit` + 台账**自身**是目录根本到不了 `:30`——`uninitcmd.py:24` 的 `is_file()` 直接给
+   `uninit：未接入（或已回滚），无改动。`、EXIT=0。）
+4. **【阻塞·细节未定】** `design.md` §3 对 `initcmd.py:118` 只写了「**新包 try**」——这**不可实现**：
+   `conflicting_files` 的返回值喂给 `render_diff`（内部 `current.splitlines()`）。必须写明读失败时调用方怎么报
+   （例如「读不出 ⇒ 走 `无法解码`/`无法读取` 那对词、报一条红并退 1，**不进 diff**」）。
+   我按最字面的「读不出给 `None`」试了一次，产出的正是 **`witnessloop：内部错误（AttributeError: 'NoneType' object has no attribute 'splitlines'）`**
+   ——**本 change 要消灭的形态**。或者干脆把 `:118` 也移进非目标并说明理由。
+5. **【非阻塞但请一并】** `tasks.md` B4 要求把 `read_bytes` 两处与 `sha256_tree` 写进
+   `design.md` 的**「非目标」**——但 `design.md` **没有 `## 非目标` 段**（提案有、design 没有），
+   这些内容目前只散在 §2.5「族外」与 §4 R7。要么补一个 `## 非目标` 段，要么把 B4 的指向改成 §2.5/R7。
+6. **【非阻塞但请一并】** 收一收 D3 的措辞：「本仓**已有成文 idiom**」→ 改成
+   「本仓**三种 `except` 并存**，选**多数派且带注释**的那个 `(OSError, ValueError)`」。顺带把
+   `paths.py:69`（同 idiom 换序）与 `evidence.py:225` 计入分母。**推荐不变**。
+
+## 新发现的风险
+
+1. **（中·新的「半成品 init」）** `.witnessloop/init-manifest.json` 是**目录**时，`init` 会**先写完**
+   `.witnessloop/policy.json` 与 `.github/workflows/witnessloop.yml`，**再**在
+   `initcmd.py:181` 的 `manifest_path.write_text(...)` 上炸 `IsADirectoryError` ⇒ 一行「内部错误」、退 1，
+   **仓里留下半套接入物（无台账）**。实测：`policy.json exists: YES` / `workflow YES`，`EXIT=1`。
+   这是**写点**（不是 `read_text`）⇒ 落在 §2.5 族边界**之外**、也没进非目标登记。它比「诊断面难看」严重
+   （**状态被改了一半**，而且没有台账可回滚）。**建议**：至少写进非目标/风险，别让下一个 issue 又从零发现它。
+2. **（低·绝对句过宽）** 「**没有任何产品路径会吐 traceback**」对**非交互**调用成立（我穷举了坏文件的各种成因与 verb 组合），
+   但对 **`KeyboardInterrupt`** 不成立：`entry.py:35` 只捕 `Exception`，`cli_main` 里的 Ctrl-C 会穿出去
+   ⇒ **真 traceback、退 130**（实测，栈里看得见 `entry.py:34` → `cli.py:158`）。
+   同理 `entry.py:16` 的注释「`KeyboardInterrupt` 以信号结束（shell 见 130 ≠ 1）」——退出码那句对，
+   但**没提 traceback**。这不影响本 change（支点讲的是坏文件），**建议 design 把绝对句收成
+   「任何**非交互**调用路径」**，免得日后被这句话反噬。
+3. **（低·跨模块耦合）** `spec.md:12` 把措辞绑到 `evidence.py`（「与 `evidence.py` 相同的措辞」）。
+   `evidence.py:225-228` 一改词，这句就 stale（判定不受影响，因为同句也给了字面词）。
+   若想彻底解耦，就**只留字面词**。
+4. **（低·清单完整性）** 「已覆盖（无需动）」清单漏了 `paths.py:69`；`read_bytes` 的「两处」与
+   `hashing.py:19/35` 是分开写的（合计 4 处），读者容易少算。措辞收一下即可。
+5. **（流程·非缺陷）** 本报告落盘后，`reviews/` 里 `grill-adversarial.md` **尚无对应 manifest**
+   ⇒ 按 `docs/gate.md §3` 是**孤儿报告**，`reviews/` 是 `required_artifacts` 之一，此刻跑 `check` 会红。
+   这是流程中间态（下一步 `manifest build --stage grill-adversarial` 才绑），**不是** change 的缺陷。
+   另：实测 `grill-review.md` 的正文判定目前**只差 Q1–Q4 的 `## User Confirmation`**（其余全过）
+   ⇒ E0 停轮拿到答复后即可放行，路径是通的。
+
+## 我实测复现的
+
+> 全部在 `/tmp/adv/**` 的真 git 仓上跑；一律 `uv run witnessloop …`（从本 worktree）。
+> 验证补丁时临时改过 `src/witnessloop/{events,initcmd,uninitcmd}.py`，跑完**已全量还原**：
+> `git status --porcelain` 输出为空，`diff` 三个文件与原始**逐字节一致**，**未 commit**。
+
+1. **【支点·必答】真仓 + 含 `0xff` 的 `workflow-events.jsonl`**
+   `uv run witnessloop check --root /tmp/adv/repo --base base`
+   ⇒ stdout 空；stderr = `witnessloop：内部错误（UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 170: invalid start byte）`；
+   **`EXIT=1`；`grep -c Traceback` = 0** ⇒ **不是 traceback**（grill 的翻转成立）。
+2. **① 空 diff 走同一条路**：`check --root /tmp/adv/repo --base base --head base`
+   ⇒ **同一行**、`EXIT=1`，且 stdout **连 `check：基线 …` 都没有**（`_report` 没跑）。
+3. **② `archive/` 坏文件不参与**：坏文件只在 `openspec/changes/archive/old/` ⇒ `check：通过 ✓`、**`EXIT=0`**；
+   `glob("openspec/changes/*/workflow-events.jsonl")` ⇒ **`[]`**。
+4. **③ traceback 穷举**：坏 events（UTF-8 坏/目录/mode-000）、坏 policy、坏台账、坏报告、`init`/`uninit`/`check`/`manifest build`/`guard`
+   与 `--policy`/`--base`/`--head` 组合 ⇒ **一次 traceback 都没有**；
+   `PYTHONIOENCODING=ascii uv run witnessloop check …` 与 `PYTHONUTF8=0 LC_ALL=C …` ⇒ 仍是**一行**内部错误、`EXIT=1`。
+   **唯一反例**：在 `cli_main` 内抛 `KeyboardInterrupt` ⇒ 真 traceback、`EXIT=130`（`entry.py:34` → `cli.py:158`）。
+5. **D2「出路已现成」**：未打补丁 + 合法 UTF-8/坏 JSON ⇒
+   `7. .：事件文件无法解析：<abs>/…/workflow-events.jsonl:2 不是合法 JSON：Expecting value: line 1 column 1 (char 0)`。
+6. **断言可判定性（两态）**：自写独立用例（造仓 + 直调 `entry.main`）
+   - 未打补丁 ⇒ **2 failed / 1 passed**（`事件文件无法解析` 不在 stderr；stderr 就是那一行内部错误；回归那条 pass）
+   - 打补丁（`events.py` 用 `except (OSError, ValueError)` + `无法解码`/`无法读取`）⇒ **3 passed**，且
+     `uv run pytest -q` ⇒ **413 passed**。
+   实测修后两条形态：`…workflow-events.jsonl 无法解码：'utf-8' codec …` / `…workflow-events.jsonl 无法读取：[Errno 21] Is a directory: '…'`。
+7. **目录冒充确实触发 `IsADirectoryError`**：`check` 对 `mkdir` 出来的 `workflow-events.jsonl`
+   ⇒ 未修：`witnessloop：内部错误（IsADirectoryError: [Errno 21] Is a directory: '<abs>'）`；修后：`无法读取` 分支。
+8. **`chmod 000` 在 root 下假绿**：`unshare -r --map-root-user`（ns 内 `uid=0`，带 DAC_OVERRIDE）
+   ⇒ 同一个 mode-000 events 文件被**正常读出**、`check` 走到别处、**无 `PermissionError`** ⇒ 假绿成立。
+   （非 root，uid 10001 时同文件确实报 `PermissionError: [Errno 13] …`。）
+9. **R6 变量之外：`uninit` + 台账自身是目录** ⇒ `uninit：未接入（或已回滚），无改动。`、**`EXIT=0`**（`is_file()` 挡住）。
+10. **Q1 范围真的实现了一遍**（`events.py` + `initcmd.py:63/118/131/201/216` + `uninitcmd.py:30/77`）：
+    `init` + 非法 UTF-8 的 `policy.json`（`:118`）⇒ `init：.witnessloop/policy.json 无法解码：…`；
+    已接入 + 非法 UTF-8 台账（`:131`+`:201`）⇒ `init：.witnessloop/init-manifest.json 无法解析：…`；
+    全量 `pytest -q` ⇒ **413 passed**。
+    同补丁下 **族外**两点**照旧崩**：`init` + `policy.json` 是目录（`:215`）⇒ 内部错误；
+    `uninit` + 台账里文件是目录（`:59`）⇒ 内部错误。
+11. **「读不出给 `None`」的后果**（证明 `:118` 配方不完整）：
+    `init：检测到冲突（只增不改，拒绝覆盖已有文件）：` 后跟
+    `witnessloop：内部错误（AttributeError: 'NoneType' object has no attribute 'splitlines'）`。
+12. **Q2 短路**：打补丁 + 坏 events 与「缺解释事件的受保护写入」同仓 ⇒
+    `check：未通过 ✗（1 项）`、**只有** `1. .：事件文件无法解析：…`（那条受保护写入 finding **被吞**）、`EXIT=1`。
+    对照：把解释事件整个拿掉（合法 events）⇒ `7. openspec/specs/foo/spec.md：受保护路径被写入，但没有结构化解释事件` ⇒ **假红**机制成立。
+13. **R2**：stub 仓「改别的 change 目录 + 落 `src/**`」⇒ `7. …：无 stage=building 的 manifest（…）` 红；
+    **真仓 clone** 上做同一动作（改 `guard-crash-exit/design.md` + 落 `src/**`）⇒ 红的 3 条全是
+    `head_sha=… 不是本次被检 revision … 的祖先——审阅的是别的 revision`（**stale 那条**，不是 building 门禁）。
+14. **R-G5 端到端**：已 commit 的报告 `chmod 000` ⇒
+    `witnessloop：内部错误（PermissionError: [Errno 13] Permission denied: '<abs>/…/reviews/grill-review.md'）`
+    ⇒ `contract.py:373` 的 `sha256_tree` 早于正文守卫且未捕。
+15. **文档对象核对**：`docs/gate.md:338-340` 读点表**只有 3 行、无 events 行**；
+    `docs/gate.md:342` 确有那句错的「`check` ⇒ traceback」；
+    `openspec/changes/guard-crash-exit/design.md:27` 确有「本 change 非目标」字样（⇒ R2 的自伤面真实存在）。
+16. **证据链就绪度**：`evidence.grill_evidence_findings(grill-review.md 正文)` ⇒ 只剩
+    `Q1/Q2/Q3/Q4 未经用户确认` 4 条 ⇒ 其余（`Confirmed Decisions` ≥3、每条带 `来源:`）**已过**。
+17. **基线**：`uv run pytest -q` ⇒ **413 passed**（打补丁后同）。
