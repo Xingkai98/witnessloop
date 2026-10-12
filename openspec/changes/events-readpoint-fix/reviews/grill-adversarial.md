@@ -483,3 +483,149 @@ witnessloop：内部错误（AttributeError: 'NoneType' object has no attribute 
    另：把**同一判定**套到 `grill-adversarial.md` 会得「缺 `## Confirmed Decisions` / 缺 `## User Confirmation`」2 条，但 `check` 只在 `pol.grill_stage`（默认 `grill`）上开 `verify_body`
    （`checkcmd.py:83` → `evidence.py:238`），`building` 那条只要求「存在」（`:92-98`）⇒ **这不是 gate 缺口**，也是本轮追加进本文件（而非新开文件）不引入新红的原因。
 10. **干净性**：本轮**未改**本 worktree 任何文件（只读 + `/tmp` 建仓）；`git status --porcelain` 为空、**未 commit**。
+
+---
+
+# 第 3 轮（R3 · 轮数封顶 · 最后一轮）
+
+> **结论一句话**：**R2 的唯一阻塞项已彻底闭环**——`initcmd.py:63/131` 与 `:201`/`uninitcmd.py:30` 的**两类分类**在
+> `proposal.md` / `design.md` / `tasks.md` 三份文档里**逐字同口径**，且我**开门核码 + 实测钉行**双复核为真
+> （`:64`/`:132` 是 `(OSError, json.JSONDecodeError)` ⇒ 只漏解码；`:202`/`uninitcmd.py:31` 只有 `json.JSONDecodeError` ⇒ 两个都漏）。
+> **无新引入的不一致、无过度订正**（这次的订正是**往回收**，方向对）。**PASS。**
+> 唯一须点名的是**一条非阻塞的「声称做了、其实没做」**：commit `43117c3` 的消息说回写了 `grill-review.md` 里
+> 「与 `:131` 同一类」那句，但**该文件本次一个字节都没动**（git 证据见下）——见「非阻塞但请一并」。
+
+## Reviewer
+
+- run id: `grill-adversarial-reviewer-events-readpoint-fix-2026-10-12-r3`
+  （`WITNESSLOOP_RUN_ID` 本环境仍未设 ⇒ 同 R1/R2 按 `templates/grill.md` 走确定性兜底形态 `<stage>-<role>-<anchor>`。）
+- 时间: **2026-10-12T09:18:44Z**
+- **零记忆（第 3 轮 · 轮数封顶）**：不读作者 / grill / R1 / R2 的会话历史；R1、R2 的报告只作为**被核对象**读，不作为我的记忆。
+- 基线实测：`uv run pytest -q` ⇒ **413 passed**（32.58s，exit 0），与基线声明一致。
+- 本轮**未修改本 worktree 任何文件**（只读 + 在 `/tmp/r3` 建仓跑 CLI）⇒ `git status --porcelain` 为空、**未 commit**。
+- CLI 一律 `uv run --project <本 worktree> witnessloop …`（PATH 上的裸 `witnessloop` 是另一份 uv-tool 安装）。
+
+## Verdict
+
+**PASS**
+
+- R2 的**唯一阻塞项**（两类分类）**已到位**，且这次是**反向订正**（把上一轮的「只漏」收回到只有 `:131` 适用）——方向对；
+- 三份文档的读点分类**逐字一致**且**与代码一致**（第 1 节，含**两份独立实测**）；
+- **未新引入**不一致、**未过度订正**；`docs/gate.md §8` 那句错话仍是**排期中的 D1b 对象**（不是残留）；
+- 支点 / D1–D4 / §3.5 / B3 配方 / `:118` 定案 / 绝对句 / R2 机制 —— **R2 已复核，本轮抽查复现无翻覆**。
+
+## 逐条核验（本轮收窄范围：这次整合 2 项 + 有无新问题）
+
+### 1.【R2 阻塞项】两类分类 → ✅ **三份文档逐字一致，且与代码一致**（开门核码 + 实测钉行）
+
+**代码事实**（`grep -n "" <file> | sed -n`，本 worktree 原样，未打补丁）：
+
+| 读点 | `except` 子句（**实测原文**） | 漏什么 |
+|---|---|---|
+| `initcmd.py:63`（`--policy`） | `:64` = `except (OSError, json.JSONDecodeError) as exc:` | **只漏** `UnicodeDecodeError` |
+| `initcmd.py:131`（`ledger_gate_ref`） | `:132` = `except (OSError, json.JSONDecodeError):` | **只漏** `UnicodeDecodeError` |
+| `initcmd.py:201`（`_already_initialized`） | `:202` = `except json.JSONDecodeError as exc:` | **两个都漏** |
+| `uninitcmd.py:30` | `:31` = `except json.JSONDecodeError as exc:` | **两个都漏** |
+
+**三份文档的对应措辞**（逐字抄，`|` 分列以示同口径）：
+
+- `proposal.md:48`：`initcmd.py:131` ｜「`:132` 是 `except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`**」
+- `proposal.md:49`：`initcmd.py:201`、`uninitcmd.py:30` ｜「有 try，但 `except` **只有 `json.JSONDecodeError`** ⇒ **`OSError` 与 `UnicodeDecodeError` 都漏**」
+- `proposal.md:50`：`initcmd.py:63` ｜「`:64` 是 `except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`**；而它又被下游 `:148` 的 `except ValueError` 接住」⇒ **降级为「文案改善（可选）」**
+- `design.md:124`：`initcmd.py:131`（`:132`）、`initcmd.py:63`（`:64`）：`except (OSError, json.JSONDecodeError)` ⇒ **只漏 `UnicodeDecodeError`**
+- `design.md:125`：`initcmd.py:201`（`:202`）、`uninitcmd.py:30`（`:31`）：`except` 只有 `json.JSONDecodeError` ⇒ **`OSError` 与 `UnicodeDecodeError` 都漏**
+- `tasks.md:22-23`：`:131`/`:63` **只漏 `UnicodeDecodeError`**（`OSError` 已捕）；**`:201`/`uninitcmd.py:30` 两个都漏**——其 `except` 只有 `json.JSONDecodeError`
+
+⇒ **`{63, 131}` / `{201, 30}` 的二分，三份文档与代码四方完全对齐**，且三份都附了同一套动作
+（`design.md:127`、`tasks.md:20`：统一补成 `except (OSError, ValueError)`，**两类都适用**）。
+**⚠️ 本轮「一处说 A、另一处说 B」我没有抓到**——这与前两轮各抓出一条不同，说明这次是真落齐了。
+
+### 2.【顺手项】三小项 → ✅ 2 项到位、⚠️ 1 项「声称做了但没做」
+
+- **`design.md:107` 计数 5 → 6** ✅：现为「`policy.py:133`、`contract.py:176/231`、`evidence.py:165/224`、**`paths.py:69`**（共 **6** 处）」——
+  我逐个数：1 + 2 + 2 + 1 = **6** ✓，与 R2 的复核一致。
+- **`tasks.md:45` 改成 stale 口径** ✅：现为「改别的 change 目录里的**非证据文件** ⇒ 它的 manifest 判 **stale**」，
+  与 `design.md:151-155`（`_check_git_span` 的 stale 判定为主、building 门禁为辅）同口径；行动指引「只改 `docs/gate.md`」不变。
+- **`grill-review.md` 那句回写** ❌ **未落盘** —— 这是本轮唯一须点名的项，见「非阻塞但请一并」第 1 条（**它不阻塞**，理由同节）。
+
+### 3.【有无新问题】→ **无新不一致、无过度订正**
+
+- **是不是「又做过头」？不是。** 这次的订正是**往回收**：把 R2 指出的「四个读点一律只漏解码」收回成
+  「只有 `:63`/`:131` 如此，`:201`/`:30` 两个都漏」——**收的方向与代码事实一致**（第 1 节实测），
+  且**没有**顺手把不该改的也改了（`design.md` 的「已覆盖」6 处、`read_bytes` 4 处、B3 配方、`:118` 定案**均未被动**）。
+- **整合未触碰代码** ✅：`git show 43117c3 --stat` = `design.md` / `proposal.md` / `tasks.md` / `reviews/grill-adversarial.md`
+  **四份 .md**，**没有** `src/**`、`tests/**` ⇒ 「整合引入代码回归」这条路不存在，413 passed 与基线同源。
+- **残留的两处小瑕**（R2 已判**非阻塞**，本轮复核仍在，**未恶化**）：
+  1. `design.md:122` 与 §8 Q1（`:216`）仍把 `:63` **无条件**列进「补 except 元组」的动作组，而同节 `:130` 又说 `:63` **降级为可选**
+     ⇒ 措辞不齐。**动作无害**：`:63` 若真补 `ValueError`，只是把 `init：'utf-8' codec …` 变成
+     `init：--policy 文件无法解析为 JSON：…`（**都是退 1、都不是「内部错误」**）⇒ 纯文案改善，不制造红。
+  2. `tasks.md:21` 的动作清单列 3 个目标（`:131/201`、`uninitcmd.py:30`）而 `:22` 的括注说「**四处**」——第 4 处 `:63` 在同句里被标为可选
+     ⇒ 内部可解释，非矛盾。
+- **`docs/gate.md:342` 的错话** ✅ 仍是**待订正对象**（`tasks.md:46` 的 D1b 覆盖它：「实测是**一行** `内部错误`」），**不是残留**。
+  `docs/gate.md:336-340` 的读点表**确实只有 3 行、无 events 行** ⇒ D1「**新增一行**」的对象仍对。
+
+### 4.【收尾核对】pytest / 证据判定 / 干净性
+
+- **`uv run pytest -q` ⇒ 413 passed**（32.58s）✅ —— 与基线声明一致。
+- **`evidence.grill_evidence_findings(grill-review.md)` ⇒ 4 条**，**只有** Q1/Q2/Q3/Q4「未经用户确认」
+  ⇒ **与 R1 末节第 16 条、R2 末节第 9 条一致**，其余（`## Confirmed Decisions` ≥3、每条带 `来源:`）**已过** ⇒
+  E0 停轮拿到答复后即可放行，路径仍通。
+- **干净性** ✅：`git status --porcelain` 为空、**未 commit**；本 worktree 的 `src/**` **一个字节未改**（补丁只跑在 `/tmp` 上，且我**根本没打补丁**——本轮被核对象是文档 + 既有行为）。
+
+## 非阻塞但请一并（**不构成 CHANGES_REQUESTED**，但请别跳过）
+
+**1. `grill-review.md:50` 的回写「声称做了、其实没做」——commit 消息与 tree 不符。**
+
+- **声称**：`43117c3` 的提交消息第 3 条：「顺手：… 回写 `grill-review.md` 里「与 `:131` 同一类」那句（R2 指出的遗留）」。
+- **事实**：`43117c3` 的 `--stat` **不含** `grill-review.md`；`git log -1 --format="%h %s" -- reviews/grill-review.md`
+  ⇒ 最后改动是 **`e324e5e`**（R1 整合，**早于** R2）；`grep -n "同一类" reviews/grill-review.md` ⇒ 该句**仍原样在 `:50`**。
+- **为什么不阻塞**（我按「会让实现失败 / spec 自相矛盾 / 结论站不住」三条逐一排除）：
+  1. **不会让实现失败**：实现者读的是 `design.md §3` 与 `tasks.md B1`，两处**已正确**（第 1 节）；
+  2. **不是 spec 自相矛盾**：`spec.md` **不含**任何读点分类；`proposal`/`design`/`tasks` 三份**已一致**；
+     `:50` 只活在**决策记录**里，且它**自己的括注**把「同一类」定义为「补 except 元组，不是新包 try」——
+     **按这个自述口径，四个读点确实同类**（都要补元组），所以该句至多**歧义**，不是可判定的假话（R2 读成「漏集合同类」，那是另一种读法）；
+  3. **结论站不住？不**：`grill-review.md:50` 在 `## Code-Resolved Questions`（`:29-73`），**不在**停轮交给用户的
+     `## Open Questions`（`:74-91`），Q1 的推荐答案（`:79`）只给**统一动作**、不含错误分类 ⇒ **用户拍板面干净**。
+     （对照：R1 阻塞① 之所以阻塞，是因为那条假观测**就在 Q1 本体里**，`templates/grill.md` 明说「别把没经证伪的结论拿去让用户拍板」。）
+- **但仍建议现在改**（**此刻是免费的**）：一行编辑，把「与 `:131`/`uninitcmd.py:30` 是**同一类**」收成
+  「与 `:201`/`uninitcmd.py:30` **同属「补元组」那一类**（`:131` 只漏解码，见 `design.md:124`）」。
+  **过时点**：一旦 `manifest build --stage grill` 绑了 `grill-review.md`，再改它就会把 manifest 判 **stale**、须重建
+  ⇒ 趁 E0 之前改，代价为 0。
+- **顺带（同一性质）**：`proposal.md:53` 说「**两轮审阅纠正了我三处分类错**」，紧接着却列了 **①②③④ 四项**
+  （④ 是 `:63` 的**降级**，不是「分类错」）⇒ 数字与枚举对不齐。纯措辞，非阻塞。
+
+## 我实测的
+
+> 全部在 `/tmp/r3` 的**真 git 仓**上跑（`git init` + `witnessloop init` 接入 + `.witnessloop/init-manifest.json`）；
+> 本 worktree **只读**、**未打补丁**、`git status --porcelain` 为空、**未 commit**。CLI 一律 `uv run --project <本 worktree> witnessloop …`。
+> 运行身份 **uid=10001**（非 root ⇒ `chmod 000` 真实生效，无 R6 的 root 假绿干扰）。
+
+1. **基线**：`uv run pytest -q` ⇒ **413 passed**（32.58s，exit 0）。
+2. **整合未碰代码**：`git show 43117c3 --stat` = `design.md` / `proposal.md` / `tasks.md` / `reviews/grill-adversarial.md` **四份 .md**，
+   `src/**`、`tests/**` **未动**。
+3. **开门核码**（`except` 子句原文，四方对齐）：`initcmd.py:64` = `except (OSError, json.JSONDecodeError) as exc:`；
+   `initcmd.py:132` = `except (OSError, json.JSONDecodeError):`；`initcmd.py:202` = `except json.JSONDecodeError as exc:`；
+   `uninitcmd.py:31` = `except json.JSONDecodeError as exc:`。
+4. **实测·台账 `chmod 000`**（直接调 `initcmd.run` / `uninitcmd.run`，绕开 `entry.main` 兜底，`traceback` 钉行）：
+   - `init` ⇒ `PermissionError`，帧链 `initcmd.py:160` → **`initcmd.py:201`**
+     （⇒ `:132` 的 `OSError` **确实捕了**、返回 `None`，一路走到 `:201` 才炸 ⇒ 「`:201` 漏 `OSError`」是**可观测**后果）；
+   - `uninit` ⇒ `PermissionError` @ **`uninitcmd.py:30`**。
+   ⇒ 文档「`:201`/`:30` **两个都漏**」**实测为真**。
+5. **实测·台账非法 UTF-8**（同一仓，把台账写成 `\xff\xfe`）：
+   - `init` ⇒ `UnicodeDecodeError`，帧链 `initcmd.py:156` → **`initcmd.py:131`**
+     （⇒ `:132` **没有**捕 `UnicodeDecodeError`，且 `:131` **遮蔽**了 `:201`——与 R1 第 5 条的「遮蔽」论证一致）；
+   - `uninit` ⇒ `UnicodeDecodeError` @ **`uninitcmd.py:30`**。
+   ⇒ 文档「`:131` **只漏** `UnicodeDecodeError`」与「`:30` 两个都漏」**实测为真**（**两条路都**钉在声明的那一行）。
+6. **CLI 端到端**（同上两因、走产品入口）：`chmod 000` 台账 ⇒ `init` 与 `uninit` 各得**一行**
+   `witnessloop：内部错误（PermissionError: [Errno 13] Permission denied: '<abs>/init-manifest.json'）`、**`EXIT=1`**
+   ⇒ 「内部错误」形态与文档描述**逐字一致**，且**不是** traceback。
+7. **计数复核**：`grep -rn` 全树 ⇒ `(OSError, ValueError)` **5 处**（`policy.py:134`、`contract.py:177/232`、`evidence.py:166`、`paths.py:69`〔换序〕）、
+   `(OSError, json.JSONDecodeError)` **2 处**（`initcmd.py:64/132`）、`(OSError, UnicodeDecodeError)` **1 处**（`evidence.py:225`）；
+   `read_text` **13 处**、`read_bytes` **4 处**（`hashing.py:19/35`、`initcmd.py:215`、`uninitcmd.py:59`）
+   ⇒ `design.md:107` 的「共 6 处」与 `§2.5/§3.5` 的「合计 4 处」**全部为真**。
+8. **文献对象核对**：`docs/gate.md:336-340` 读点表**只有 3 行、无 events 行** ✅；`docs/gate.md:342` 确有那句错的
+   「`check` ⇒ traceback」✅（⇒ D1「新增一行」、D1b「订正错话」的对象都真实存在）。
+9. **回写落盘核对**：`git log -1 --format="%h %s" -- openspec/changes/events-readpoint-fix/reviews/grill-review.md`
+   ⇒ **`e324e5e`**（非 `43117c3`）；`grep -n "同一类"` ⇒ `grill-review.md:50` **原样仍在** ⇒「已回写」**不成立**。
+10. **证据判定**：`evidence.grill_evidence_findings(grill-review.md)` ⇒ **4 条**，全是 Q1–Q4「未经用户确认」⇒ 与 R1/R2 一致。
+11. **干净性**：本 worktree `git status --porcelain` 为空、**未 commit**；本轮唯一改动是本文件（**仅追加** R3 段，R1/R2 逐字保留）。
