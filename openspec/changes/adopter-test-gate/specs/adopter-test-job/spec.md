@@ -1,79 +1,89 @@
-# adopter-test-job — 接入方的测试进 CI 并拦住合并
+# adopter-test-job — 接入方的测试要有一个真的执行点
 
-> 本 change 的能力增量：`init` 接入的门禁**能跑接入方自己声明的测试命令**，且它**真的能拦住合并**
-> （而不是「跑了但没人管」）。同时把「命令从哪来、空命令怎么办、required 怎么勾」写成对外契约。
+> 本 change 的能力增量：接入方能拿到**一个可用的测试执行点**（不再只有 `witnessloop check`），
+> 且这个执行点**能被勾成 required 拦住合并**。交付形态**优先是「约定正确的 workflow 模板 + 复制配方」**，
+> 而不是改动 witnessloop 的 `workflow_call` 接口。
 
-## Requirement: 门禁可跑接入方声明的测试命令
+## Requirement: 交付一个可用的测试执行点
 
-`init` 生成的 caller workflow SHALL 能把接入方声明的**测试命令**传给 reusable workflow；
-reusable workflow SHALL 在**非空**时执行它。
+本 change SHALL 交付一条**接入方可直接采用**的测试执行路径，使接入方自己的测试在 PR 上自动执行。
 
-测试命令 SHALL **由接入方显式声明**（caller 的 `with:` 参数，`init --test-command` 是便利入口）；
-SHALL NOT 由工具**探测**猜测（猜错会静默跑错东西）。
+该路径 SHALL 对**已接入的仓**同样可达（存量接入方 SHALL NOT 需要改动 `init` 生成的任何文件——
+实测那是死锁，见下面的 Requirement）。
 
-### Scenario: 给了命令就执行
-- **Given** caller 里带 `with: test-command: <cmd>`
-- **When** 该仓的 PR 触发门禁
-- **Then** reusable workflow 执行 `<cmd>`；它失败 ⇒ 该 check **不通过**
+> ⚠️ 具体形态（模板 + 文档 / `init` 种一份 + 模板 / `gate.yml` 加 input）由本 change 的 **Q1** 定案后
+> 钉死在此；实现开始前 MUST 替换本括注。
 
-### Scenario: 命令为空 ⇒ 跳过（不是失败）
-- **Given** caller 没有给命令（存量接入方的 caller 就是这种形态）
-- **When** 触发门禁
-- **Then** **不执行**任何测试命令，且**不因此**失败——存量行为**逐字不变**
+### Scenario: 新接入方拿到执行点
+- **Given** 一个刚 `witnessloop init` 的仓（Python、用 `pytest`）
+- **When** 按 README 的配方采用测试工作流并把它勾成 required
+- **Then** 该仓的 PR 会自动跑测试；测试失败 ⇒ 合并被拦
+
+### Scenario: **存量**接入方拿到执行点（R11：原稿没覆盖的节点）
+- **Given** 一个**已经接入**的仓（`init` 产物不许动）
+- **When** 按 README 的配方采用测试工作流
+- **Then** 它**无需**改动任何 `init` 生成的文件即可获得执行点
+
+## Requirement: SHALL NOT 要求接入方手改 `init` 的产物
+
+文档与 `init` 的输出 SHALL NOT 教接入方去修改 `init` 生成的文件来配置测试命令——
+实测（本机复现）：改了之后 `init` **exit 1**、`uninit` **exit 1**、**删台账再 `init` 也 exit 1**
+（「只增不改，拒绝覆盖已有文件」），且没有任何 flag 能表达「我确认」。
+
+文档 SHALL 同时写明：**不要**用「先 `uninit` 再 `init`」做升级——`uninit` 会删掉台账里的**每一个**条目
+（含 `.witnessloop/policy.json`），会**静默丢定制 policy**。
+
+### Scenario: 文档不提供死锁路径
+- **Given** README 的接入/升级配方
+- **When** 逐条读它教接入方做的事
+- **Then** **没有**任何一条是「手改 `init` 产物」或「先 `uninit` 再 `init`」
+
+## Requirement: 空命令 ⇒ 跳过，但必须留下可见信号
+
+测试命令未声明时，执行路径 SHALL **跳过**测试（不失败）——SHALL NOT 自行**探测**约定命令。
+同时 SHALL 输出**运行时可观测的信号**（如日志里一行 `::notice::`「未声明测试命令」），
+并在有命令时**回显实际执行的命令**。
+
+理由：空=跳过 + required 绿 = 「**看起来在保护你**的绿勾」；`pytest --collect-only` 这类粘贴失误
+（收集 N 个、跑 0 个、exit 0）会让门禁**永远绿**。
+
+### Scenario: 空命令可见
+- **Given** 采用测试工作流但未声明命令
+- **When** PR 触发
+- **Then** 该 job **成功**，且日志里有一行明说「未声明测试命令」（不是静默成功）
 
 ### Scenario: 不做探测
-- **Given** 一个只写 `pytest` 的仓（没声明命令）
-- **When** 触发门禁
-- **Then** 工具 SHALL NOT 自行推断并运行 `pytest`（保持「空 = 跳过」）
+- **Given** 一个只用 `pytest` 的仓（没声明命令）
+- **When** 触发
+- **Then** SHALL NOT 自行推断并运行 `pytest`
 
-## Requirement: 测试的通过与否 SHALL 能拦住合并
+## Requirement: 不得过度承诺（能力边界）
 
-测试命令的失败 SHALL 反映在**可被 branch protection 设为 required 的 job** 上
-（GitHub 的 required check 粒度是 **job**，不是 step）——SHALL NOT 出现「测试跑了、但没人能把它勾成必过」的形态。
+文档 SHALL 写明本能力**只在「本次 PR 未修改自己的 CI 配置」的前提下**成立——
+`.github/workflows/**` 不在保护路径、branch protection 实测 `required_approving_review_count: 0`
+⇒ 一个 PR 可以删掉自己的测试步骤（或写成 `|| true`）而 required check 依旧绿。
+文档 SHALL NOT 承诺「测试失败一定拦住合并」这种无限定条件的说法。
 
-> ⚠️ 具体形态（独立 `test` job / 并入既有 `check` job）由本 change 的 Q1 定案后钉死在此，
-> 实现开始前 MUST 替换本括注。
+### Scenario: 承诺带限定
+- **Given** README / `docs/gate.md` 里关于本能力的表述
+- **When** 逐句检查
+- **Then** 每一处「拦住合并」都带「在你自己的 CI 配置未被本次 PR 修改的前提下」这一限定
 
-### Scenario: 测试失败 ⇒ 合并被拦
-- **Given** 接入方给了命令、且它会失败，并已按文档把对应 job 勾成 required
-- **When** PR 触发门禁
-- **Then** 该 required check 失败 ⇒ 合并被拦
+## Requirement: `check` 不执行测试
 
-## Requirement: 工具不替接入方执行测试（边界）
-
-`witnessloop check` / `guard` SHALL NOT 执行接入方的测试命令——
-它们只判**流程证据**；跑测试是 CI 侧 job 的职责。本地跑测试 SHALL 仍是接入方自己的事。
+`witnessloop check` SHALL NOT 执行接入方的测试命令——它只判**流程证据**；
+跑测试是 CI 侧 job 的职责，本 change SHALL NOT 改变 `check` 的语义与耗时，SHALL NOT 让它依赖测试产物。
 
 ### Scenario: 本地 check 不跑测试
-- **Given** policy 与 caller 里都声明了测试命令
+- **Given** 仓里已采用测试工作流
 - **When** 本地运行 `witnessloop check`
-- **Then** SHALL NOT 执行任何测试命令（`check` 的语义与耗时不被改变）
+- **Then** SHALL NOT 执行任何测试命令
 
-## Requirement: 命令的传递方式 SHALL 避免脚本注入
+## Requirement: 不新增运行时依赖
 
-reusable workflow SHALL 把命令经 **`env:`** 传给 step，SHALL NOT 将 caller 提供的值**裸内联**进
-`run:` 脚本（GitHub 官方建议的写法）。
+实现 SHALL NOT 给 `witnessloop` 增加运行时依赖（`pyproject.toml` 的 `dependencies` 保持 `[]`）。
 
-### Scenario: 结构断言
-- **Given** `gate.yml` 的测试步骤
-- **When** 用 YAML 解析断言（不是 grep 子串）
-- **Then** 命令出现在 `env:` 里；`run:` 中不出现裸 `${{ inputs.test-command }}`
-
-## Requirement: 对既有接入方**默认无行为变更**
-
-触发面只在 caller **显式**给出命令时生效；未给命令的仓 SHALL 与改动前**逐字同行为**。
-若本 change 同时改变了 reusable workflow 的 ref 策略，SHALL 保持「默认无变更」这一前提
-（否则就是**静默行为变更**，必须在 README 显式声明）。
-
-### Scenario: 存量接入方升级后行为不变
-- **Given** 一个已接入的仓（caller 里没有命令）
-- **When** 门禁跑在升级后的 reusable workflow 上
-- **Then** 仍只跑 `check`；测试相关步骤被跳过
-
-## 边界声明（必须写进文档）
-
-1. **测试命令是任意代码**，会在**每个 PR**（含 **fork PR**）的 runner 上执行。这是「跑 CI」的常态，
-   但接入方应知道；如需「fork PR 先批准」，那是**仓级设置**，本工具不替其决定。
-2. **required 是人工勾一次的操作**：与 `check` 一样，工具无法验证平台侧配置；
-   文档 SHALL 写明该步骤与「忘勾的后果」。
-3. **命令的改动会影响台账**：caller 是 `init` 写并记账的文件，改它会让 `init` 报冲突（fail-closed）。
+### Scenario: 依赖不变
+- **Given** 本 change 后的 wheel
+- **When** 检查 METADATA
+- **Then** SHALL NOT 出现新的 `Requires-Dist`

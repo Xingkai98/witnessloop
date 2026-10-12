@@ -1,146 +1,190 @@
 # Design: adopter-test-gate
 
-> 状态：**草稿**（待设计 grill + 对抗验证收敛 → 停轮用户确认）。
-> 依据 `proposal.md`（含三条立项前实测约束）。流程出处 `templates/grill.md`。
+> 状态：**草稿 → 已按 grill 回写**（grill 证伪原稿 5 处事实、走到 3 个原稿没到的设计树节点；
+> 逐一复核属实，见 §7）。待对抗验证收敛 → 停轮用户确认。
+> 依据 `proposal.md`。流程出处 `templates/grill.md`。决策记录：`reviews/grill-review.md`。
 
 ## 0. 一句话
 
-让 `init` 接入的门禁**能跑接入方自己声明的测试命令**，并让它**真的能拦住合并**——
-同时**必须**决定 `gate.yml` 的 ref / 发布策略（否则新接入方一 `init` 就坏，见 D5）。
+交付「**接入方能拿到一个可用的测试执行点**」这一件事——**优先用一份约定正确的模板 + 文档（零代码、零接口、
+对存量接入方也可达）**，而不是把接入方的测试塞进 witnessloop 自己的 `workflow_call` 接口里
+（后者会连出**它其实不需要的** ref/发布决策，并在三条设计树节点上留下硬伤）。
 
-## 1. 现状（实测，带 `文件:行号`）
+## 1. 现状（实测 · 已按 grill 复核订正）
 
-| 事实 | 位置 | 说明 |
+| 事实 | 位置 / 证据 | 说明 |
 |---|---|---|
-| caller 只跑 `check` | `initcmd.py:24-40`（`caller_workflow`） | 一个 `uses:` job，无 `with:`、无 steps |
-| 门禁本体 | `.github/workflows/gate.yml` | `workflow_call`；已有 `base-ref` / `witnessloop-ref` 两个可选 input；作业 `check` |
-| 本仓自己的测试 job | `.github/workflows/ci.yml` | `test` job 跑 `uv run pytest -q` + 打包冒烟——**是自测，不给接入方** |
-| ref 钉在固定 tag | `constants.py:11` | `DEFAULT_GATE_REF = …gate.yml@v1`；`v1 == v1.5.0 == 843b691`，`origin/main == de51a01`（**领先 6 个提交**） |
-| 运行时零依赖 | `pyproject.toml` | `dependencies = []`（pyyaml 只在 dev group，仅测试用） |
-| caller 被台账管理 | `initcmd.desired_files` / `build_manifest` | caller 的 hash 进 `.witnessloop/init-manifest.json`，`uninit` 依它回滚；文件头写「请勿手改」 |
+| caller 极薄 + 被台账管理 | `initcmd.py:24-40`（`caller_workflow`）、`initcmd.py:79-96`（台账） | `int`/`uninit` 都比对台账 hash |
+| **`gate.yml` 自 `v1` 起从未改过** | `git log --oneline v1..origin/main -- .github/workflows/gate.yml` = **空**（同范围 `initcmd.py`/`constants.py` 有 6 个提交） | 本 change 是**第一次**面对 gate.yml 的发布策略 |
+| **`v1` 是「滚动大版本」**（不是固定 tag） | `git tag -n99 v1` → 「witnessloop v1（**滚动大版本**，当前指向 v1.5.0）」；`v1^{commit} == v1.5.0^{commit} == 843b691` | 历史上随发布滚动，只是**最近 6 个提交没滚** |
+| **`@v1` 同时钉着 gate.yml 与 CLI 版本** | `gate.yml:19-23` 的 `witnessloop-ref` **默认 `"v1"`**，而 caller 从不覆盖它 | ⇒ 移动 `v1` = 连**被 uvx 装下来的 witnessloop CLI** 一起换 |
+| 零运行时依赖 | `pyproject.toml` `dependencies = []`（wheel METADATA 无 `Requires-Dist`） | pyyaml 只在 dev group（测试用） |
+| **「只写三个文件」是被钉住的契约** | `docs/gate.md:9`、`tests/test_init.py:18,72,103` | 任何「`init` 多写一个文件」的方案都要动它 |
+| **存量仓上「多写一个文件」到不了** | `_already_initialized`（`initcmd.py:207-281`）在无 drift/conflict 时**直接返回** ⇒ 实测输出「幂等，无改动」、**新文件不落盘** | 所有「加 init 产物」方案的共同瓶颈 |
+| **手改 init 产物 = 死锁** | 实测（本机复现，见 §7-③）：改 caller 后 `init` **1** / `uninit` **1** / 删台账再 `init` **1**（「只增不改，拒绝覆盖」） | 没有 flag 能表达「我确认」；`uninitcmd.py:85-88` 的「请人工确认后重试」**不可满足** |
+| 保护面 | `.witnessloop/policy.json` 实测：`protected_paths = ['openspec/specs/**','.witnessloop/**']`；本仓 `require_change_for = ['src/**','templates/**','plugin/**']` | `.github/**` **两者都不在** ⇒ 命令住那儿不需要解释事件 |
+| required 粒度 = **job** | `gh api …/branches/main/protection` ⇒ `contexts = ["gate / check"]`（`strict`/`enforce_admins` 均 true） | 独立 job ⇒ 必然多一个人工勾选 |
 
-## 2. 决策（候选 · 待 grill 攻）
+## 2. 决策
 
-### D1 测试步骤住在 **reusable workflow**（`gate.yml`），由**可选 input** 驱动
+### D1 测试步骤**住哪** —— 己（主）／戊（辅）／甲（备选）／丁（否）—— **Q1**
 
-- **否掉**「caller 里加第二个带 steps 的 job」：那是把 YAML 的维护责任推给接入方，
-  且破坏 design §5.1 明写的「**极薄 caller**」契约（caller 只是 `uses:` 转发）。
-- **否掉**「让 `check` 自己跑测试」：`check` 的性质是「判**流程证据**」，跑测试是另一件事；
-  且 `check` 也在本地 / guard 路径上被调用，跑全量测试会污染它（慢、副作用、失败语义混淆）。
-  这条写成 spec 的边界。
-- 形态（丁）**`init` 另写一个独立的测试 workflow 文件**（如 `.github/workflows/tests.yml`，纯 steps、**不含
-  `uses:`**）：完全不碰 `gate.yml` ⇒ **ref/版本问题自动消失**（D5 的硬约束不存在了），也不依赖 `workflow_call`
-  的 input 声明语义。代价：接入方多一个文件要维护；`init` 要写一个带占位命令的模板；
-  「极薄 caller」原则变成「两个各司其职的文件」（**未必是坏事**：测试本来就与 witnessloop 无关）。
-  ⚠️ **这是 D1 的强竞争者**（它让 D5 整段作废）——grill 必须对它打分，不要只默认走 `gate.yml`。
-- 形态（甲）：`gate.yml` 增 `workflow_call.inputs.test-command`（`required: false`，`default: ""`）。
+| | 接口/ref 耦合 | 命令日常可改 | 到达**存量**接入方 | 新契约成本 |
+|---|---|---|---|---|
+| **己（推荐·主）**：只发 `templates/adopter-tests.yml` 可复制模板 + README 配方，`init` 输出里提一句 | **无** | **自由**（是接入方自己的文件） | **可达**（自己拷） | **零** |
+| **戊（推荐·辅）**：文件由 `init` **种一次**（不存在才写、**不进台账**、不参与冲突与 `uninit` 删除） | 无 | 自由 | 仍不可达（同 丁，CD-7） | 新增「种子文件」语义 ⇒ 仍需改三文件契约（`docs/gate.md:9`） |
+| **甲（备选）**：`gate.yml` 加 `workflow_call.inputs.test-command` + step | **有** ⇒ 必须同时决定 D5 | 撞台账死锁（R10） | 需先移动/换 ref | `with:` 进 caller |
+| **丁（否）**：`init` 写一个**台账管理**的独立测试 workflow | 无 | 撞台账死锁 | **不可达**（CD-7） | 破三文件契约 + `uninit` 回滚面扩张 |
 
-### D2 **同一 job 还是独立 job** —— 关键取舍（Q1）
+- **否甲为主**的理由：它把「接入方的测试」塞进 witnessloop 的 `workflow_call` 接口 ⇒ 强制 D5（ref/发布），
+  且**未声明 input ⇒ `startup_failure`、零 job、不点名**（R8）⇒ 决定错的代价是「每个 PR 卡死且无从诊断」。
+- **否丁**：破了三文件契约**且**对存量不可达**且**撞台账死锁——三条缺点同时命中。
+- **推荐 己 主 + 戊 辅**：本 change 真正要交付的产品是「**一份约定正确的 YAML + 一个可复制的配方**」——
+  因为 required 的勾选在**所有**方案里都是人工的（required 粒度 = job，见 §1）。
+- ⚠️ **R14（选己/戊的实质优势，原稿没提）**：reusable workflow 的权限**不能超出 caller**，而 witnessloop
+  的 `gate.yml:25-26` 只声明 `contents: read` ⇒ 接入方**无法**为自己的测试要 `id-token: write`(OIDC)、
+  `packages: read`、`pull-requests: write`。走他们自己的 workflow ⇒ 权限不受限。
 
-| | 甲：独立 `test` job | 乙：并入既有 `check` job 的后续步骤 |
-|---|---|---|
-| 接入方的平台操作 | **要再勾一次** required（第二个 job） | **零新增**（`gate / check` 已是 required） |
-| 忘勾的后果 | 测试**跑了但不拦**——正是 issue #4 抱怨的形态换个位置 | 不存在这个静默面 |
-| 职责/可诊断性 | job 名清晰、归因清晰 | job 名 `check` 不再只表示流程校验；失败**靠 step 名**区分 |
-| 性能 | 与 check 并行 | 串行（check 很快，影响可忽略） |
+### D2 失败交互（**只有当测试步骤落在 witnessloop 的 job 里时才存在**）—— **R13**
 
-- 平台事实：**required check 的粒度是 job，不是 step** ⇒ 乙 是唯一能「**零人肉步骤即拦住**」的设计。
-- **倾向乙**（直击 issue 的「没人管」），但甲更干净——**交 grill 打分 + 停轮拍板**。
+若曾走甲 + 「并入既有 `check` job」：默认 step 语义下 **`check` 失败 ⇒ 测试步骤根本不执行**
+（门禁红时恰好是最想要测试反馈的时候）；改用 `if: always()` 又会**掩蔽** `check` 的失败信息。
+⇒ 这条**没有**「两全」写法，必须在 spec 里显式钉死选哪一个**以及为什么**。
+**走己/戊 时这条自动消失**（接入方自己的 job/workflow，互不影响）——这是推荐方案的附带好处。
 
-### D3 命令**从哪来**（单一事实源）—— Q2
+### D3 命令**住哪** + 台账/死锁 —— **Q2**
 
-- 甲：**policy 字段** `tests.command` + `init` 把它 materialize 进 caller 的 `with:`。
-  ⚠️ 漂移：policy 事后改了，caller 不会跟着变（`init` 只增不改 + 台账 hash）⇒ 会出一个
-  「policy 说跑 X、CI 实际跑 Y」的静默分歧（本仓最恨的那类）。**否**，除非同时提供 `check` 校验——
-  而 `check` 零依赖、解析不了 YAML（约束 3）。
-- 乙：**只住 caller**（`with: test-command: <cmd>`）。caller 本来就是 CI 的属性、接入方可读可改；
-  代价：文件头「请勿手改」与台账 hash 会让「想改命令」的人撞上冲突（fail-closed，可按既有冲突流程处理）。
-- 丙：`init --test-command "<cmd>"` 写入 caller（= 乙的便利入口），**不新增 policy 字段**。
-- **倾向 乙/丙**（caller 是唯一事实源，避掉漂移面），并把 caller 头注释改成
-  「这一行是**给你的**：填你的测试命令；改了之后 `init` 会报冲突（见 `docs/gate.md §1.1`）」。
+- **推荐**：命令写在**接入方自己的** workflow 文件里（模板的 `run:` / `env:`）⇒ 既不进 witnessloop 台账
+  （无死锁、无解释事件），也天然是「每次运行读 PR 检出出来的当前值」（无漂移面）。
+- **若**仍要 witnessloop 侧知道命令（甲′ = `gate.yml` 运行时读仓内文件，见 CRQ-8）：**文件位置必须在
+  `protected_paths` 与 `require_change_for` 之外**（如 `.github/wl-test-command.txt`）——
+  **不要**放 `.witnessloop/**`（受保护 ⇒ 每次改命令都要写 `protected_path_write` 解释事件），
+  **不要**塞 `policy.json`（它是不变集里的**不可移除**保护路径）。
+- **必须写进文档的两条**（原稿把这条包装成了特性）：
+  1. **手改 `init` 产物 = 死锁**（实测：`init`/`uninit` 同时 exit 1，删台账也不行）；**已有**的恢复路径
+     只有「把文件恢复成**逐字节**等于生成物 + 删台账」——对存量接入方**不可知**（那是他们当初那个 CLI 版本的产物）。
+  2. **不要**建议「先 `uninit` 再 `init`」：实测 `uninitcmd.py:91-95` 会删台账里的**每一个**条目，
+     包括 `.witnessloop/policy.json` ⇒ 会**静默丢定制 policy**（本仓自己就是受害者：policy 来自仓外 seed，seed 不入库）。
 
-### D4 默认行为：**空命令 = 跳过**（不是失败、更不是默认跑）
+### D4 默认行为：**空 = 跳过** + **可见信号**（Q4/Q7）
 
-- 存量接入方与「不写测试的仓」行为**完全不变**（这是 D5 选「移动 tag」时唯一安全的形态）。
-- 不做探测（猜 `pytest`/`npm test`）：显式声明优于魔法（写进 spec 的边界）。
+- 空 = 跳过（不失败、不探测）；但**必须**给运行时可观测信号，且这条进 **spec**（不只进 README）：
+  空 ⇒ 打印一行 `::notice::`（「未声明测试命令，只跑了流程校验」）；非空 ⇒ 回显**实际执行的命令**。
+- 理由：空=跳过 + required 绿 = 「**看起来在保护你**的绿勾」。例：`pytest --collect-only` 这类粘贴失误
+  （收集 13 个用例、跑 0 个、exit 0）会让门禁**永远绿**——本仓最恨「永远绿的断言」。
 
-### D5 ref / 发布策略 —— **本 change 必须一起决定**（Q3）
+### D5 ref / 发布策略：**甲（发新 tag）**，**否乙（移动 v1）** —— **Q3**
 
-硬约束：`init` 若开始写 `with: test-command:`，而 caller 引用的 `@v1` 的 `gate.yml` **没有声明该 input**，
-`workflow_call` 会直接报错（⚠️ 平台行为断言，**待 grill 查证**）⇒ **新接入方一 `init` 就坏**。
+- **乙 的代价必须写全**（原稿漏）：`gate.yml:19-23` 的 `witnessloop-ref` 默认 `v1`、caller 从不覆盖 ⇒
+  移动 `v1` 会把积压 6 个提交里**多条「对**接入方**是行为变更」**（`README.md:105-113` 自述，含
+  「历史 change 若缺 `stage=grill` manifest 会**新增一条红**」）**一次性静默送达所有存量接入方**。
+  「D4=空则跳过」只覆盖**新增的测试步骤**，完全不覆盖这一层 ⇒ 原稿「只要空则跳过就安全」**不成立**。
+- **若 D1 选己/戊 ⇒ D5 不进入本 change**（不碰 `gate.yml`）；若最终仍选甲 ⇒ **必须**在同一 change 内
+  把「存量接入方怎么升」（含 R10 死锁）写成显式交付物，并选 D5 甲。
+- 附带事实：`v1` 的注记自称「滚动大版本」⇒ 「乙 = 恢复 tag 自称的惯例」；但**惯例对不对先放一边**，
+  按上面的代价评估，本 change **不**该顺手把 6 个提交的行为变更加载上去。
 
-- 甲：**发新 tag**（如 `v1.6.0`）+ `DEFAULT_GATE_REF` 指向它 + README 安装/接入示例同步。
-  语义最清晰、可回滚；存量接入方要**显式 bump**（改 caller 里那一行 `@v1`→`@v1.6.0`——那行在台账里，
-  得走冲突流程或 `--force` 类操作，**要写清怎么改**）。
-- 乙：把 **`v1` 改成移动 tag**（GitHub Actions 的 major-tag 惯例，多数 action 都这么做）。
-  `init` 继续写 `@v1`（**不改常量**）；新接入方立刻拿到；存量接入方**下次 CI 就拿到**——
-  ⚠️ 但他们拿到的行为必须**默认无变化**（D4 = 空则跳过 ✓），否则就是**静默行为变更**。
-  代价：把「移动 major tag」变成发布纪律（要写进 README/发布说明，且**回滚只能是新 commit**）。
-- 丙：本 change **只改 main 上的 gate.yml + init**，ref/发布策略**单独立 issue** 作为前置。
-  ⚠️ 这条最省，但会让本 change 的价值**悬空**（存入量接入方拿不到），且新接入方仍会坏（除非同时把
-  caller 里的 input 也拿掉）。**若选丙，必须连带选定「本 change 期间 init 暂时不写 input」**，否则不自洽。
-- **倾向甲或乙**；具体哪条**交停轮拍板**（它影响所有接入方 + 触及发布习惯）。
-  ⚠️ **若 D1 选丁（独立测试 workflow）⇒ 本节整段作废**（不碰 `gate.yml` ⇒ 无 ref 问题）。
-  这是 D1 与 D5 的**耦合**：D1 的选择决定 D5 是否存在——两个决策**必须一起看**，别分开拍。
-- 丁（D1 的另一条路）：**不动 ref**，因为根本不需要——这是选丁的**主要收益**。
+### D6 本仓自举：**今天不受影响**；C2 要钉对东西（CRQ-12）
 
-### D6 本仓自己的自举**不受本 change 影响**（要写进文档，避免误读）
+- 实测：`.github/workflows/witnessloop.yml:14` 引 `gate.yml@v1`，本仓 main 的 required context = `gate / check`。
+- ⚠️ **选乙之后这条立刻变假**（本仓自己的 caller 会立即执行新 gate.yml + 新 CLI）⇒ C2 的断言
+  **必须**与 D5 的定案一致：按推荐（己/戊，不动 `gate.yml`）⇒ 钉「本 change **不改** `gate.yml` 字节 +
+  本仓 caller 仍引 `@v1`」；若选乙 ⇒ 钉的是新语义（且要写清本仓自己也会被这次行为变更波及）。
 
-本仓的 caller（`.github/workflows/witnessloop.yml`）引用的是 **`@v1`** ⇒ 本 change 对 main 上 `gate.yml`
-的改动**不会**改变本仓 PR 的检查行为（本仓另有 `ci.yml` 的 `test` job 跑测试）。选 D5 乙 之后**将来**才会到达。
+### D7 `env:` 传参（防脚本注入）**要限定作用域**（CRQ-7 / R16）
 
-### D7 安全写法：命令必须经 `env:` 传入，**不**直接内联进 `run:`
+- 现有 `gate.yml:57-58` 的 `run:` 里**就有**裸 `${{ inputs.witnessloop-ref }}`（同 step 的 `base-ref` 却规规矩矩走 `env:`）。
+  ⇒ 断言若写成「`run:` 里不出现裸 `${{ }}`」会在**现状**上直接红。
+- 按推荐（己/戊）⇒ 本 change **不碰** `gate.yml`，这条退化为**模板的写法要求**（模板里命令经 `env:`）。
+  若将来顺手改 `gate.yml:58`，那是一个**独立**的小清理，别混进本 change 的验收。
 
-`run: ${{ inputs.test-command }}` 是**脚本注入**形态（GitHub 官方明确建议把 `${{ }}` 放 `env:`）。
-本例的 input 来自接入方自己的 caller（相对可信），但**照最佳实践写**、并在文档里说明；
-测试要用 pyyaml 断言「命令出现在 `env:` 里 / 不以裸 `${{ }}` 出现在 `run:` 里」。
+### D8 文档影响（**已按 grill 补漏**）
 
-### D8 文档影响
+- `README.md`：接入段（测试执行点怎么拿、**空=跳过 + 可见信号**、required 是**人工勾一次**）+ **两条告警**（D9）。
+- `docs/gate.md`：§1（若选戊 ⇒ 三文件契约变更）、§7（能力边界补 D9）、新增一小节（本能力的语义与边界）。
+- `templates/adopter-tests.yml`（**新文件**，己/戊 的交付物）+ `templates/review-loop.md`：
+  ⚠️ **本 change 的立项理由之一就是「审阅者只能靠人工记忆跑一次测试」**，而
+  `templates/review-loop.md:33,69,77` 那些「跑相关测试并写进报告」的条款**目前没有 CI 兜底** ⇒
+  该模板要不要补一句「测试须由 CI 执行（见 templates/adopter-tests.yml）」是 D8 的一部分，
+  **不改它这条冲突就还在**（grill 证伪第 5 条）。
+- `proposal.md:13` 的「流程规定 TDD + 审阅者核实测试通过」补出处：`templates/review-loop.md:33,69,77`。
 
-- `README.md`：接入段补「测试命令怎么给 + **空 = 跳过** + required 是**人工勾一次**（job 粒度）」；
-  若 D5 选乙，补一句发布纪律（`v1` 是移动 major tag）。
-- `docs/gate.md`：§1（目标仓长什么样 → caller 多了 `with:`）、新增一小节（测试 job 的语义与边界）。
-- `docs/design.md §5.1`：caller 契约由「极薄」扩成「极薄 + 可选 `test-command`」。
+### D9 **能力边界（R9，必须进 spec，别过度承诺）**
 
-## 3. 接线点（实现清单，依 D1–D5 定案）
+本能力**只在「PR 不改自己的 CI」的前提下**成立：`.github/workflows/**` **不在**保护路径、
+branch protection 实测 `required_approving_review_count: 0` / `require_code_owner_reviews: false`
+⇒ 一个 PR 可以删掉自己的测试步骤（或写成 `|| true`）而 required check 依旧绿。
+这与「门禁要防的那个 agent 恰好是 PR 作者」直接相关。文档**不得**承诺「测试失败一定拦住合并」，
+而应写「**在你自己的 CI 配置未被本次 PR 修改的前提下**」。可选加固：把 `.github/workflows/**` 纳入
+CODEOWNERS（写进文档，不强制）。
 
-- `.github/workflows/gate.yml`：新 input + 步骤（位置依 Q1）。
-- `src/witnessloop/initcmd.py`：`caller_workflow()` 加 `with:` 段（依 D3/D4）+ 头注释调整。
-- `src/witnessloop/constants.py`：`DEFAULT_GATE_REF`（依 D5 甲；乙则不动）。
-- `tests/`：`test_gate_workflow.py`（pyyaml 结构化断言）+ `test_init*.py`（幂等 / 冲突 / 回滚）。
-- 文档（D8）。
+## 3. 接线点（依 Q1 定案）
 
-## 4. 风险
+- **选己/戊（推荐）**：新增 `templates/adopter-tests.yml`；`initcmd` 只在 `init` 输出里加一行提示
+  （戊 另加「种一次 + 不进台账」的写入路径 + 改三文件契约）；`README.md` / `docs/gate.md` / `templates/review-loop.md`。
+  ⇒ **`gate.yml` 与 `constants.DEFAULT_GATE_REF` 都不动**。
+- **选甲**：另需 `gate.yml` 新 input + step、`initcmd.caller_workflow()` 的 `with:`、台账记 `test_command`
+  （否则存量仓用不了、新仓 plain `init` 永久冲突——`initcmd.py:131-141/:163` 已有 `gate_ref` 的 recall 先例）、
+  以及 D5 甲（新 tag）。**明显更重**。
 
-1. **R1（高，平台耦合）**：未声明 input ⇒ `workflow_call` 报错。**待 grill 查证**（本机跑不了 Actions）。
-   若成立 ⇒ D5 是**硬前置**，不能拖。
-2. **R2（中）**：D2 选甲 ⇒ 默认出现「测试跑了但不拦」——把 issue 的问题换了个位置（且更难发现）。
-3. **R3（中）**：D3 选甲 ⇒ policy↔caller 漂移面（且 `check` 零依赖、验不了）。
-4. **R4（中，须写进文档）**：测试命令是**任意代码**，会在**每个 PR**（含 **fork PR**）的 runner 上执行。
-   这对「正常 CI」是可接受常态，但会让「外部贡献者的代码自动跑」——接入方应知道（GitHub 亦有
-   「fork PR 需批准」的仓级设置）。**本 change 不替接入方决定**，只写清。
-5. **R5（低）**：D2 选乙 ⇒ 失败归因靠 step 名，`gate / check` 这个 job 名不再只表示流程校验。
-6. **R6（低）**：本仓自举不受影响（D6），但**文档不写清就容易被误读**。
-7. **R7（低）**：D5 选乙（移动 tag）⇒ 存量接入方**下次 CI 就拿到新 gate.yml**；只要 D4=空则跳过就安全，
-   但这是一条**新的发布纪律**，回滚只能靠新 commit。
+## 4. 风险（R1 起沿用 grill 编号）
+
+1. **R8（高 · 平台耦合）**：未声明 input ⇒ `startup_failure`（**零 job**）⇒ required check **永不报告**
+   ⇒ PR 停在「Expected — waiting for status to be reported」，**既拦人也无日志**。最危险组合是
+   「文档教人手改 caller 填命令」+ 存量仓仍钉冻结的 `@v1`。⚠️ **置信度中高、非官方明文、无端到端实测**（CRQ-5）。
+2. **R9（中高 · 安全边界）**：见 D9。**必须进 spec**，否则**过度承诺**。
+3. **R10（高 · 可用性）**：台账死锁（§1 实测）——本 change **不得**把「手改 init 产物」当正常用法。
+4. **R11（中）**：任何「`init` 多写一个东西」的方案都对**存量仓不可达**（CD-7）⇒ 验收**不能只在新仓上做**。
+5. **R12（中）**：`@v1` 同时钉 gate.yml **与** CLI 版本 ⇒ 移动它 = 一份新 CLI 静默到达（D5 否乙的核心理由）。
+6. **R13（中）**：失败交互（D2）——走甲时才存在，且没有两全写法。
+7. **R14（中 · 能力天花板 → 选己/戊 的论据）**：reusable workflow 权限不能超出 caller
+   ⇒ witnessloop 的 `contents: read` 会把接入方的测试锁死在这个权限里。
+8. **R15（低-中 · 契约）**：选戊/丁 破「只写三个文件」契约（`docs/gate.md:9`、`tests/test_init.py:18,72`）⇒ 必须进 spec delta。
+9. **R16（低 · 测试写法）**：D7 的断言必须限定作用域，否则在现状上直接红。
+10. **R17（低 · 自举）**：本 change 若改 `caller_workflow()` 的字节 ⇒ **本仓自己的** init 台账与磁盘不一致
+    ⇒ 此后任何 `init` 撞死锁，而恢复路线会丢定制 policy（本仓 policy 来自仓外 seed、不入库）。
+    ⇒ 建议：本 change **不改** `caller_workflow()`（选己/戊 天然满足）；若必须改，顺手把 seed 入库或加恢复通道。
+11. **R18（低 · 理由句精度）**：原稿用「`check` 也在本地/guard 路径上被调用」当论据——**假**（`guard` 不调用 `check`，
+    见 §7-①）。结论（不让 `check` 跑测试）保留，但论据要换。
 
 ## 5. 测试策略（TDD）
 
-- **gate.yml**：pyyaml 解析（理由见 `tests/test_gate_workflow.py:32-34`：只 grep 子串钉不住「位置 + 取值」都重要的行）——
-  断言：input 已声明且默认空；空时不执行 / 给了就执行；命令经 `env:` 传（D7）。
-- **init**：caller 含 `with:` 段与命令；空命令时 caller **不含**该段（或含显式空值——二者择一钉死）；
-  既有幂等 / 冲突 / `uninit` 回滚用例全绿。
-- **回归**：全量 pytest 绿；本仓 `.github/workflows/witnessloop.yml` 与 `gate.yml@v1` 的关系有断言或注释（D6）。
+- **模板/工作流**：用 **pyyaml 结构化断言**（先例与理由见 `tests/test_gate_workflow.py:32-34`：只 grep 子串钉不住
+  「位置 + 取值」都重要的行）——断言模板里：命令经 `env:`、空时有 `::notice::`、非空时回显实际命令。
+- **若选己/戊**：另需钉「`init` 输出里提到了测试执行点」与（戊）「种子只写一次、不进台账、不参与 `uninit`」。
+- **若选甲**：`gate.yml` 新 input 的声明 / 空则跳过 / 三文件契约变更 / 台账 `test_command` recall
+  （照 `initcmd.py:131-141` 的 `gate_ref` 先例）。
+- **回归**：全量 pytest 绿；`gate.yml` 的既有断言（若本 change 不动它则应**逐字节不变**）。
 
-## 6. Open Questions（停轮待用户确认）
+## 6. 停轮裁定（Q1..Q8 —— **待用户确认**）
 
-- **Q1 测试步骤住哪**：甲 独立 `test` job（职责清晰，但接入方**要再勾一次** required，忘勾=跑了不拦）；
-  乙 **并入 `check` job**（零新增平台操作 ⇒ 真能拦；代价：job 名语义变宽、失败靠 step 名归因）。
-  **倾向乙**。例子见 D2 表。
-- **Q2 命令声明在哪**：甲 policy 字段（漂移面）；乙/丙 **只住 caller**（`init --test-command` 作便利入口）。
-  **倾向乙/丙**。
-- **Q3 ref / 发布策略**：甲 发新 tag（清晰、要 bump）；乙 **把 `v1` 变成移动 major tag**（新接入方立刻拿到、
-  存量下次 CI 拿到，**要求 D4=空则跳过**才安全）；丙 本 change 不动 ref（**会让本 change 价值悬空**，须连带
-  让 init 暂时不写 input）。
-- **Q4 默认开还是关**：**空 = 跳过**（推荐，存量零影响）vs 默认跑某个约定命令（需探测，见非目标）。
-- **Q5 是否把「测试命令 = 任意代码、fork PR 也会跑」写成 README 的显式告警**（R4）：**推荐写**。
+| 问题 | 推荐 | 一句话理由 |
+|---|---|---|
+| **Q1 步骤住哪** | **己 主 + 戊 辅**（甲备选、丁否） | 交付物应是「约定正确的 YAML + 配方」；required 勾选在所有方案里都是人工的 |
+| **Q2 命令住哪** | 接入方自己的文件（**不台账**）；甲′ 的话放 `.github/` 而非 `.witnessloop/` | 避开死锁（R10）与「改命令要写解释事件」（CRQ-9） |
+| **Q3 ref 策略** | **甲（新 tag）**；**否乙** | 移动 `v1` 会连带升级 CLI（R12）；选己/戊 ⇒ 本 change 不需要它 |
+| **Q4 空默认** | 保留「空=跳过」 | 存量零影响；探测会静默跑错东西 |
+| **Q5 告警** | 写（fork PR 告警 + **PR 可改自己的 CI**） | 后者是本 change 新引入的承诺边界（D9） |
+| **Q6 存量升级** | 写成**显式交付物**；**勿**「uninit→init」 | 那条路会静默丢定制 policy（实测） |
+| **Q7 可见信号** | 要（`::notice::` + 回显命令） | 把「静默」变成「看得见的静默」 |
+| **Q8 命令文件位置** | 避开保护路径（`.github/…`） | 否则每次改命令都要写解释事件 |
+
+每条的具体例子、反驳与出处见 `reviews/grill-review.md` 的 `## Open Questions`。
+
+## 7. 原稿被证伪的事实（grill 提出 · 作者独立复核属实）
+
+1. **`design.md:29`**「`check` 也在本地 / guard 路径上被调用」——**假**。`guardcmd.py:22-33` 只 import
+   `constants/contract/evidence/paths/policy/gitutil`；`cli.py:153-160` 把 `guard` 与 `check` **分别**分派。
+   共享的是**判定库**，不是动词。⇒ 结论保留（不让 `check` 跑测试），**论据改写**（见 R18）。
+2. **`proposal.md:25` / `design.md:18`**「`v1` 是**固定** tag」——**表述不准**：`git tag -n99 v1` 的注记原文是
+   「滚动大版本，当前指向 v1.5.0」。机械部分（6 个提交、到不了新 gate.yml）成立。
+3. **`tasks.md` 原 B5**「改 `caller_workflow()` 的字节 ⇒ 存量仓 `init` 报冲突」——**半假、两分支结论相反**：
+   台账比的是「台账 vs 磁盘」，改**生成物**影响的是「本次期望 vs 磁盘」。实测：选「缺省**不写** `with:`」
+   ⇒ 生成物逐字节不变 ⇒ 存量仓 plain `init` 仍 exit 0；真正会立刻打破的是「写**显式空值**」或**改头注释**。
+   ⇒ 这条必须与 tasks B2 的「二者择一」绑在一起定。
+   **另经作者独立复现**（`/tmp/atg-check`）：手改 caller 后 `init` **exit 1**、`uninit` **exit 1**、
+   **删台账再 `init` 也 exit 1**（「只增不改，拒绝覆盖已有文件」）⇒ **死锁属实**。
+4. **`design.md:64/77`**（D4/D5 乙）「空则跳过 ⇒ 移动 tag 唯一安全」——**不完整**：漏了 `witnessloop-ref`
+   默认 `v1` 这一层（R12）。
+5. **`design.md:98-104`**（D8 文档影响清单）**有漏项**：三文件契约（`docs/gate.md:9` + `tests/test_init.py:18,72`）、
+   `templates/review-loop.md:33,69,77`、`docs/gate.md §7`（D9），以及 `proposal.md:13` 缺 `文件:行号` 出处。
