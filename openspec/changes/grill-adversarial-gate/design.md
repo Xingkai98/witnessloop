@@ -84,7 +84,8 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 （⚠️ 原稿写「6 条」**漏算** `test_build_then_check_agree_on_noncanonical_report_paths` 的 **4 个参数化项**
 ——grill 实测订正）、`test_manifest_build.py` / `test_acceptance.py` 等。
 ⚠️ 原稿那句「实测清单见 tasks B3 的实测记录」是**悬空引用**（`tasks.md` 的「实测记录（实现期）」当时为空），
-已删——清单**不在这两份文件里维护**，权威出处是 `reviews/grill-review.md` 的「原稿被证伪的事实」。
+已删——清单**不在这两份文件里维护**，权威出处是 `reviews/grill-adversarial.md` 的 **N-1**
+（`grill-review.md` 的「事实 1–3」只覆盖其中 9 条，**不足以**当权威出处——这正是对抗轮 R1 的阻塞项 B-1）。
 
 ⚠️ **甲 还有一条原稿没写全的代价（grill 实测发现，对抗轮 R1 订正措辞）**：甲会让
 `tests/test_building_gate.py::test_not_required_when_only_the_change_dir_changed` 变红——它钉的正是
@@ -199,8 +200,9 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
    - `_check_git_span`（`contract.py:272-354`）只判「manifest 的 `head_sha` 之后没有非证据改动」，
      **两份 manifest 的先后不做比较** ⇒ 门禁保证的是「存在一份绑定在最终 revision 的对抗证据」，
      不是「对抗轮发生在写码之前」。⇒ 文案层面极易被读成「写码前必须收敛」（grill R-new-1），
-     故 `docs/gate.md §9` 与 README **必须并列写死两条边界**：① verdict 不参与判定；
-     ② 本门禁只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前。
+     故 `docs/gate.md §9` 与 README **必须并列写死三条边界**：① verdict 不参与判定；
+     ② 本门禁只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前；
+     ③ **报告正文不校验——空文件亦合格**（判据止于 `verify_body=False`，实测零字节报告 + 合法 manifest ⇒ `check` 退 0）。
    - **不**为此新增 `design_hash`（那要改 manifest schema = 另一次 change）。
      ⚠️ 代价：本 change **自己**必然踩这个洞（依 Q5 处置）。
 5. **R5（低）**：`require_change_for = []`（或没覆盖真实代码路径）时，选乙 ⇒ 本门禁与 building、`_require_change`
@@ -286,9 +288,17 @@ R1（0 自伤：本仓**除本 change 外的** 5 个 active change **都**有对
   `.venv` 随 `cp -a` 复制会让副本测到**别的副本**的代码（→ R7 配方）。
 
 **Code-Resolved（已定案，不进 Open Questions）**：`grep -rn "grill-adversarial" src/` = 0 命中 ✅；
-R4 实测（整体替换 `design.md` 再落证据 ⇒ `check` 退 0；改 `specs/` ⇒ `spec_hash` 不匹配）✅；
+R4 实测（**证据之前**整体替换 `design.md` ⇒ `check` 退 0；要看到 `spec_hash 不匹配` 必须**先产证据、后改** `specs/`）✅；
 `design.md` 不在 `stale_exempt_paths` ✅；孤儿规则会先拦下裸报告 ✅；
-asterwynd 无第二个检查点 ✅；`spec.md` 与 design 的 D1..D8 逐条对应，只有上文 §5 列的两处缺口。
+asterwynd 无第二个检查点 ✅；`spec.md` 与 design 的 D1..D8 逐条对应，缺口清单见 §5
+（**不是定数**——须替换「所有挂 Q1/Q2 待定标记的段落」）。
+
+**对抗验证 R2（**PASS** → 已收口 · 来源 `adversarial-reviewer-grill-adversarial-gate-r1-2026-10-12T143037Z`）**：
+R1 两条阻塞项**逐条复核已关掉**（B-1 的 13 条清单逐条点名完整；B-2 的 E0b 用三组机制探针证实：
+**追加 + 重建 manifest ⇒ 退 0**、只追加不重建 ⇒ `report_hash 不匹配`、另起文件名 ⇒ 孤儿报告）。
+R2 指出 4 条**非阻塞**遗留，全部是「`design.md` 自己的摘要/引用行没跟上它自己的新正文」
+（:87 权威出处、:202 两条边界、:291 两处缺口、:202/§7 的 spec_hash 时序）——**已全部清掉**。
+⚠️ 这条模式与本仓「修正只落一份 artifact」**同源，只是缩小到了同一份文件内部**，值得记住。
 
 ## 8. Open Questions（停轮待用户确认）
 

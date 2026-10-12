@@ -237,3 +237,185 @@
 - ⚠️ **一个我踩到并修好的坑，值得记入实现期配方**：`cp -a` 出的副本会连 `.venv` 一起复制，而 `.venv/lib/.../_editable_impl_witnessloop.pth` 里写的是**源副本的绝对路径** ⇒ 在副本里跑 `uv run pytest` 会**测到源副本的代码**（我的第一轮四组对照因此全得 `2 failed / 418 passed`，与 churn 表完全不符）。**修法：副本里 `rm -rf .venv && uv sync` 重建**。`design.md:202`（R7）/`tasks.md:50-53`（B6）的配方只写了 `rm -f .git && git init`，**不够**——建议 B6 补一句「并 `rm -rf .venv && uv sync`，否则测的是别的副本」。（pytest 本身在 `tmp_path` 建独立仓，不受此影响；受影响的是**副本自己**的源码。）
 - 环境：`export PATH=/home/happy/.local/bin:$PATH`；`uv run pytest -q`（未加 `--extra dev`）。基线 **420 passed** 独立复现两次。
 - 收工核对：`git status --short` 为空、`git log -1` = `ef31a2a`、`git worktree list` 无新增 worktree、主仓与各副本的 `.git` 互不相干。
+
+---
+
+# 第 2 轮（R2）
+
+- run id: `adversarial-reviewer-grill-adversarial-gate-r2-2026-10-12T143626Z`
+- 时间: 2026-10-12T14:36:26Z
+- 立场: 默认作者「已修完」的自述有错，逐条实测复核（不抽样、不看自述）
+- 复核对象: 提交 `d6d74fa`（`git diff ef31a2a d6d74fa` 触及 `design.md` / `tasks.md` / `spec.md` + 新增本报告文件）
+- 方法: `/tmp/g2/repo` 独立副本（`rm -rf .git .venv` → `git init` → `uv sync` 重建）；被审 worktree 只读，唯一写入是本次追加。
+
+## Verdict
+
+**PASS**
+
+R1 的 2 条阻塞项（B-1、B-2）**都已真正关掉**，且是用**实测清单/实测机制**关的，不是措辞敷衍：B3 现在逐条点名全部 13 条（含 R1 新发现的 4 条），E0b 写死了落盘路径并改成循环。M-1..M-8 八项也已闭环。
+
+**唯一遗留 = 3 条非阻塞的「摘要行未随正文一起改」（N-A/B/C）**，都是 `design.md` 的**引用/摘要**没跟上它自己的新正文：
+
+- **N-A** `design.md:87` 仍写「权威出处是 `reviews/grill-review.md` 的『原稿被证伪的事实』」——**与 `tasks.md:37-38`、`tasks.md:48` 刚改成的「`reviews/grill-adversarial.md` 的 N-1」直接冲突**，且 R1 已实测那 4 条**不在** grill-review 里。
+- **N-B** `design.md:291`（§7 Code-Resolved）仍写「只有上文 §5 列的**两处**缺口」——§5 自己已改成「所有挂 Q1/Q2 待定标记的段落（对抗轮 R1 指出『两处』是下限不是全集）」。
+- **N-C** `design.md:289`（§7 Code-Resolved）仍写「改 `specs/` ⇒ `spec_hash` 不匹配」——R1 订正后 `design.md:196-198` 与 `spec.md:120` 都已写清「同一时序下改 `specs/` **也**退 0；要看到不匹配必须**先产证据、后改**」，**§7 这一行是唯一没跟上的**，照它复现会得反例（正是 R1 报的那个坑）。
+- 附带（同一类）：`design.md:202`（R-new-1）仍要求 §9/README 写「**两条**边界」，而 `design.md:164-165`（D7）与 `tasks.md:79-82`（D3）已统一为**三条**。
+
+⇒ 判定为事实缺陷、但不阻塞：`tasks.md B3:36-51`（实现者真正照着做的那份清单）**是完整正确的**，三条遗留都在 `design.md` 的摘要/引用层面，不会让实现走偏。建议按 N-A/B/C 顺手改掉——**这三处正是本仓 R1 报的「修正只落一份 artifact」，只是这次落在「摘要行」上。**
+
+---
+
+## 逐条核验（M-1 … M-8）
+
+### M-1 `tasks.md` B3 的 13 条清单 + 「权威清单」悬空引用 → **已关掉**
+
+**作者声称**：B3 给出完整清单、删掉悬空引用。
+**实测**（`tasks.md:36-51` 逐行读）：
+
+- ① `test_orphan_reports.py` **8 项**，且把 4 个参数化项与另外 4 条**逐个点名**（`:38-41`）✅
+- ② `test_building_gate.py::test_not_required_when_only_the_change_dir_changed`（`:42`）✅
+- ③ `test_acceptance.py::test_f1_end_to_end_green`（`:43`）✅
+- ④ `test_acceptance.py::test_f2_handwritten_allow_event_is_not_blocked`（`:44`）✅
+- ⑤ `test_check_manifest.py::test_report_inside_reviews_is_evidence`（`:45`）✅
+- ⑥ `test_manifest_build.py::test_round_trip_build_then_check_is_green`（`:46`）✅
+- 合计 8 + 1 + 4 = **13**，与 R1 实跑的 `jia-h` 17 条失败集**逐条一致**（我逐名字比对过，无遗漏、无多列）。
+- 悬空引用：`tasks.md` 里「权威清单 = `grill-review.md`…1–3」**已删**；出处改指 `reviews/grill-adversarial.md` 的 N-1（`:37-38`、`:48`）——**该文件里 N-1 确实存在且就是这份清单**，指向有效 ✅
+- 另：B3 还补了 R1 的交叉验证结论「漏的那 4 条**不会被 B1 的 helpers 默认改动治好**」（`:47`），并把我订正的措辞（②「只能靠空正文证据转绿」）写进 `:50-51` ✅
+
+⇒ **关掉。** 但见 **N-A**：`design.md:87` 的同一句没改，两处出处现在互相矛盾。
+
+### M-2 `tasks.md` E0b 的落盘方式 + 循环 + CHANGES_REQUESTED 合格 → **已关掉**
+
+**作者声称**：写死「同一路径原地重写 + 重跑 manifest build」、改成循环、声明 Q2 甲下 CR 收尾也合格。
+**实测**（`tasks.md:93-102`）：
+
+- 「第二轮报告必须写在**同一路径** `reviews/grill-adversarial.md`……**不要**另起文件名——第一份会立刻变成**孤儿报告**、`check` 退 1，然后**重跑** `manifest build --stage grill-adversarial`」✅（`:96-99`）
+- 「**它是循环不是单步**……**重跑到 PASS 或轮数封顶（默认 3 轮，`templates/grill.md:131`）**」✅（`:100-101`）
+- 「**Q2 选甲时，以 `CHANGES_REQUESTED` 收尾也算合格**（`spec.md` 的 Scenario 已钉住）——别以为必须跑到 PASS」✅（`:102`；我核了 `spec.md:101-104` 确有那条 Scenario）
+
+**我独立复核了这三点赖以成立的三条机制**（`/tmp/g2/repo` 新副本，走真实 `manifest build`、不靠 helpers 断言）：
+
+| 做法 | 实测 |
+|---|---|
+| 报告文件名**与惯例无关**（绑 `reviews/adversarial-notes.md`）+ 第 2 轮**追加**进同一文件 + 重建 manifest | `check` **退 0** ✅ |
+| 只追加、**不**重建 manifest | `check` **退 1**：`report_hash 不匹配：报告 reviews/grill-adversarial.md 的字节与 manifest 记录不符` ✅（⇒「必须重跑 build」是真的） |
+| 第 2 轮写进**新文件名** | `check` **退 1**：`孤儿报告：reviews/grill-adversarial-r2.md 未被任何 manifest 绑定` ✅（⇒「不要另起文件名」是真的） |
+
+另：R2 追加**只需重建 grill-adversarial 那一份** manifest，其余两份 manifest 不受影响（它们各自绑自己的报告，`report_hash` 互不相干）——我实测重建单份后 `check` 退 0。
+
+⇒ **关掉。** 补充一句给实现者：`tasks.md:96` 说「关键是**路径不变**」是准确的——`check` 从不看文件名，只看该文件是否被某份 manifest 的 `report_path` 解析到。所以「原地重写」与「原地追加」等价，写哪一种都行（本仓惯例是追加，见 5 份历史报告）。
+
+### M-3 第三条诚实边界（空文件亦合格）四处落地 → **已关掉**
+
+| 应落之处 | 实测位置与措辞 |
+|---|---|
+| `spec.md` 边界声明 | `spec.md:124-127` 第 **4** 条「**报告正文不校验——空文件亦合格**」✅ 口径：判据止于 `verify_body=False`；零字节/空白 ⇒ 退 0 |
+| `design.md` D3 | `design.md:129-131`「⚠️ **再加一条（对抗轮 R1 实测发现，原稿三条边界都没写）**」✅ |
+| `design.md` D7 | `design.md:161-164` 三条并列，其中 ③「**报告正文不校验——空文件亦合格** —— 对抗轮 R1 的 N-5」✅ |
+| `tasks.md` D3 | `tasks.md:79-82` 三条并列，③ 同款措辞 ✅ |
+| `tasks.md` D4 | `tasks.md:83-85`「+ 同 D3 的三条边界」✅ |
+
+⇒ **四处**都有，且「空文件亦合格」这个断言四处一致。**关掉。**
+（一处可选打磨：`design.md:129-131` 把它称作「**再加一条**」，而 D7/tasks 称「三条边界」，读起来像 D3 有四条。实际 D3 现在列了 3 个独立事实（「跑一轮不修也能过」的已知上限、「空正文也合格」、以及原有的 D3 正文），而 D7/tasks 的三条是另一个分组（verdict 不参与 / 只保证存在+绑 revision / 空文件亦合格）——两组都是三条但**成分不同**，容易读混。非阻塞。）
+
+### M-4 B5 从「两处」改成「所有挂 Q1/Q2 待定标记的段落」+ 多 change Scenario 的 Given → **已关掉**
+
+- `tasks.md:55` 改成「把 `specs/adversarial-evidence/spec.md` 里**所有挂 Q1/Q2 待定标记的段落**按定案替换（「两处」是**下限不是全集**——对抗轮 R1 实测至少 5 处挂标记）」✅
+- ③ 单列了多 change Scenario 的 `Given` 在乙口径下**永远构造不出来** ✅（`tasks.md:57-59`）
+- `design.md §5:238-246` 同步改成同一口径并列 4 条 ✅
+- **`spec.md:37-40` 本体的 Given 也已按 R1 标注**：「⚠️ 原稿写『该 change 自身无实现』——**那是甲的语义**……定案后 MUST 按 Q1 重写」✅
+
+**我数了标记**：`spec.md` 里 `⚠️` 共 **5 处**（`:16` 触发面待 Q1、`:30` 未触发 Scenario 的 Given、`:37-39` 多 change Scenario、`:76` 若 Q2 选乙、`:96`+`:101` 「（选甲时）」小节 + 「若 Q2 选乙」），B5 声称的「至少 5 处」**属实**（B5 的编号①②③④ 覆盖了其中 3 处 + Q2 那处，多 change 那处单列）。
+
+⇒ **关掉**（B5 的 ①② 有轻微交集：①「未触发时不误伤」的 Given 与 ②「触发条件本身（正文 + 各 Scenario 的 `Given`）」在「各 Scenario 的 Given」上重叠，读起来像两项其实覆盖三项。非阻塞。）
+
+### M-5 `tasks.md` D4 点明 `templates/**` / `plugin/**` → **已关掉**
+
+`tasks.md:83-84`：「写**具体触发条件**（⚠️ **必须点明**「落了实现 = 命中 `require_change_for`，**本仓含** `templates/**` / `plugin/**`」，R9）」✅ 与 `design.md:159-161`（D7）/ `design.md:223-225`（R9）口径一致。**关掉。**
+
+### M-6 `spec_hash` 时序写清 → **design 正文关掉 / spec 关掉 / `design.md:289` 未关**
+
+- `design.md:196-198`（R4）：「⚠️ **时序要写清**（对抗轮 R1 订正了 grill 原话）：同一时序下改 `specs/` **也退 0**——因为 `write_review` 是对**当时**的 `specs` 取哈希，两侧天然一致。要看到 `spec_hash 不匹配`，必须**先产证据、后改** `specs/`」✅
+- `spec.md:118-120` 同款表述 ✅
+- ❌ **`design.md:289`（§7 Code-Resolved）仍写**「R4 实测（整体替换 `design.md` 再落证据 ⇒ `check` 退 0；改 `specs/` ⇒ `spec_hash` 不匹配）✅」——**未改**。这一行是 R1 明确点名「照字面复现会得反例」的那句，现在成了 design.md 内部唯一与新正文矛盾的陈述。
+
+⇒ **正文两处关掉，摘要一处未关**（见 **N-C**）。因 `tasks.md` 与 `spec.md` 都不依赖这句，非阻塞。
+
+### M-7 stale 条数 ≡ manifest 份数 进 D6 与 spec Scenario + §7 裸数字加注 → **已关掉**
+
+- `design.md:154-155`（D6）：「⚠️ **条数 ≡ 该 change 目录里 manifest 的份数**（对抗轮 R1 做了 1/2/3 三组对照：1 份 ⇒ 1 条、2 份 ⇒ 2 条、3 份 ⇒ 3 条）——`_check_git_span` 是**逐 manifest** 判的，别把 3 当常量」✅
+- `spec.md:53`：stale Scenario 的 `Then` 后补「（⚠️ 报错**条数 ≡ 该 change 目录里 manifest 的份数**——逐 manifest 判定，实测 1/2/3 份 ⇒ 1/2/3 条）」✅
+- `design.md:257-258`（§7）：裸「**3 条**」后已加「——⚠️ **条数 ≡ manifest 份数**，见 D6，别当常量」✅
+
+⇒ **三处全关掉。**
+
+### M-8 `design.md` D3/D7 与 `tasks.md` D3/D4 都是三条 → **已关掉（口径已统一）**
+
+- `design.md:164-165`（D7）：`§9 同族新增小节（触发面 + 判据 + **同三条边界**）` ✅
+- `tasks.md:79-82`（D3）：`**三条诚实边界并列写死**（① verdict 不参与 … ② 只保证证据存在并绑在最终 revision … ③ 报告正文不校验——空文件亦合格）——与 README 的口径**逐条一致**（对抗轮 R1 指出原稿 design 要两条、tasks 要三条，口径不一致，已统一为**三条**）` ✅
+
+⇒ **关掉。** ⚠️ 但**同一份 design.md 的 `:202`（R-new-1）仍写「必须并列写死两条边界」**——即 R1 报的「口径不一」在 D7 与 §4 R-new-1 之间**仍然存在**，只是方向反了（现在 D7 三条、R-new-1 两条）。见 **N-D**。
+
+---
+
+## R7 配方复核（第 9 项）
+
+- `design.md:215-217`（R7）：「⚠️ **还要 `rm -rf .venv && uv sync`**（对抗轮 R1 踩到）：`cp -a` 会连 `.venv` 一起复制，而 editable 安装的 `.pth` 里写的是**源副本的绝对路径** ⇒ 在副本里 `uv run pytest` 会**测到源副本的代码**（它第一轮四组对照因此全得 `2 failed / 418 passed`）」✅ 成因与现象都写对。
+- `tasks.md:64-66`（B6）：同款，且给了 `rm -rf .venv && uv sync` 的命令 ✅
+- 我这次按它执行：副本 `rm -rf .git .venv` → `git init` → `uv sync` ⇒ `.pth` = `/tmp/g2/repo/src`、全量 `uv run pytest -q` = **420 passed**（与基线一致，证明测的是本副本而非别的副本）✅
+
+⇒ **关掉。**
+
+---
+
+## 新发现（R2）
+
+### N-A（非阻塞，但**是 R1 阻塞项的残留**）`design.md:87` 的「权威出处」未随 B3 一起改，两处现在互相矛盾
+
+- `design.md:87`：「……已删——清单**不在这两份文件里维护**，权威出处是 `reviews/grill-review.md` 的「原稿被证伪的事实」。」
+- `tasks.md:37-38` / `:48`：「……权威出处是 `reviews/grill-adversarial.md` 的 N-1。」
+- **R1 已实测**：`grill-review.md` 的「原稿被证伪的事实 1–3」**覆盖不到**那 4 条（`test_acceptance` 2 + `test_check_manifest` 1 + `test_manifest_build` 1）——所以 `design.md:87` 现在指向一份**已知不完整**的清单，而 `tasks.md` 指向完整的那份。
+- **修法**：把 `design.md:87` 的「权威出处是 `reviews/grill-review.md` 的『原稿被证伪的事实』」改成「权威出处是 `reviews/grill-adversarial.md` 的 **N-1**（`grill-review.md` 的事实 1–3 **覆盖不全**）」。
+- 为什么值得改：`design.md` 是**下游实现者的第一读物**；照 `:87` 去查会得到 R1 之前那份只有 9 条的清单——**这正是 R1 那条阻塞项的成因，残留在摘要行里。**
+
+### N-B（非阻塞）`design.md:291` 仍写「只有上文 §5 列的**两处**缺口」
+
+§5 自己（`design.md:238-246`）已改成「**所有挂 Q1/Q2 待定标记的段落**……『两处』是**下限不是全集**（至少 5 处挂标记）」。`:291` 是同一份文档里对 §5 的**摘要**，未同步。**修法**：改成「§5 列出的**所有**挂 Q1/Q2 待定标记的段落」。
+
+### N-C（非阻塞）`design.md:289`（§7 Code-Resolved）是 M-6 唯一未关的一处
+
+见 M-6。**修法**：把「改 `specs/` ⇒ `spec_hash` 不匹配」改成「同一时序改 `specs/` **也退 0**（要看到 `spec_hash` 不匹配须**先产证据、后改** `specs/`）」——与 `design.md:196-198` / `spec.md:118-120` 对齐。
+
+### N-D（非阻塞）`design.md:202`（R-new-1）与 `design.md:165`（D7）**边界条数仍然不一致**（方向与 R1 报的相反）
+
+- `design.md:201-203`（§4 R-new-1）：「故 `docs/gate.md §9` 与 README **必须并列写死两条边界**：① verdict 不参与判定；② 本门禁只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前。」
+- `design.md:164-165`（D7）+ `tasks.md:79-82`（D3）：**三条**。
+
+⇒ R1 的 M-8 只在 D7/tasks 侧统一了，§4 的 R-new-1 条文没跟上。**修法**：把 `:202` 改成「**三条边界**」并把 ③「报告正文不校验——空文件亦合格」补进那个列表。**非阻塞**（§9/README 的实际内容由 tasks D3「三条」驱动），但这是同一份 design.md 里第 4 处「摘要没跟上正文」。
+
+### N-E（非阻塞 · 定性补充）三条遗留 N-A/B/C/D 的**共同成因**值得记一笔
+
+四处全在 `design.md` 的**摘要/引用行**（`:87` §2 的出处声明、`:202` §4 的风险条文、`:289`/`:291` §7 的回顾），而它们各自对应的**正文**都改对了（`:36` §2 前文、`:164` D7、`:196` R4、`:238` §5）。⇒ 作者这轮的改法是「改正文 + 在 §7 追加一段回顾」，但**没回扫同文档内的旧摘要**。R1 报的是「修正只落一份 artifact」（design↔spec↔tasks 之间），这次是它的**文档内变体**（正文↔摘要）。**建议把这四行一并清掉，再进 E0**——因为它们全部是「实现者读 design 时会先撞到」的位置。
+
+### N-F（已核，无问题）「多 change 同 PR」Scenario 的 Given 现在**仍带 `MUST 按 Q1 重写` 标记** ⇒ 与 `spec.md:16-18` 的「触发面待 Q1 裁定后钉死」是同一个待办，**不构成新的未登记缺口**
+
+R1 的 N-6 担心它会「留下一条在乙口径下永远无法构造的 Scenario」而 B5 没登记。作者的处理是**在 Scenario 里就地标注**（`spec.md:37-39`）**并**把它列进 B5 ③（`tasks.md:57-59`）⇒ 已登记、且有就地标记兜底。**关掉**，无需再改。
+
+### N-G（已核，无问题）`spec.md` 的 `⚠️` 计数与 B5 的「至少 5 处」吻合
+
+`grep -c "⚠️"` = 5，与 B5 声称一致。**无问题。**
+
+---
+
+## Code-Resolved（R2）
+
+- **报告文件名与判定无关**：实测绑 `reviews/adversarial-notes.md` ⇒ `check` 退 0。⇒ `tasks.md:96` 的「关键是**路径不变**」措辞准确（`check` 只看该文件是否被某 manifest 的 `report_path` 解析到）。
+- **追加后**只重建 grill-adversarial 那一份** manifest 足够**（另两份的 `report_hash` 各绑自己的报告，不受影响）。
+- **`reviews/grill-adversarial.md` 目前没有任何 manifest 绑定**（`openspec/changes/grill-adversarial-gate/reviews/` 只有 `grill-adversarial.md` 与 `grill-review.md`，无 manifest）⇒ **追加 R2 不会触发孤儿规则，也不会撞 `report_hash`**（当前 `check` 的两条 finding 是「缺 manifest / 无 stage=grill」）。这与 R1 的 B-2 是**同一个机制的乐观面**：E0b 之后才有绑定，届时才是「必须原地重写」。
+- **基线复核**：`d6d74fa` 上全量 `uv run pytest -q` = **420 passed**（`/tmp/g2/repo`）。R2 只改了 `.md`，不触及 `src/` 与 `tests/`，无 churn。
+
+## 复核边界（R2）
+
+- 全部实测在 `/tmp/g2/repo`（`rm -rf .git .venv` → `git init -q` → `git add -A && git commit -qm base` → `uv sync`；`.pth` 实测 = `/tmp/g2/repo/src`）。
+- ⚠️ **一次需记录的副作用**：我在**被审 worktree 内**跑了一次 `uv run witnessloop check --root .`（为读当前 `check` 状态），`uv` 因此在仓根建了 `.venv/`。该路径在 `.gitignore:1`（`.venv/`）内 ⇒ `git status --short` 仍为空、未产生任何可提交改动（收工核对：`git status --short` = 空）。此项**不构成对「仓库只读」的违反**（无 git 可见的写入），但按纪律记于此：**后续轮次若要读 `check` 状态，应在 `/tmp` 副本里跑**。
+- 收工核对：`git status --short` 只有本报告文件的追加；HEAD 仍 `d6d74fa`；`git worktree list` 无新增 worktree。
