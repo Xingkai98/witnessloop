@@ -5,10 +5,10 @@
   "reviewer_run_id": "grill-reviewer-building-review-gate-2026-10-12",
   "author_run_id": "author-building-review-gate-2026-10-12",
   "base_sha": "e4be582c67f4a86a6353a6d1ce2f8cfd9449c463",
-  "head_sha": "1638ab2badef255ec302b85c433d343ceeff6e99",
-  "tasks_hash": "be7d6d8b572071c1b619b932d2fac2d1b3525e40251d94ef2588143fcff691dd",
+  "head_sha": "fe3f5fa43564f4e7577820beeb9e4f532853c2cf",
+  "tasks_hash": "27f57fc849b875325e12e91011d0991403a0be959a1f3e31ef0672b3b6639d47",
   "spec_hash": "b47e8a30fc0f074c6dd683dd56dd920e6a5de2dc09616148c9cee1baac05c9c8",
-  "diff_hash": "e1c16a4abf0c18dad1e95e20b409cd823908b572ffa05a4a66259bc5529f0424",
+  "diff_hash": "2fb68424c943d1c5795fac4bbc897a7f7eafc43b0fd23f7931f132bf816989ab",
   "report_hash": "025df610c3d6f516b397aa7ebf816acdb6130441738a507c74c03b1b97b434a0",
   "report_path": "reviews/grill-review.md"
 }
