@@ -112,3 +112,17 @@ def test_uninit_reports_a_clean_error_for_an_undecodable_ledger(repo: Path, cli)
     assert code == C.EXIT_FAIL
     assert INTERNAL_ERROR not in err
     assert "init-manifest.json" in err
+
+
+def test_init_reports_a_clean_error_for_an_undecodable_pre_existing_file(repo: Path, cli):
+    """覆盖 `conflicting_files` 的读点（design 唯一定过案的地方，审阅指出它曾**零测试**）。
+
+    未接入 + 仓里已有一个**内容不同且非法 UTF-8** 的 `policy.json` ⇒ 走冲突判定那条读点。
+    """
+    (repo / C.POLICY_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (repo / C.POLICY_PATH).write_bytes(b'{"schema": "\xff\xfe"}')
+
+    code, _, err = cli("init", "--root", str(repo))
+    assert code == C.EXIT_FAIL
+    assert INTERNAL_ERROR not in err
+    assert "policy.json" in err

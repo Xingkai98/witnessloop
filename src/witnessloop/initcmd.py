@@ -214,7 +214,9 @@ def _already_initialized(
         print(f"init：{C.INIT_MANIFEST_PATH} 无法解析：{exc}", file=sys.stderr)
         return C.EXIT_FAIL
 
-    drift: list[tuple[str, str, str]] = []
+    drift: list[tuple[str, str | None, str]] = []
+    #: 内容已变但**读不出来**的那些（`drift` 里的 `current` 为 `None`）→ 报成因，不硬编 diff。
+    unreadable: dict[str, str] = {}
     for entry in manifest.get("created_files", []):
         rel = entry.get("path")
         if not rel or entry.get("self") or rel == C.INIT_MANIFEST_PATH:
@@ -227,9 +229,12 @@ def _already_initialized(
             try:
                 current = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
-                # 内容确实变了（sha 不符），但读不出来 ⇒ 报成因、不硬编 diff。
-                why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
-                drift.append((rel, f"（{why}）", desired.get(rel, "")))
+                # 内容确实变了（sha 不符），但读不出来 ⇒ 只报成因，**不**把占位串当内容去 diff
+                # （那会产出伪 diff，与 uninit 那条兄弟路径的 `! {rel} …` 形状也不一致）。
+                unreadable[rel] = (
+                    "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+                )
+                drift.append((rel, None, desired.get(rel, "")))
             else:
                 drift.append((rel, current, desired.get(rel, "")))
 
@@ -239,7 +244,12 @@ def _already_initialized(
             file=sys.stderr,
         )
         for rel, current, want in drift:
-            if current == "" and want:
+            if current is None:
+                print(
+                    f"  ! {rel} {unreadable[rel]}（内容已变，无法显示 diff）",
+                    file=sys.stderr,
+                )
+            elif current == "" and want:
                 print(f"  ! {rel} 缺失（台账记录它应存在）", file=sys.stderr)
             elif want:
                 print(render_diff(rel, current, want), file=sys.stderr)
