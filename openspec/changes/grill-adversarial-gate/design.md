@@ -86,10 +86,13 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 ⚠️ 原稿那句「实测清单见 tasks B3 的实测记录」是**悬空引用**（`tasks.md` 的「实测记录（实现期）」当时为空），
 已删——清单**不在这两份文件里维护**，权威出处是 `reviews/grill-review.md` 的「原稿被证伪的事实」。
 
-⚠️ **甲 还有一条原稿没写全的代价（grill 实测）**：甲会让
+⚠️ **甲 还有一条原稿没写全的代价（grill 实测发现，对抗轮 R1 订正措辞）**：甲会让
 `tests/test_building_gate.py::test_not_required_when_only_the_change_dir_changed` 变红——它钉的正是
-「提案期 / 纯 change 目录改动**不误伤**」⇒ 选甲必须**重写**这条语义钉子，而不是「给它补一份证据」
-（与 tasks B3 那句「不得放松它们原本要钉的东西」**直接撞车**，须一并处置）。
+「提案期 / 纯 change 目录改动**不误伤**」。
+**但甲不是「技术上做不到」**（对抗轮实测）：给它补一份**空正文**的 `grill-adversarial` 证据即可转绿
+（空报告合法，见 D3 的诚实边界）。⇒ 准确的说法是：**甲的触发面没有「不触发」这个分支，于是这条门在
+「只动 change 目录」的场景下只能被「空气」满足**——门形同虚设。而乙保留了「提案期不受这道门约束」这一**可表达**的语义。
+（这一措辞是给用户拍板 Q1 用的，别用「甲必须重写这条语义钉子 ⇒ 不可接受」的说法。）
 
 **推荐乙**，四条理由：
 
@@ -123,6 +126,10 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 什么都不修**」也**能过**（文件存在即满足）。理由：非 PASS 收尾本身是**规定行为**（轮数封顶 → 交人判断），
 机械区分不了「封顶后交人」与「跑一轮就收工」。这是本门禁的**已知上限**，不是实现缺陷。
 
+⚠️ **再加一条（对抗轮 R1 实测发现，原稿三条边界都没写）**：判据是 `verify_body=False` ⇒
+**报告正文**不校验——**零字节 / 只有空白的 `reviews/grill-adversarial.md` 同样合格**（实测 + 合法 manifest ⇒ `check` 退 **0**）。
+不写清这句，README 的「证据存在即满足」会被读成「至少有一份**有内容**的报告」。
+
 ### D4 **不改 `guard`**
 
 - 先例一致（asterwynd 守卫侧 0 命中）；本仓 `guard` 是「防遗忘」、可绕过，锚在 CI。
@@ -144,15 +151,18 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 `design.md` **不在** `stale_exempt_paths` 里（豁免只有 `.witnessloop/**`、`<change>/reviews/**`、
 事件文件、`archive/**`）⇒ 收敛后再改 `design.md` 会让该 change 的**每一份** manifest 各报一条 stale
 （三份证据时实测 **3 条**「审阅的是旧 revision」；原稿写「两份」不精确）。
+⚠️ **条数 ≡ 该 change 目录里 manifest 的份数**（对抗轮 R1 做了 1/2/3 三组对照：1 份 ⇒ 1 条、2 份 ⇒ 2 条、
+3 份 ⇒ 3 条）——`_check_git_span` 是**逐 manifest** 判的，别把 3 当常量。
 ⚠️ 但**只对落在 manifest 的 `head_sha` 之后**的改动成立——改动落在 `head_sha` **之前**（而对抗轮跑在更早）
 则**完全无痕**（见 R4）。
 
 ### D7 文档 / 行为变更
 
 - `README.md`：**对**接入方**是行为变更**——写**具体触发条件**（含「落了实现 = 命中 `require_change_for`，
-  本仓**含** `templates/**` / `plugin/**`」，见 R9）+ 缺它的红文案 + **两条诚实边界并列写死**
-  （① verdict 不参与判定；② 只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前 —— R-new-1）。
-- `docs/gate.md`：§6（红项清单）、§8（读点/门禁表加一行）、§9 同族新增小节（触发面 + 判据 + **同两条边界**）。
+  本仓**含** `templates/**` / `plugin/**`」，见 R9）+ 缺它的红文案 + **三条诚实边界并列写死**
+  （① verdict 不参与判定；② 只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前 —— R-new-1；
+  ③ **报告正文不校验——空文件亦合格** —— 对抗轮 R1 的 N-5）。
+- `docs/gate.md`：§6（红项清单）、§8（读点/门禁表加一行）、§9 同族新增小节（触发面 + 判据 + **同三条边界**）。
 - `templates/grill.md`：在「产物」小节后补一句「这条现在被 `check` 机械要求（触发面与豁免）」。
 
 ### D8 非目标（写进 spec 的边界声明）
@@ -182,8 +192,10 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
    ⇒ 一个 agent 自造 manifest 即可满足。与 grill / building 同一边界（**防漂移不防伪造**）。
 4. **R4（中，诚实的机制空洞，grill 已实测）**：**无法机械证明「对抗轮发生在 grill 之后、且针对同一份 design」**。
    - `design.md` 的**内容**未被任何 manifest 哈希绑定（`constants.HASHED_ARTIFACTS` = `tasks.md` / `specs`，
-     `constants.py:64-67`）。grill 实测：**在证据提交之前把 `design.md` 整段换掉再落证据 ⇒ `check` 退 0**；
-     同样手法改 `specs/` ⇒ 报 `spec_hash 不匹配`。
+     `constants.py:64-67`）。实测：**在证据提交之前**把 `design.md` 整段换掉再落证据 ⇒ `check` 退 0。
+     ⚠️ **时序要写清**（对抗轮 R1 订正了 grill 原话）：同一时序下改 `specs/` **也退 0**——因为
+     `write_review` 是对**当时**的 `specs` 取哈希，两侧天然一致。要看到 `spec_hash 不匹配`，必须
+     **先产证据、后改** `specs/`。
    - `_check_git_span`（`contract.py:272-354`）只判「manifest 的 `head_sha` 之后没有非证据改动」，
      **两份 manifest 的先后不做比较** ⇒ 门禁保证的是「存在一份绑定在最终 revision 的对抗证据」，
      不是「对抗轮发生在写码之前」。⇒ 文案层面极易被读成「写码前必须收敛」（grill R-new-1），
@@ -199,8 +211,10 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 7. **R7（低，但本次已踩到 · 实测配方）**：**worktree 的 `.git` 是文件**（`gitdir: <主仓>/.git/worktrees/<id>`）
    ⇒ `cp -a` 出的实验副本**共用原 worktree 的 gitdir 与 index**：副本里的 `git checkout -b` / `git commit`
    会**落到被审 worktree**（本次 grill 因此误切了分支、落了两个游离提交，已完整复原）。
-   ⇒ 实测配方必须写明：副本里做**任何 git 操作**之前先 `rm -f .git && git init -q && git add -A && git commit -qm base`
-   （pytest 内部用 `tmp_path` 的独立仓，不受影响）。
+   ⇒ 实测配方必须写明：副本里做**任何 git 操作**之前先 `rm -f .git && git init -q && git add -A && git commit -qm base`。
+   ⚠️ **还要 `rm -rf .venv && uv sync`**（对抗轮 R1 踩到）：`cp -a` 会连 `.venv` 一起复制，而 editable 安装的
+   `.pth` 里写的是**源副本的绝对路径** ⇒ 在副本里 `uv run pytest` 会**测到源副本的代码**
+   （它第一轮四组对照因此全得 `2 failed / 418 passed`，与 churn 表完全不符）。pytest 内部用 `tmp_path` 的独立仓，不受此影响。
 8. **R8（低，可诊断性）**：`tests/helpers.py` 的 `write_review` 对 `grill-adversarial` 默认产
    `reviews/grill-adversarial-review.md`，而本仓 5 份真实证据都在 `reviews/grill-adversarial.md`（实测）
    ⇒ 不影响判定，但会让孤儿报告类用例更难读。**B1 顺手把默认报告名对齐真实约定**。
@@ -221,11 +235,15 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 - **配方纪律**（照 #12 的教训）：证据集用 `helpers.write_review(stage=..., report_rel=...)` 造，
   **不要**手写 manifest（`report_hash`/`tasks_hash` 极易不一致）；`grill-adversarial` 的默认报告名
   按真实约定取 `reviews/grill-adversarial.md`（R8）。
-- **配套的 spec 修订（grill 实测的两处缺口，实现前必须落地）**：
-  1. `spec.md` **缺「多 change 同 PR」Scenario**——`design.md` 的 D5 把它列为**刻意行为**，
-     `changes/building-review-gate/specs/building-evidence/spec.md` 有对应 Scenario，本 spec 必须补；
-  2. `spec.md` 的「未触发时不误伤」Scenario 里 `Given` 写成「本次 diff **不满足**触发条件」，
-     在 Q1 定案前是**循环定义** ⇒ 定案后**必须替换**成具体条件（乙 = 只改文档 / 只动 change 目录）。
+- **配套的 spec 修订（实现前必须落地）**：`spec.md` 里**所有挂 Q1/Q2 待定标记的段落**都要按定案替换
+  ——对抗轮 R1 指出「两处」是**下限不是全集**（`spec.md` 里至少 5 处挂标记）。至少含：
+  1. 「未触发时不误伤」Scenario 的 `Given` 写成「本次 diff **不满足**触发条件」= **循环定义** ⇒
+     定案后替换成具体条件（乙 = 只改文档 / 只动 change 目录）；
+  2. `spec.md` 的**触发条件**本身（正文 + Scenario 的 `Given`）；
+  3. **「多 change 同 PR」Scenario 的 `Given`**（对抗轮补充）——现写「另一个 change 自身**无实现**」，
+     这在**乙**口径下**永远构造不出来**（无实现的 change 目录不可能满足 `code_hits`）⇒ 该 Scenario 现在
+     编码的是**甲**的语义，须按定案重写；
+  4. 若 Q2 选乙：`Requirement: verdict 文本不参与判定（选甲时）` 整节要换掉。
 
 ## 6. 文档影响
 
@@ -237,8 +255,10 @@ test_renaming_with_an_event_is_allowed` 1 条）；甲 的 17 条里含 `test_or
 **已确认决策（grill 独立复现 · 来源 `grill-reviewer-grill-adversarial-gate-2026-10-12T141224Z`）**：
 D1 证据形态走 `stage=grill-adversarial` 的 manifest（裸报告实测被**孤儿规则**判红，退 1）✅；
 D2 的 churn 表**四次实测全部复现**（420 基线；甲 30→17；乙 6→4）✅；
-D6「revision 绑定那一半已经在」✅（实测：三份证据齐备 `check` 退 0 → 改 `design.md` 一行 → 退 1、**3 条** stale）；
-R1（0 自伤：5/5 change 都有对抗轮 manifest）与 R6（无自锁：全链路模拟 `check` 退 0）✅；
+D6「revision 绑定那一半已经在」✅（实测：三份证据齐备 `check` 退 0 → 改 `design.md` 一行 → 退 1、
+**3 条** stale——⚠️ **条数 ≡ manifest 份数**，见 D6，别当常量）；
+R1（0 自伤：本仓**除本 change 外的** 5 个 active change **都**有对抗轮 manifest——第 6 个是本 change 自己，
+预期尚未有）与 R6（无自锁：全链路模拟 `check` 退 0）✅；
 `§1.1` 表里 `checkcmd.py:83-88/91-98/125-145/148-206`、`contract.py:185-219`、`evidence.py:172-235/238-257`
 **行号全对** ✅；asterwynd 先例四条（唯一检查点在 `:1629-1639`、`DESIGN_TYPES`/docs 豁免、
 「存在性即可」注释、`workflow_guard.py` **0** 命中）✅。
@@ -247,12 +267,23 @@ R1（0 自伤：5/5 change 都有对抗轮 manifest）与 R6（无自锁：全�
 1. `test_orphan_reports.py` 的失败项是 **8**（漏算 4 个参数化项），原稿写 6 ⇒ 已订正（D2）。
 2. `tests/test_invariants.py` **不该**出现在甲口径的清单里（补 helpers 后它不失败）⇒ 已从 tasks B3 删除。
 3. tasks 清单**漏了** `test_building_gate.py::test_not_required_when_only_the_change_dir_changed`
-   ⇒ 甲会让它变红且**必须重写**（语义钉子对撞）——已补进 D2 与 tasks B3。
+   ⇒ 甲会让它变红（**「必须重写」这一措辞已被对抗轮 R1 订正**——它可以靠空正文证据转绿，见 D2/Q1）。
 4. `design.md` 里「见 tasks B3 的实测记录」是**悬空引用**（该节当时为空）⇒ 已删，改指 `grill-review.md`。
-5. D6 写「两份 manifest stale」不精确 ⇒ 实测 **3 条**（每份 manifest 一条），已订正。
+5. D6 写「两份 manifest stale」不精确 ⇒ 实测 **3 条**（每份 manifest 一条，**条数 ≡ manifest 份数**），已订正。
 6. D3 的「多轮记法不统一」**属实且更糟**：5 份 **16 轮**、轮头两级、第 1 轮全无轮头、载体两种、文本三种，
    且每份都含中间轮 `CHANGES_REQUESTED`；**并新发现回填的隐藏代价**（改别的 change 的历史报告 ⇒
    `report_hash` 不匹配）⇒ 已写进 D3。
+
+**对抗验证 R1（`CHANGES_REQUESTED` → 已整合 · 来源 `adversarial-reviewer-grill-adversarial-gate-r1-2026-10-12T143037Z`）**：
+- **独立复现**：基线 420；churn 四组（30/390、6/414、17/403、4/416）**逐字命中**；`test_orphan_reports` 甲下 8 项；
+  stale 条数 ≡ manifest 份数；asterwynd 唯一检查点在归档点；老 policy 缺新轴 ⇒ 回落退 0；A2 加轴**无连带**（420 passed）。
+- **阻塞项 B-1（本 change 的下游落地漏点）**：tasks B3 声称「再改 13 条」却只枚举 **9** 条，且它引的「权威清单」
+  （`grill-review.md` 事实 1–3）也覆盖不到漏掉的 4 条 ⇒ 实现者无从发现。**已按 R1 的实测清单改写 tasks B3。**
+- **阻塞项 B-2**：E0b「重跑一次对抗轮」**没规定第二份报告怎么落盘**（另起文件名 ⇒ 孤儿报告；必须**原地覆盖**），
+  且「一次」不够——它是**循环**（修 → 再审，直到 PASS 或封顶）。**已改写 tasks E0b。**
+- **新发现（已整合）**：空正文报告也合格（→ 第三条诚实边界）；`spec.md` 的「多 change 同 PR」Scenario 的 `Given`
+  在**乙**口径下永远构造不出来（→ tasks B5 扩成三处）；「两处缺口」实为下限（→ 改成「所有挂 Q1/Q2 待定标记的段落」）；
+  `.venv` 随 `cp -a` 复制会让副本测到**别的副本**的代码（→ R7 配方）。
 
 **Code-Resolved（已定案，不进 Open Questions）**：`grep -rn "grill-adversarial" src/` = 0 命中 ✅；
 R4 实测（整体替换 `design.md` 再落证据 ⇒ `check` 退 0；改 `specs/` ⇒ `spec_hash` 不匹配）✅；
@@ -266,8 +297,8 @@ asterwynd 无第二个检查点 ✅；`spec.md` 与 design 的 D1..D8 逐条对�
     例：你提一个 PR，只新增 `openspec/changes/foo/proposal.md`（设计还没开始 grill）——
     今天就已经红（缺 `stage=grill`）；选甲 ⇒ 此后它**还要**有 `grill-adversarial` 证据才绿。
     实测代价：**17 条**既有用例要改（含 8 个 `test_orphan_reports` 项）；**且**其中
-    `test_building_gate.py::test_not_required_when_only_the_change_dir_changed` 钉的正是
-    「提案期不误伤」⇒ 选甲要**重写**这条语义钉子（grill 实测补充）。
+    `test_building_gate.py::test_not_required_when_only_the_change_dir_changed` 钉的正是「提案期不误伤」
+    ⇒ 甲口径下这条门在「只动 change 目录」的场景**只能被空报告满足**（对抗轮 R1 订正的措辞，见 D2）。
   - **乙（推荐）**：**本次 diff 落了实现**才要（与 building 那条同形）。
     例：同一个「只加 proposal.md」的 PR ⇒ **不受影响**；而「改了 `src/x.py` + 一个 change 目录」的 PR ⇒
     要求 `stage=grill-adversarial` 与 `stage=building` **两份**证据。实测代价：**4 条**既有用例要改。
@@ -281,6 +312,9 @@ asterwynd 无第二个检查点 ✅；`spec.md` 与 design 的 D1..D8 逐条对�
     除非再规定一种 `reviews/<stage>-override.md`（被 manifest 绑定）的人工覆盖形态。
     实测代价（比原稿估计更重）：5 份报告 **16 轮**、轮序/载体/文本**三处都不统一**，
     且**回填会撞 `report_hash`**（改别人的历史报告 ⇒ 那份 change 下次被触及就红）⇒ 给 5 个 change 各埋一颗地雷。
+    **对抗轮 R1 新增一条连带后果**：选乙 ⇒ E0b 的重跑**必须重跑到 `PASS`**，而对抗轮的常态产出恰恰是
+    `CHANGES_REQUESTED`（5 份历史报告**每份**都含中间轮 CR）⇒ 乙口径下**必须同时**规定
+    `reviews/<stage>-override.md` 之类的人工覆盖形态，否则 `templates/grill.md:131` 的「到顶交人」被**无声取消**。
 - **Q3 是否接受「本地守卫不要求对抗轮证据」这个缺口？**（D4）
   - **推荐**：接受（只改 `check`）。例：目标仓没装 CC plugin ⇒ 守卫本来就不生效，加了也拦不住；
     真正的锚是 CI required check。**grill 补了一条更硬的理由**：`guard` 只覆盖 `Write|Edit`，

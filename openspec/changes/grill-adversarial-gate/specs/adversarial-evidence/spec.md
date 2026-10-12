@@ -34,7 +34,9 @@
 - **Then** **不**要求对抗轮证据
 
 ### Scenario: 多 change 同 PR —— 触发面内的**每个** change 都被要求（**刻意的行为**）
-- **Given** 本次 diff 触及触发面，且同时触及**另一个** change 目录（该 change 自身无实现）
+- **Given** 本次 diff 触及触发面，且同时触及**另一个** change 目录
+  （⚠️ 原稿写「该 change 自身无实现」——**那是甲的语义**：乙口径下「无实现」的 change 目录不可能满足
+  `code_hits` ⇒ 这条 `Given` 在乙口径下**永远构造不出来**，定案后 MUST 按 Q1 重写）
 - **When** 运行 `check`
 - **Then** **每个** change **都**被要求对抗轮证据——本门禁沿用「**一个 PR 推进一个 change**」前提：
   要免除就把 change 拆到单独 PR。**不提供** `adversarial_exempt_changes` 之类的豁免名单（豁免名单 = 新的绕过面）。
@@ -48,6 +50,7 @@
 - **Given** `stage=grill-adversarial` 的 manifest 记录 `head_sha=H`，且 `H` 之后的提交里改了 `design.md`
 - **When** 运行 `check`
 - **Then** 报「审阅的是旧 revision」并非零退出（复用既有 revision 绑定，不新增判据）
+  （⚠️ 报错**条数 ≡ 该 change 目录里 manifest 的份数**——逐 manifest 判定，实测 1/2/3 份 ⇒ 1/2/3 条）
 
 ## Requirement: 证据形态是 manifest（不是裸文件）
 
@@ -114,6 +117,11 @@ grill / building / grill-adversarial 三条判定 SHALL 共用它——分两份
 3. **无法机械证明「对抗轮发生在 grill 之后、且针对同一份 design」**：`design.md` 的**内容**未被任何
    manifest 哈希绑定（`constants.HASHED_ARTIFACTS` 只含 `tasks.md` / `specs`），且 `_check_git_span`
    **不做两份 manifest 的先后比较**（实测：在证据提交**之前**把 `design.md` 整段替换掉再落证据 ⇒ `check` 退 **0**；
-   同样手法改 `specs/` ⇒ 报 `spec_hash 不匹配`）。⇒ 改动落在 manifest 的 `head_sha` **之后**才有 stale 信号，
-   落在**之前**则**完全无痕**。本门禁保证的是「存在一份可绑定的对抗轮证据」，**不是**「它证伪了这份 design」，
+   而同一时序下改 `specs/` **也**退 0——两侧天然一致。要看到 `spec_hash 不匹配`，必须**先产证据、后改** `specs/`）。
+   ⇒ 改动落在 manifest 的 `head_sha` **之后**才有 stale 信号，落在**之前**则**完全无痕**。
+   本门禁保证的是「存在一份可绑定的对抗轮证据」，**不是**「它证伪了这份 design」，
    也**不是**「对抗轮发生在写码之前」。本 change **不**为此新增 `design_hash`。
+4. **报告正文不校验——空文件亦合格**：判据止于 `verify_body=False`（manifest 存在 + `report_path` 解析到
+   **存在**的文件）。实测：把 `reviews/grill-adversarial.md` 写成**零字节**（或只有空白）再绑上合法 manifest
+   ⇒ `check` 退 **0**。⇒ 本门禁保证**存在一份证据**，不保证它**有内容**；别把「证据存在即满足」读成
+   「至少有一份有内容的报告」。
