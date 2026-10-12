@@ -37,6 +37,14 @@ asterwynd 的「PASS 硬门」= **「闭环必须跑过」**，不是「文本�
 复用**已有的** revision 绑定（`contract._check_git_span`）：任何非证据文件在 manifest 的 `head_sha` 之后被改
 ⇒ 判 stale ⇒ 红 ⇒ **审阅之后再改代码必须重跑审阅**——这一半已经实现，本 change 只是补上「必须存在」那一半。
 
+## 边界声明（**重要 · 别让读者误读**）
+
+本 change 让「**闭环必须跑过**」成为机械门（证据存在 + 审在最终 revision 上），
+但**verdict 文本（`PASS` / `CHANGES_REQUESTED`）不参与任何判定** ⇒
+**「PASS 不是硬门」这一点没有被本 change 改变**（选甲时；见 design D3/D3.1）。
+issue 标题里的「PASS」指的是「**那份被 manifest 绑定的审阅证据**」，不是文本字样——
+这也是 **asterwynd 先例的实际口径**（它同样不解析 verdict 文本）。
+
 ## 非目标
 
 - **不加 grill-adversarial（设计对抗轮）的门禁**——同一机制、另一个 stage，留作后续 change。

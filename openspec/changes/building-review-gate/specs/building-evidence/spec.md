@@ -21,10 +21,16 @@
 - **When** 运行 `check`
 - **Then** 该条判定通过
 
-### Scenario: 提案期 / 纯文档改动不误伤
+### Scenario: 提案期 / 纯文档改动不误伤（单 change 情形）
 - **Given** 本次 diff **未**触及 `require_change_for` 下的路径（只改文档或只动 change 目录）
 - **When** 运行 `check`
 - **Then** **不**要求 building 审阅证据（否则每个 in-flight change 都会被红）
+
+### Scenario: 多 change 同 PR —— 全部 change 都被要求（**刻意的行为**）
+- **Given** 本次 diff 既触及 `require_change_for` 下的路径，又触及**另一个** change 目录（该 change 自身无实现）
+- **When** 运行 `check`
+- **Then** **两个** change **都**被要求 building 审阅证据——本门禁采用「**一个 PR 推进一个 change**」前提：
+  要免除就把 change 拆到单独 PR。**不提供** `building_exempt_changes` 之类的豁免名单（豁免名单 = 新的绕过面）。
 
 ### Scenario: stage 拼错可诊断
 - **Given** 用 `--stage buildings` 产出的 manifest，仓里没有 `stage=building` 的 manifest

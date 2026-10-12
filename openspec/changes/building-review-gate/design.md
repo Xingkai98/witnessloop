@@ -75,8 +75,11 @@ if requires_building_review and not review_report.exists():
   （只看「本次 diff 有没有触及 `require_change_for`」），而要求施加在**每个** `change_id` 上
   ⇒ **一个 PR 改了代码 + 顺带新增另一个纯文档 change，那个文档 change 也会被要求 building 证据**（grill 实测 S2′ 复现）。
   **定案**：**不**去猜「代码属于哪个 change」（witnessloop 无此概念，硬做会引入第二套「什么算代码」的口径）。
-  改为**显式化流程约束**：「**一个 PR 推进一个 change**」是前提（与既有的「内容/证据分属两提交、单提交 PR 不被支持」
-  同族，`docs/gate.md:172-177`），并在 spec 里**加 Scenario 把多 change 边界钉死**：
+  改为**显式化流程约束**：「**一个 PR 推进一个 change**」是前提。
+  ⚠️ **对抗验证纠正**：原稿说它与既有的「内容/证据分属两提交、单提交 PR 不被支持」（`docs/gate.md:172-177`）**同族**——
+  **不准确**：那条约束的是**提交顺序**，这条约束的是 **change 数量**，是**本 change 新造**的（实测：多 change PR 未打补丁 `exit 0`、打补丁后 `exit 1`）
+  ⇒ 它本身就是**一条新的对外行为变更**，须与 D5 那条一并写进 README（原稿只在 tasks D3 记了另一条）。
+  spec 里**加 Scenario 把多 change 边界钉死**：
   「本 PR 触及 `require_change_for` ⇒ 本 PR 触及的**每个** change 都要 building 证据；要免除就把 change 拆到单独 PR」。
   **不加** `building_exempt_changes` 豁免名单——豁免名单是**新的绕过面**。
 
@@ -103,6 +106,14 @@ if requires_building_review and not review_report.exists():
   ⇒ 乙的**收益**（堵住「跑是跑了、结论是 CHANGES_REQUESTED 也照合」）与**成本**（格式规范 + 历史回填 +
   覆盖机制）都在，**是否值得**是取舍。
 
+### D3.1 **必须显式声明**：「PASS 不成为硬门」（对抗验证 Q1 的建议）
+
+若 Q1 选**甲**，则**必须在 `proposal.md` 与 PR 正文里写明**：本 change 让「**闭环必须跑过**」成为机械门，
+但 **verdict 文本（PASS/CHANGES_REQUESTED）不参与判定** ⇒ 「**PASS 不是硬门**」这一点**没有被本 change 改变**。
+不写清，读者会把 issue #13 的标题（「**PASS** 不是硬门」）误读成「本 change 之后 PASS 变硬门了」。
+（对抗验证的判读：issue #13 的 *需求* 段本就写的是「要求**证据存在**」，并把「是否机械判 PASS 文本」列为待定 Open Question
+⇒ 甲**满足 issue 原文**，只是需要把这层边界讲明白。）
+
 ### D4 **不改 `guard`**
 
 写码**之前**不可能有「实现后」的审阅 ⇒ `guard` 仍只查 grill 证据。若强加，会**自锁**（永远写不了码）。
@@ -111,8 +122,9 @@ if requires_building_review and not review_report.exists():
 ### D5 文档 / 行为变更
 
 - `docs/gate.md §6`（`check` 的红项清单加「缺 building 审阅证据」）+ `§8`（新增一小节：building 门禁的触发与判据）。
-- `README.md`：**对**接入方**是行为变更**——「改了代码但没跑 review-loop」的 PR 从**绿变红**（须写明，口径同
-  `grill-evidence-gate` 那次）。
+- `README.md`：**对**接入方**是两条行为变更**（**都要写明**，口径同 `grill-evidence-gate` 那次）：
+  ① 「改了代码但没跑 review-loop」的 PR 从**绿变红**；② **多 change 同 PR** 时**每个** change 都要 building 证据
+  （原本可以「一个 PR 捎带一个纯文档 change」，现在会被红——对抗验证实测 `exit 0 → exit 1`）。
 - `templates/review-loop.md`：若选**乙**，须在此规定多轮报告的最终裁定形态；选**甲**则补一句「本门禁只要求证据存在，
   结论由人/流程负责」。
 
@@ -185,6 +197,13 @@ D-F 共用助手的切法（`verify_body` 开关）实测可行 ✅。
 - **新发现（高）**：D1 触发是**全局**的、而要求施加在**每个** change 上 ⇒ **多 change 同 PR 会误伤纯文档 change**（实测 S2′）
   ⇒ 已补 D1 边界 + Q2。
 - R5 严重性**由低升中**：`require_change_for=[]` 会连 `_require_change` 一起失效（实测 `check` 绿）。
+
+**对抗验证 R1（CHANGES_REQUESTED → 已整合）**：
+- **阻塞项**：design D1 要求「在 spec 里加 Scenario 钉死多 change 边界」，但 `spec.md` **没有**那条 Scenario
+  ⇒ 规范件与设计不一致（已补）；既有 Scenario 的括注「（只改文档或只动 change 目录）」会**诱导错误泛化**（已限定为「单 change 情形」）。
+- **自伤面独立复现：0 条新增失败**（对抗验证**自己**写补丁、且先证明补丁**真接进了判定路径**才计数）⇒ grill 的关键经验事实**成立**。
+  附一个环境坑：`/home/happy/.local/bin/witnessloop` 是**另一份 uv-tool 安装**（无补丁），用它跑会**测到未打补丁的行为**（假绿）。
+- Q1 不阻塞（issue #13 的需求段本就要求「证据存在」）；R6 成立；**无自锁**（本 change 自己的 E0 序列已推演+实测）。
 
 **Code-Resolved 结论**：`_check_git_span` 与 stage 无关、逐份判 stale；参数化助手不撞既有断言
 （唯一断言 stage 文案的 `test_check_grill_evidence.py:53` 仍保留）；`docs/gate.md` 的 §6/§8 引用正确。
