@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "events-readpoint-fix",
+  "stage": "grill-adversarial",
+  "reviewer_run_id": "grill-adversarial-reviewer-events-readpoint-fix-2026-10-12",
+  "author_run_id": "author-events-readpoint-fix-2026-10-12",
+  "base_sha": "9210d9c3f1bf02648812f06fc10d1a565e4b7bb1",
+  "head_sha": "0076d36b758d4a9ad6646e949904617ca9a0c01e",
+  "tasks_hash": "27063dfca844fa0fd8b189177a185807cb607c036d20877631a1ef79959cdcfd",
+  "spec_hash": "0a63d5547af14b3b386829f35750e8f954e5a6e0057886ab0390233fd6140d7e",
+  "diff_hash": "ec34e5acc21dd68ea71a9c1d525bcbbb6dd00b152585e4e6acbb8cd8f2b51a4b",
+  "report_hash": "959a382c6f494c5abc8f069b80c8b53d01f7228617695664a0f0f801bc1afb11",
+  "report_path": "reviews/grill-adversarial.md"
+}
