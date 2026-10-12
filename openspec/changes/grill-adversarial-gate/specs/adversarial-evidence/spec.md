@@ -16,8 +16,10 @@
 **触发条件（Q1 定案 = 与 building 门禁同形）**：本次 diff **触及 `policy.require_change_for` 下的路径**
 （即**落了实现**）时，**每一个**被本次 diff 触及的 change 都要满足本节要求。
 
-该判定 SHALL 复用 `checkcmd._code_hits`（`checkcmd.py:106-122`）的**同一口径**——
-SHALL NOT 引入第二套「什么算代码」的定义。⇒ `require_change_for` 为空或没覆盖真实代码路径时，
+该判定 SHALL 复用 `checkcmd._code_hits` 的**同一口径**——
+SHALL NOT 引入第二套「什么算代码」的定义。
+（刻意**不写行号**：上一稿写的 `checkcmd.py:106-122` 在本 change 实现后即漂移——行号引用天然随代码失效，
+符号名才是稳定锚。）⇒ `require_change_for` 为空或没覆盖真实代码路径时，
 本门禁与 building 门禁、`_require_change` **一起静默失效**（既有逃生面，见文末边界声明 1）。
 
 ### Scenario: 未跑设计对抗轮

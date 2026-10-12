@@ -74,15 +74,41 @@
 ## D. 文档
 
 - [x] D1 `docs/gate.md §6`：`check` 的红项清单加「缺设计对抗轮证据」
-- [x] D2 `docs/gate.md §8`：门禁/读点表加一行（`stage=grill-adversarial`）
-- [x] D3 `docs/gate.md §9` 同族新增小节：触发面（Q1 定案）+ 判据 + **三条诚实边界并列写死**
-      （① verdict 不参与判定；② 只保证证据**存在**并绑在最终 revision，**不保证**对抗轮发生在写码之前；
-      ③ **报告正文不校验——空文件亦合格**）——与 `README.md` 的口径**逐条一致**（对抗轮 R1 指出原稿
-      design 要两条、tasks 要三条，口径不一致，已统一为**三条**）
+- [x] D2（**措辞已订正 · review-loop R1 的 N-1**）`docs/gate.md`：**新增 §10**（触发面 + 判据 + 三条诚实边界）
+      + §9 补一条指向 §10 的交叉引用。⚠️ **原措辞「§8 门禁/读点表加一行」是错的**——§8 的表是
+      「证据『读不出』的归宿」，而本门禁 `verify_body=False` ⇒ 对抗报告**不是读点**（正文一个字节都不读），
+      **本就不需要新增行**；为对上一句任务描述给 §8 硬塞一行，等于写进一个**不存在的读点**。
+- [x] D3 `docs/gate.md` 新增 **§10**（原稿写「§9 同族新增小节」）：触发面（Q1 定案）+ 判据 +
+      **三条诚实边界并列写死**（① verdict 不参与判定；② 只保证证据**存在**并绑在最终 revision，
+      **不保证**对抗轮发生在写码之前；③ **报告正文不校验——空文件亦合格**）——与 `README.md` 的口径**逐条一致**
+      （对抗轮 R1 指出原稿 design 要两条、tasks 要三条，口径不一致，已统一为**三条**）
 - [x] D4 `README.md`：对**接入方**的行为变更——写**具体触发条件**（⚠️ **必须点明**「落了实现 = 命中
       `require_change_for`，**本仓含 `templates/**` / `plugin/**`**」，R9）+ 缺它的红 + 同 D3 的三条边界
 - [x] D5 `templates/grill.md`：产物小节后补一句「这条现在被 `check` 机械要求（触发面与豁免）」
 - [x] D6 ⚠️ **不改** `openspec/changes/` 下**其他** change 目录的非证据文件（会让其 manifest 判 stale —— #12 的教训）
+
+## 审阅修复（review-loop R1 = **PASS** 后的收口）
+
+> 来源：`reviews/building-review.md`（零记忆独立审阅者，第 1 轮 PASS，无阻塞，8 条非阻塞）。
+> 它同时**独立实测**了 8 组变异（删实现 / 覆写失效 / `verify_body=True` / 触发面改无条件 / stage 轴接错
+> 全部变红）与「E1 可绿性」（克隆副本里三份 manifest ⇒ `check` exit 0）。
+
+- **N-1** D2 措辞不实 ⇒ 已订正（见 D2 条目；**不加** §8 的伪读点行）。
+- **N-2** `checkcmd._code_hits` 的 docstring 只枚举两个消费者 ⇒ 补齐为**三个**（含 grill-adversarial）。
+- **N-3** 「出厂 doc 写出新轴」无回归钉（变异 **M8 逃逸**：删掉那行全量不红）⇒ `tests/test_init.py`
+  的 `evidence` 键断言补 `grill_stage` / `grill_adversarial_stage` / `building_stage`（顺手把既有两条轴一起钉住）。
+- **N-4** helpers 默认报告名无回归钉（变异 **M7 逃逸**）⇒ **接受不钉**：它只影响脚手架可读性
+  （判定只看 manifest + `report_path`），为测试辅助函数写断言收益过低——记录备查。
+- **N-5** 两条 Scenario 只被「更强/间接」覆盖 ⇒ 补两条用例：
+  `test_report_whose_verdict_is_changes_requested_is_accepted`（字面）
+  + `test_plain_report_passes_through_the_cli_too`（**接线**——实测：`verify_body=True` 变异下
+  旧版**不红**，新版连同空正文用例一起红）。
+- **N-6** 多 change 用例的断言由两段独立子串改为**整句** `changes/<id>：无 stage=…`。
+- **N-7** 两处文案同步：`checkcmd.py` 的注释改指 **§9 / §10**；`docs/gate.md §2` 的逃生面由「两条」改为**三条**。
+- **N-8** `spec.md` 的 `checkcmd.py:106-122` 行号引用**去掉行号**（只留符号名，永久免疫漂移）+
+  `design.md §1.1` 加注「本节行号是**设计冻结时**的基线，实现后会整体下移」。
+- **验证**：**431 passed**（429 + 2 条新用例）；变异复核：把对抗轮的判定传 `verify_body=True` ⇒ **6 红**
+  （含两条新用例）。
 
 ## E. 证据链与收尾
 

@@ -110,7 +110,8 @@ def test_every_change_in_a_code_pr_must_have_adversarial_evidence(gated: Path, c
 
     code, _, err = check(gated, cli)
     assert code == C.EXIT_FAIL
-    assert f"changes/{OTHER}" in err and f"stage={STAGE}" in err
+    # 断言**整句**（两段独立子串可被两个不同 finding 各自满足——review-loop R1 的 N-6①）
+    assert f"changes/{OTHER}：无 stage={STAGE}" in err
     # 有实现的那个**不该**被点名（它有对抗轮证据）
     assert f"changes/impl-a：无 stage={STAGE}" not in err
 
@@ -159,6 +160,26 @@ def test_empty_report_body_is_accepted(gated: Path, cli):
     write_review(gated, CHANGE, stage="building")
     write_review(gated, CHANGE, stage=STAGE, report_body="")
     commit_all(gated, "内容 + 一份**空**的对抗报告")
+
+    _green(check(gated, cli))
+
+
+def test_report_whose_verdict_is_changes_requested_is_accepted(gated: Path, cli):
+    """spec 的 Scenario「结论是 `CHANGES_REQUESTED` 也能通过」的**字面**用例。
+
+    逻辑上已被上面那条空正文用例**严格覆盖**（正文一个字节都不读 ⇒ 三种写法不可区分），
+    但让 Scenario 与用例一一对应更省事（review-loop R1 的 N-5①）。
+    """
+    commit_content(gated, CHANGE, spec_writes=CODE_WRITE)
+    write_review(gated, CHANGE, stage="grill")
+    write_review(gated, CHANGE, stage="building")
+    write_review(
+        gated,
+        CHANGE,
+        stage=STAGE,
+        report_body="# 对抗验证\n\n## Verdict\n**CHANGES_REQUESTED**\n\n三轮封顶，交人判断。\n",
+    )
+    commit_all(gated, "内容 + 结论为 CHANGES_REQUESTED 的对抗报告")
 
     _green(check(gated, cli))
 
@@ -219,3 +240,24 @@ def test_plain_report_without_grill_sections_is_accepted(repo: Path, cli):
         reason="（对抗轮的理由）",
     )
     assert findings == []
+
+
+def test_plain_report_passes_through_the_cli_too(gated: Path, cli):
+    """把上一条从「helper 的默认值」升级成**接线**用例：同样一份没有 grill 式小节的报告，
+    走完整 `check` 也应绿。
+
+    Why：只调 helper 的那条在「把 `verify_body` 传成 `True`」的变异下**不红**（review-loop R1 的
+    M3 实测）——真正拦住「grill 正文判据泄漏到对抗轮」的是走 CLI 的用例。
+    """
+    commit_content(gated, CHANGE, spec_writes=CODE_WRITE)
+    write_review(gated, CHANGE, stage="grill")
+    write_review(gated, CHANGE, stage="building")
+    write_review(
+        gated,
+        CHANGE,
+        stage=STAGE,
+        report_body="# 对抗验证\n\n## Verdict\n**PASS**\n\n（没有 `## Confirmed Decisions` 等小节）\n",
+    )
+    commit_all(gated, "内容 + 无 grill 式小节的对抗报告")
+
+    _green(check(gated, cli))
