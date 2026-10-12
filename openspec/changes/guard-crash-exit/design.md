@@ -143,8 +143,8 @@
 - `src/witnessloop/constants.py`：`EXIT_INTERNAL = 4` + 注释。
 - `src/witnessloop/cli.py`：`import EXIT_INTERNAL`（D3 ⚠️）+ `guard` 分支 `try/except Exception`。
 - `src/witnessloop/policy.py`：`policy.py:129` 补 `UnicodeDecodeError`（D5）。
-- `src/witnessloop/evidence.py`：`_read_json` 补 `UnicodeDecodeError` + 可诊断 Finding（D4-2）；
-  报告读点补捕（D4-3）。
+- `src/witnessloop/evidence.py`：`_read_json` 补捕 `UnicodeDecodeError`（⇒ 与 JSON 坏/缺失**同归**、**不新造文案**，D4-2）；
+  报告读点补捕 ⇒ Finding「报告无法解码：<file>」（D4-3）。
 - `src/witnessloop/contract.py`：**`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）**
   补 `UnicodeDecodeError`（D4-2 ⚠️ R2：`check` 的 manifest 读点在这里，不在 `evidence.py`）。
 - `src/witnessloop/guardcmd.py`：模块 docstring 记「兜底在 `cli.main` 的 guard 分支 + 边界」。
@@ -179,11 +179,14 @@
 - **先红（崩溃兜底 D3 —— 用**真正未预期**的异常触发，不用可归一的解码失败）**：
   - `test_guard_survives_an_arbitrary_internal_error`：monkeypatch `evidence.grill_evidence_findings_in_change`
     抛 `RuntimeError` ⇒ 退 `EXIT_INTERNAL`（≠1）+ 一行诊断。
-  - `test_guard_dispatch_survives_a_broken_import`：`sys.modules["witnessloop.guardcmd"] = None` ⇒ 退 `EXIT_INTERNAL`。
+  - `test_guard_dispatch_survives_a_broken_import`：`sys.modules["witnessloop.guardcmd"] = None`
+    **+ `delattr(witnessloop, "guardcmd")`** ⇒ 退 `EXIT_INTERNAL`。
+    （⚠️ **R4 M4**：整份 suite 里 `guardcmd` 早已是包属性 ⇒ 只设 `sys.modules=None` **不抛**、用例不稳。）
   - `test_shim_allows_the_internal_error_code`：`_run_shim(cli_exit=C.EXIT_INTERNAL) == 0`；`.== EXIT_FAIL → 2` 回归。
 - **先红（读点归一 D4/D5 —— 断言是**确定性 verdict**、且**不出现 traceback**）**：
   - 报告字节坏 ⇒ `guard`：**甲**退 **1** 且 stderr 含「报告无法解码」；**乙**退 4。（按 Q1 结果二选一，另一案断言相反。）
-  - manifest 字节坏 ⇒ `guard` 退 **1** 且文案点名「清单无法解码」；**与 JSON 坏 / 缺失同归**（同一断言形状）。
+  - manifest 字节坏 ⇒ `guard` 退 **1**，且其结论与「JSON 坏 / 缺失」**逐字相同**（**断言两案输出相等**，不钉固定字符串）。
+    **`guard` 侧不点名文件**（「点名该文件」只落 `check` 侧，见 D4-2 / R8）。
   - policy 字节坏 ⇒ `guard` 退 `EXIT_PASS`。
   - **`check` 侧（D4-2 ⚠️ R2）**：字节坏 manifest ⇒ `main(["check",…])` **不抛异常**且非 0（干净红，非 traceback）；
     字节坏报告同理。

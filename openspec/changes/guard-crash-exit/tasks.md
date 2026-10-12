@@ -31,8 +31,8 @@
 - [ ] C6 单测（先红·补 spec 的不可验证 Scenario）：`main(["check",…])` 遇无法解码的 evidence **不返回 0**（仍 fail-closed）
 - [ ] **C7（⚠️ R2 N1）** 实现：`contract.py:176`（`_bound_report`）与 `contract.py:230`（`_validate_one`）补 `UnicodeDecodeError`
       ——**`check` 的 manifest 读点在这里**（`checkcmd.py:75` 先于 `:78`），只改 `evidence.py` 不够
-- [ ] **C8（⚠️ R2 N1）** 单测（先红）：字节坏 **manifest** ⇒ `main(["check",…])` **不抛异常**且非 0（干净红，非 traceback）
-      ——「与 JSON 坏**同归**」是 spec 的硬要求，须有测试钉住
+- [ ] **C8（⚠️ R2 N1）** 单测（先红）：字节坏 **manifest** ⇒ `main(["check",…])` **不抛异常**且非 0（干净红，非 traceback），
+      **且输出点名该文件**（`check` 侧的「点名」是 spec 要求，须有测试钉住；`guard` 侧**不**点名，C4 断言其输出与 JSON 坏相等）
 
 ## D. shim（D6）—— 待验证（预期零改动）
 
@@ -55,7 +55,8 @@
 ## G. 证据链与收尾
 
 - [ ] **G0**（顺序约束 · 自锁防线）：停轮拿到 Q1/Q2 答复 → 写 `grill-review.md` 的 `## User Confirmation` →
-      `manifest build --stage grill`（**先放行 `src/**` 写入**）→ 内容提交后**重跑覆盖**成最终 manifest
+      `manifest build --stage grill`（**先放行 `src/**` 写入**）→ 内容提交后**必须重跑覆盖**成最终 manifest。
+      ⚠️ **重跑是承重的**（R3 实测：不重跑 ⇒ `check` 判 stale 红）；且**重跑前先定稿 `tasks.md`/`specs`**（否则 hash 漂移，白跑）
 - [ ] G1 独立 `review-loop`（PASS 或 3 轮封顶）
 - [ ] G2 两段提交 + `manifest build` ×（grill / grill-adversarial / building）+ `check` 绿
 - [ ] G3 PR（branch protection 已开：require PR + required check `gate / check`）→ 合入 → 关 issue #9

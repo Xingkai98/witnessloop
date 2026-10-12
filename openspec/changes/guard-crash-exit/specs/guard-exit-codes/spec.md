@@ -48,7 +48,8 @@ change 的 grill 证据不完备」这一显式判定产生。内部错误的退
 ### Scenario: 字节坏与 JSON 坏的同级失败同归
 - **Given** 一个 `review manifest` 被写成非法字节（而非非法 JSON）
 - **When** 运行 `guard`
-- **Then** 结论与「manifest 是非法 JSON」**一致**（拦 + 点名该文件），不得一半拦一半放
+- **Then** 结论与「manifest 是非法 JSON」**逐字相同**（拦；`guard` 侧沿用既有文案、**不**点名文件），
+  不得一半拦一半放（`check` 侧的「点名该文件」见上一 Scenario）
 
 ### Scenario: policy 解码失败放行
 - **Given** `.witnessloop/policy.json` 是非法 UTF-8

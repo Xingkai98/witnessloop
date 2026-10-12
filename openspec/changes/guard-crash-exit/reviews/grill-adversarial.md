@@ -479,3 +479,111 @@ N1 的修法有效。R1 的 5 条**全部未回退**。**但**修订稿仍残留
 8. **D3 兜底**：B1（monkeypatch `RuntimeError`）⇒ **退 4**；`sys.modules[...]=None`（**新进程**）⇒ 退 **4**，**（`guardcmd` 已导入）⇒ 退 0**（M4）；`git` 不在 `PATH` ⇒ 退 **4**（真实源）。
 9. **shim 映射**（真 `guard.sh`）：`1→2`、`4→0`、`0/2/3/127→0`。
 10. **`manifest build` 容忍预置字节坏 manifest**：退 **0**（覆写）。
+
+---
+
+# 第 4 轮（R4）
+
+> 立场：R4 是 R3 明说的「作者刻意破例的最后一轮」——**只做确认，不重开** R1–R3 已闭的洞。
+> 默认 R3 的「已整合」仍可能有漏，逐条**读文件 + 实测**核验 R3 的 M1–M4 **是否真被整合**（不信 commit message / 声明）。
+> 隔离副本在 `/tmp/r4`（`/tmp/r4/repo` 真 git 仓 + `/tmp/r4/src` 按 C3/C7 打补丁副本），**未在仓库留文件**；仅改本文件，未 commit。
+
+## Reviewer
+- run id: grill-adversarial-reviewer-guard-crash-exit-2026-10-12-r4
+- 时间: 2026-10-12T00:28:47Z
+
+## Verdict
+
+**CHANGES_REQUESTED**
+
+R3 的 **M2/M3/M4 整合到位**（逐条核对；M4 的技法断言我独立实测坐实）。**但 M1 整合不完整**——
+R3 点名的 over-claim 是「**同一处 × 两个 site**」：`spec.md:39-40` 正文 **+** `spec.md:48-51` Scenario，外加 `design.md:73,142`。
+作者改了**正文**（`spec.md:39-40`）、`tasks.md` C3/C4、`design.md:73`，**但 `spec.md:48-51` Scenario 与 `design.md §5`（`:186`）两处原样留存**，
+而这两处**恰仍写着 R3 M1 要消灭的「点名」+「同归」并存**：
+
+- **N1（阻塞）** `spec.md:48-51`（Req2 的 Scenario「字节坏与 JSON 坏的同级失败同归」，`When` = **运行 `guard`**）仍写
+  「结论与『manifest 是非法 JSON』**一致**（拦 + **点名该文件**）」。实测 `guard` 对**字节坏**与 **JSON 坏** manifest 的结论**逐字相同**、
+  且**不含文件名**（「实测」2）⇒ 此 Scenario **既与同 Req 正文 `spec.md:40`「`guard` 侧……不额外点名文件」冲突**，
+  也**与 `tasks.md` C4「断言两案输出**相等**」冲突**（C4 已不含「点名」）。按此 Scenario 写测试**必红**。
+- **N2（阻塞）** `design.md:186`（§5 测试策略）仍写「manifest 字节坏 ⇒ `guard` 退 **1** 且**文案点名「清单无法解码」**；
+  **与 JSON 坏 / 缺失同归**（同一断言形状）」——**与 `design.md:73-77`（D4-2）及 `tasks.md` C4 直接矛盾**：
+  `guard` 不点名文件（实测），且「点名『清单无法解码』」与「与 JSON 坏同归」在本实现下**不可兼得**
+  （`_read_json` 捕到即 `None` ⇒ 两案同一文案）。R3 在「走查过的角度」把 §5 判为「一致」时**漏读了该分句**
+  （只转述「退 1 / 与 JSON 坏同归」而略去「点名『清单无法解码』」），故作者未动它。
+
+这两处都属 R3 M1 的**同一 over-claim 未消**，是「会让测试失败 / spec over-claim」的硬问题 ⇒ 阻塞。
+
+## R3 M1–M4 整合核验（逐条 · 读文件 + 实测）
+
+### M1 → **未完全整合**（tasks / spec 正文 / D4-2 / R8 到位；**2 处残留**）
+
+**已到位**（逐条核对，均自洽）：
+- `tasks.md:26-27`（C3）：`_read_json` 补捕 `UnicodeDecodeError` ⇒「**与 JSON 坏/缺失同归**」，并显式警告「**不要**在这里新造『清单无法解码：`<file>`』文案」。✓
+- `tasks.md:28-29`（C4）：「字节坏 manifest ⇒ `guard` 退 `1`，且其结论**与『JSON 坏 manifest』逐字相同**（断言**两案输出相等**，而非钉某个固定字符串）」。✓（正是 R3 要求的改法）
+- `spec.md:39-40`（Req2 正文）：「……**同归**（`guard` **拦**、`check` **红**）；`check` 侧的 finding SHALL 点名该文件（`guard` 侧沿用既有文案、不额外点名文件）」。✓
+- `design.md:73-77`（D4-2 ⚠️R3 M1）：明写「`guard` 侧**不新增文案、不点名文件**……**『点名该文件』只落在 `check` 侧**」。✓
+- `design.md:171-175`（§4 R8）：记「`guard` 对『坏 manifest』『无 manifest』文案相同」为**有意代价**，并注「`check` 侧**有**点名」。✓
+
+**残留（阻塞）**：`spec.md:48-51`（N1）与 `design.md:186`（N2）——见 Verdict。
+
+### M2 → **整合到位**
+
+- `grep -rn "F0"` 在 `design/tasks/spec/proposal` **0 命中**（仅 `reviews/grill-adversarial.md` 的 R1/R3 历史记录里，属预期）。
+- `design.md:139`「`tasks.md` 记此为 **`G0`**（该文件 G 段首步）」、`design.md:208`「**`tasks.md` 补 `G0`**」、`design.md:221`「**`G0`** 与两段提交不互斥」——三处已统一为 **`G0`**，与 `tasks.md:57` 的 `G0` 一致。✓
+
+### M3 → **整合到位**
+
+- `design.md:3`：「……R1/R2/R3 三轮 CHANGES_REQUESTED → 逐轮已整合；R3 收尾项已修。停轮待用户确认。」——**不再有「待 R2」**。✓
+- `tasks.md:3`：「……R1/R2/R3 已逐轮整合、R3 收尾项已修……」——**不再是「R1 已整合」**。✓
+- `grep "待 R2\|R1 已整合"` 在正文 **0 命中**（仅历史记录文件）。✓
+
+### M4 → **整合到位，且技法断言经我独立实测坐实**
+
+- `tasks.md:15-17`（B2）已写明：**只** `sys.modules[...]=None` **不够** ⇒ 必须**同时** `monkeypatch.delattr(witnessloop, "guardcmd", raising=False)`。✓
+- **实测**（「实测」4）：**新进程**里 `sys.modules["witnessloop.guardcmd"]=None` ⇒ `from witnessloop import guardcmd` **抛 `ImportError`**；
+  **先把 `guardcmd` 导入过**（它成了 `witnessloop` 包属性）后，同法**不抛**、`from … import` **直接取属性返回旧模块** ⇒ guard 正常跑（退 0、用例不稳）；
+  补 `delattr(witnessloop, "guardcmd")` 后**恢复抛 `ImportError`**。⇒ **M4 的技术判断属实**，`tasks.md` 的修法**正确且必要**。
+
+## 逐条对抗结论（对**修订后**稿的确认 / 新证伪）
+
+- **spec.md Scenario ↔ tasks 用例一一对应** → **基本成立，1 处形态错位**：9 个 Scenario 均有用例
+  （Req1×3↔B1/B2/E1、Req2×3↔C5/**C4**/C2、Req3×2↔D1/D2、Req4↔C6）。
+  **唯一**错位的是 Req2 第二 Scenario（`spec.md:48-51`）——其 `Then` 仍含「点名该文件」，而对应用例 C4 已改为「两案输出相等」（= N1）。
+- **`design.md §4 R8` 与 D4-2 一致** → **是**（R8 的「有意代价」与 D4-2 的「不点名文件」同口径）。
+- **`design.md §5` 与 D4-2 一致** → **否，一处残留**（`:186` 的「点名『清单无法解码』」= N2）。另注 `:182` 仍只写
+  `sys.modules["witnessloop.guardcmd"] = None`（**缺 M4 的 `delattr` 注解**）——但 `tasks.md` B2 已带注解，且 `:182` 只是「测试名 + 步骤」摘要、非唯一出处 ⇒ 记**非阻塞**。
+- **`design.md` D4 甲/乙对比表（`:93-98`）无假陈述** → **是**（R2/R3 已重写；「甲封住『重 build 坏报告』角落的 `check`」经 R3 实测成立）。
+- **spec 逐条真的可落地** → **基本成立**；唯一**不可照抄**的是 N1 那句。
+- **`check` 侧「点名该文件」属实** → **是**（实测：`check` 对字节坏 / JSON 坏 manifest 均报
+  `openspec/changes/add-x/reviews/grill.manifest.json：manifest 无法解析：<err>`，**含文件名**）⇒ `spec.md:40` 的 check 侧口径**正确**；错的只是把这一性质**搬到 guard** 的 N1/N2。
+- **R3 的 M2/M3/M4 未回退** → **是**（本轮复核）。
+- **无新洞**：本轮未发现 R1–R3 范围外的新问题；N1/N2 均为 R3 M1 的**未消残留**（R3 已点名 `spec.md:48-51`）。
+
+## 阻塞项
+
+1. **N1**：改 `spec.md:48-51`（Req2 Scenario）——把「（拦 + **点名该文件**）」改为**分侧**的准确表述，例如
+   「结论与『manifest 是非法 JSON』**一致**（`guard` **拦**、文案同为『无 stage=grill 的 manifest』；`check` **红**、finding **点名该 manifest 文件**）」，
+   删去 `guard` 侧的「点名该文件」，与 `spec.md:40` 正文、`tasks.md` C4 对齐。
+2. **N2**：改 `design.md:186`（§5）——把「`guard`……文案点名『清单无法解码』；与 JSON 坏 / 缺失同归」改为
+   「`guard` 退 `1`，文案 = **无 stage=grill 的 manifest**（**与 JSON 坏 / 缺失逐字相同**、**不点名文件**）」（可选：补一句「`check` 侧另有 `manifest 无法解析：<file>`」）。
+
+## 非阻塞建议
+
+- `design.md:182`（§5）的 `sys.modules["witnessloop.guardcmd"] = None` 摘要宜补「（**须同时 `delattr` 包属性**，见 `tasks.md` B2 / R3 M4）」，免得实现者单看 §5 照抄不稳定技法。
+- `design.md:146`（§3 接线点）「`_read_json` 补 `UnicodeDecodeError` **+ 可诊断 Finding**」措辞偏松：`guard` 侧并**不新增**可诊断文案（与 D4-2 的定案相反）——宜改为「+ 与 JSON 坏/缺失**同归**（不新增文案）」，与 §5/§4 R8 同口径。
+- `spec.md:40` 的「`check` 侧的 finding SHALL 点名该文件」目前**无独立 Scenario / 用例**（C7/C8 只钉「不抛异常 + 非 0」）——属既有行为（`contract.py:232`），可选补一条断言以钉死；**不阻塞**。
+
+## 我实测复现的（均在 `/tmp/r4*`，未在仓库留文件）
+
+1. **基线**：本仓 `uv run pytest -q` ⇒ **388 passed in 19.50s**。
+2. **N1/N2 对照**（`/tmp/r4`：真 git 仓 + `PYTHONPATH=/tmp/r4/src`，`src` 按 C3（`evidence.py:166`）+ C7（`contract.py:177,231`）补 `UnicodeDecodeError`）：
+   - `guard` 遇**字节坏** manifest ⇒ 退 **1**，stderr：`无 stage=grill 的 manifest（现有 stage：（无））——grill 决策记录必须有对应的审阅证据`（**无文件名**）。
+   - `guard` 遇 **JSON 坏** manifest ⇒ **逐字相同**（同文案，退 1）。
+   - ⇒ `spec.md:51` / `design.md:186` 的「`guard` 点名（该文件 / 『清单无法解码』）」**被证伪**。
+3. **`check` 侧点名属实**：`check` 遇**字节坏**或 **JSON 坏** manifest ⇒ 均报
+   `openspec/changes/add-x/reviews/grill.manifest.json：manifest 无法解析：<err>`（**含文件名**），退 **1**（无 traceback）。
+4. **M4 独立复现**（三态）：
+   - 新进程 `sys.modules["witnessloop.guardcmd"]=None` ⇒ `from witnessloop import guardcmd` **抛** `ImportError: import of witnessloop.guardcmd halted; None in sys.modules`。
+   - 先 `import witnessloop.guardcmd`（成包属性）后再置 `None` ⇒ **不抛**，`from witnessloop import guardcmd` **返回旧模块**（`hasattr` 为真）⇒ 对应 guard 退 0、用例不稳。
+   - 追加 `delattr(witnessloop, "guardcmd")` 后 ⇒ **恢复抛** `ImportError`。⇒ `tasks.md` B2 的修法**正确且必要**。
+5. **M2/M3 grep**：`F0` 在四个 change 文本 **0 命中**；`G0` 命中 `tasks.md:57` + `design.md:139,208,221`；`待 R2` / `R1 已整合` 在正文 **0 命中**（仅历史记录文件）。
