@@ -16,7 +16,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all
-from helpers import check, commit_content, write_review
+from helpers import check, commit_content, init_wired, write_review
 
 CHANGE = "add-x"
 OTHER = "b-doc"
@@ -169,7 +169,7 @@ def test_building_stage_is_configurable(repo: Path, cli, read_json):
 
     from conftest import git
 
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     policy_path = repo / C.POLICY_PATH
     doc = read_json(policy_path)
     doc["evidence"]["building_stage"] = "review"

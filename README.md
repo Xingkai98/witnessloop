@@ -19,10 +19,17 @@
 ```bash
 uv tool install git+https://github.com/Xingkai98/witnessloop@v1
 
-# 接入目标仓：幂等、只增不改、不 auto-commit
-cd your-repo && witnessloop init --dry-run   # 先看要写什么
-witnessloop init                             # 落盘，然后**人工审阅并提交**
-witnessloop init --policy /path/to/policy.json   # 需要非默认 policy 时（见下「本仓自身接入」）
+# 接入目标仓：幂等、只增不改、不 auto-commit。先看要写什么（不落盘）
+cd your-repo && witnessloop init --dry-run
+```
+
+落盘时**三选一**（下面三条是**互斥的替代**，**不是顺序执行**；`--policy` 可与任一条组合）：
+
+```bash
+witnessloop init --test-command "uv run pytest -q"   # ① 推荐：接入 + 写**测试执行点**（见「接入方的测试进 CI」）
+witnessloop init                                     # ② 不带 flag ⇒ 执行点是哨兵占位（`check` 会判红）
+witnessloop init --no-tests                          # ③ 显式不要测试执行点（见那条的「opt-out 的语义」）
+witnessloop init --policy /path/to/policy.json        # + 需要非默认 policy（见下「本仓自身接入」）
 
 # 审阅跑完，落证据（复用 check 同一套哈希；幂等、不 auto-commit）
 witnessloop manifest build --change add-retry --stage building \
@@ -49,6 +56,52 @@ claude --plugin-dir /path/to/witnessloop/plugin
 
 分发按设计走 **git / 本地目录，不上 marketplace**（design §4）。
 
+### 接入方的测试进 CI（测试执行点）
+
+`init` 会把**测试执行点**写进目标仓：一份**命令文件** `.github/witnessloop-tests.txt`，
+内容就是**一行 shell 命令**。
+
+```bash
+witnessloop init --test-command "uv run pytest -q"   # 接入时就把命令写进去（推荐）
+witnessloop init                                      # 不带 flag ⇒ 文件里是哨兵 <<REPLACE-ME>>（check 判红）
+witnessloop init --no-tests                           # 显式不要执行点（见下面的边界与 opt-out 说明）
+```
+
+- **门禁会跑它**：`.github/workflows/gate.yml` 新增一步，在本 job 内 `sh -c "$(cat 该文件)"`。
+  它和 `check` 是**同一个 job** ⇒ **复用你已勾成 required 的 `gate / check`**：测试失败 = 合不了
+  （⚠️ **不保证**它真跑过，见下面的边界 ①），**不需要任何新增的平台操作**。
+- **`check` 会机械地要求它「存在、非空、已接线」**：文件缺失 / 是空文件（或纯空白）/ 仍是哨兵
+  `<<REPLACE-ME>>` ⇒ `check` 红并点名路径。它只看文件与字符串，**不执行**你的命令。
+- **改命令是普通操作**：直接编辑 `.github/witnessloop-tests.txt` 并提交即可（`.github/**` 不在保护
+  路径、不需要解释事件）。这个文件刻意**不进 init 台账**，所以**再跑 plain `init` 也不会**覆盖它或
+  报冲突；想用 `init --test-command` 主动覆盖也行——**该 flag 总是覆盖**已有内容。
+
+**四条诚实边界**（不写清就是过度承诺）：
+
+1. `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试：
+   `|| true`、`--collect-only`、一行 `# TODO` 注释、甚至 `true` / `:` 都能骗过存在性判定
+   （第三条判据只堵**意外**写出来的空文件）。「真跑了」由**平台侧 required check** 保证。
+2. **PR 可以改掉自己的命令文件 / CI 配置**（`.github/workflows/**` 不在保护路径、
+   `required_approving_review_count: 0`）而 required check 依旧绿。
+3. 测试命令是**任意代码**，会在**每个 PR（含 fork PR）**的 runner 上执行——别把密钥写进去
+   （这个 job 只有 `contents: read`，也拿不到别的）。
+4. **能力天花板**：走这个执行点意味着你的测试跑在**别人的 job** 里——只有 `contents: read` 权限
+   （reusable workflow 的权限不能超出 caller），**没有 `services:`、不能加自己的 `uses:` 步骤、
+   不能上 matrix/缓存**，命令只能是**一行 shell**。需要这些能力的仓应当改用**自己的 workflow**
+   （代价：自己再勾一次 required）。**把「同 job」说成普遍更优就是过度承诺**——它是「零新增人工
+   步骤」与「测试环境自主权」的交换。
+
+**opt-out 的语义（第五条说明）**：`tests.disabled: true`（或新接入时的 `--no-tests`）**只关 `check`
+那条判定，不关门禁那一步**——门禁只看「文件在不在 / 含不含哨兵」。想「连跑都别跑」就**删掉命令
+文件**（那一步会跳过）。
+
+⚠️ **已接入的仓怎么 opt-out**（这里容易说错）：`--no-tests` 是个**接入期**的 flag——已接入且
+policy 还是出厂默认的仓给它会**报冲突退 1**（「本次期望 ≠ 磁盘」），只有 policy **已经是**
+`tests.disabled: true` 时 `init --no-tests` 才幂等 exit 0。所以已接入的仓要 opt-out 就直接改
+`.witnessloop/policy.json`：它是不变集、状态是 `M` ⇒ **每次都要一条 `protected_path_write` 解释
+事件**；而且改完 policy 之后 plain `init` 会暂时 **exit 1**（任何定制 policy 都如此，不是该字段
+独有——再带一次 `--no-tests` 即可）。
+
 ### 本仓自身接入（dogfood）
 
 witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`，非平凡改动落在
@@ -63,8 +116,9 @@ witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`�
 > 因为它才引入 caller workflow、`main` 的 required check 那时尚未勾选；**接入之后**的 PR
 > 才被机械拦。这是自举的固有鸡生蛋，不是遗漏。
 >
-> 另：`init --policy` 是接入期新增的动词选项，**尚未随 `@v1` 发布**——自己接入时跑源码版
-> （`uv run witnessloop …`），公众要等**新 tag**。
+> 另：`init --policy` 与 `--test-command` / `--no-tests` 是**接入期**的动词选项，自 **`v1.6.0`**
+> 起随 `@v1` 发布（`@v1` 是滚动大版本）。本地 CLI 还旧时，自己接入跑源码版
+> （`uv run witnessloop …`）即可。
 
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
 
@@ -124,6 +178,20 @@ grill 证据不完备就不许写代码路径（**写文档豁免**，否则永�
 且**一个 PR 同时触及多个 change**（只要它触及了代码）时，**每个** change 都要 building 证据（要免除就把 change 拆到单独 PR）。
 **注意**：这道门只保证「**闭环跑过 + 审在最终 revision 上**」——**报告里的 verdict 文本不参与判定**，
 `PASS` / `CHANGES_REQUESTED` 都能过（§9 有完整口径）。
+
+⚠️ **对**接入方**还有一条行为变更**（**测试执行点**门禁，issue #4）：`check` 现在要求
+`.github/witnessloop-tests.txt` **存在、去空白后非空、且不含哨兵** `<<REPLACE-ME>>`，否则**红**
+（空文件会让 `check` 与门禁**同时**判绿而测试一个都不跑，所以它必须判）。策略字段的语义是
+**缺省 ⇒ 声明** ⇒ **已接入的仓会被立刻判**。迁移三选一：
+
+```bash
+printf 'uv run pytest -q\n' > .github/witnessloop-tests.txt   # ① 手工补一份（最简单）
+witnessloop init --test-command "uv run pytest -q"            # ② 让 init 写（policy 与出厂默认一致的仓才行）
+# ③ 不要这个执行点：policy 里写 "tests": {"disabled": true}（改不变集，需一条解释事件）
+```
+
+⚠️ 本仓自己的 `init` 早就跑不动（定制 policy 撞出厂默认）⇒ 本仓那次是走 ① 手工提交的。
+口径与四条边界见上节与 [docs/gate.md §11](docs/gate.md)。
 
 ### 能力边界（别被「机械可验证」误导）
 

@@ -22,7 +22,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import check, commit_content, write_artifact, write_review
+from helpers import check, commit_content, init_wired, write_artifact, write_review
 
 CHANGE = "add-x"
 OTHER = "b-doc"
@@ -192,7 +192,7 @@ def test_adversarial_stage_is_configurable(repo: Path, cli, read_json):
     （`building` 那条曾因缺这条用例被变异检查逃逸）。"""
     import json
 
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     policy_path = repo / C.POLICY_PATH
     doc = read_json(policy_path)
     doc["evidence"]["grill_adversarial_stage"] = "design-adversarial"

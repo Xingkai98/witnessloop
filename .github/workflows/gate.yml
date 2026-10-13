@@ -57,3 +57,44 @@ jobs:
           uvx --from \
             "git+https://github.com/Xingkai98/witnessloop@${{ inputs.witnessloop-ref }}" \
             witnessloop check --root . --base "$BASE" --head HEAD
+
+      # 接入方的测试执行点：`init` 写的命令文件（内容 = 一行 shell 命令）。
+      # 与上面的 `check` **同一个 job** ⇒ 复用已 required 的 `gate / check`，接入方
+      # **不需要**任何新增平台操作就能让「测试失败 = 合不了」成立。
+      #
+      # `if: !cancelled()`：① 门禁红的时候**最需要**测试反馈（一次 CI 里同时看到
+      # 「缺必需件」与 pytest 失败明细）；② run 被取消时不必再跑一遍。（默认语义会在
+      # `check` 红时**完全不跑**测试；`always()` 会连取消的 run 一起跑。曾有说法称
+      # `always()` 会「掩蔽」`check` 的失败——**实测为假**：失败步骤 + 后续 skipped 步骤
+      # ⇒ job 结论仍 `failure`，真正的掩蔽开关是 `continue-on-error`。）
+      #
+      # ⚠️ 文件**路径**经 `env:` 传入、命令在 `run:` 里**运行时读**：`${{ }}` 插值是
+      # **解析期**发生的，对文件内容做插值等于把接入方内容当 workflow 源码。
+      # ⚠️ 这里的两个字面量必须与 `constants.py` 的 `ADOPTER_TESTS_PATH` /
+      # `ADOPTER_TESTS_SENTINEL` **逐字相同**（由 tests/test_gate_workflow.py 钉住）——
+      # 口径分裂的后果是「`check` 判红、门禁却静默跳过」（或反过来）。
+      #
+      # 文件缺失 **或** 内容含哨兵 ⇒ 跳过（是否判红由 `check` 决定）：哨兵会被 `sh`
+      # 当命令执行，症状是 `sh: Syntax error`（实测 exit 2），与「没接线」毫无相似之处。
+      # ⚠️ 读取时顺带 `tr -d '\r'`：`$(cat …)` **只吃行尾 `\n`**，CRLF 会把一个 `\r` 留在
+      # 命令尾 ⇒ `sh -c "uv run pytest -q\r"` 报 `pytest: error: unrecognized arguments:`
+      # （实测 exit 4）。`check` 侧不受影响（Python 的 `str.strip()` 本来就吃 `\r`），
+      # 所以那是门禁侧独有的、与「接线」毫无关系的红（审阅 R1 的 I3）。
+      - name: adopter tests
+        if: ${{ !cancelled() }}
+        env:
+          WL_TESTS_FILE: .github/witnessloop-tests.txt
+          WL_TESTS_SENTINEL: "<<REPLACE-ME>>"
+        run: |
+          if [ ! -f "$WL_TESTS_FILE" ]; then
+            echo "::notice::没有测试执行点（$WL_TESTS_FILE 不存在），跳过。"
+            exit 0
+          fi
+          CMD=$(tr -d '\r' < "$WL_TESTS_FILE")
+          case "$CMD" in
+            *"$WL_TESTS_SENTINEL"*)
+              echo "::notice::测试执行点未接线（仍是哨兵），跳过。"
+              exit 0
+              ;;
+          esac
+          sh -c "$CMD"

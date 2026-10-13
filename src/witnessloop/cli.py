@@ -12,7 +12,7 @@ import argparse
 import sys
 
 from witnessloop import __version__
-from witnessloop.constants import DEFAULT_GATE_REF, EXIT_USAGE
+from witnessloop.constants import ADOPTER_TESTS_PATH, DEFAULT_GATE_REF, EXIT_USAGE
 
 
 class _Parser(argparse.ArgumentParser):
@@ -51,6 +51,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="用给定 JSON 文件的内容作为 policy（替换出厂默认）；缺省用出厂默认 policy。"
         "轻校验（仅要求可解析为 JSON 对象），语义合法性由 `check` 兜底",
+    )
+    # 测试执行点：两个 flag 互斥（「写一条命令」与「不写文件」不可能同时成立）。
+    tests_group = p_init.add_mutually_exclusive_group()
+    tests_group.add_argument(
+        "--test-command",
+        default=None,
+        help="接入方测试的**执行点**：把这条命令写入 "
+        f"{ADOPTER_TESTS_PATH}（门禁在与 `check` 同一个 job 里执行它，"
+        "测试失败 = required check 失败）。**总是覆盖**该文件已有内容；"
+        "不给该 flag 时，只在文件不存在时种哨兵占位（未接线 ⇒ `check` 判红）",
+    )
+    tests_group.add_argument(
+        "--no-tests",
+        action="store_true",
+        help="显式 opt-out：不写命令文件，并在 policy 里写 `tests.disabled: true`"
+        "（`check` 不再要求执行点）。⚠️ 它**只关 `check`**：门禁那一步照旧——"
+        "文件在就跑、不在就跳过",
     )
 
     p_uninit = sub.add_parser(

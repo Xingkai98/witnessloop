@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "adopter-test-gate",
+  "stage": "building",
+  "reviewer_run_id": "building-reviewer-adopter-test-gate-79c8d5f",
+  "author_run_id": "author-adopter-test-gate-2026-10-13",
+  "base_sha": "de51a01adcfadc409af0a4c3b7545f38ef9f2aee",
+  "head_sha": "17b9ce30efecf6229cc08e5c3a549151b2f5ecfc",
+  "tasks_hash": "3f95d682cbdcb34cc25d703cb43cf06081e547485c8d1c837f9c63f8e50c3512",
+  "spec_hash": "314ff3468342035b8d95d5603bb664d3aad24dd20afa7c47d552e7cae9640a17",
+  "diff_hash": "88016abf760569d3fc35a45334f3708ea2102b75b47c6e7a172d2eb11c0da8d2",
+  "report_hash": "7149ae3440f8b4375fed676b7b18cbe301c1dba9398df30e31fa99b77adfece5",
+  "report_path": "reviews/building-review.md"
+}

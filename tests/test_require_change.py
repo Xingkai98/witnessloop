@@ -13,7 +13,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import check, commit_content, commit_evidence, write_artifact
+from helpers import check, commit_content, commit_evidence, init_wired, write_artifact
 
 
 def _commit(repo: Path, rel: str, body: str, message: str) -> None:
@@ -62,7 +62,7 @@ def test_default_policy_declares_require_change_for(repo: Path, cli, read_json):
 
 def test_require_change_for_is_configurable(repo: Path, cli, read_json):
     """repo-agnostic 参数化轴：目标仓可以换成自己的路径。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     policy_path = repo / C.POLICY_PATH
     doc = read_json(policy_path)
     doc["require_change_for"] = ["infra/**"]
@@ -85,7 +85,7 @@ def test_require_change_for_is_configurable(repo: Path, cli, read_json):
 
 
 def test_empty_require_change_for_disables_the_rule(repo: Path, cli, read_json):
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     policy_path = repo / C.POLICY_PATH
     doc = read_json(policy_path)
     doc["require_change_for"] = []
@@ -118,7 +118,7 @@ def test_deleting_source_without_change_dir_is_rejected(repo: Path, cli):
 
 def test_onboarding_pr_itself_is_not_blocked(repo: Path, cli):
     """接入 PR 只写 .witnessloop/** 与 .github/**，不在 require_change_for 里。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
 
     code, out, err = cli(

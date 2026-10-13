@@ -23,6 +23,7 @@ from helpers import (
     change_dir,
     check,
     commit_content,
+    init_wired,
     write_artifact,
     write_review,
 )
@@ -220,7 +221,7 @@ def test_build_then_check_agree_on_noncanonical_report_paths(repo: Path, cli, va
     这正是 `manifestcmd` 注释里要避免的「build 报成功、check 立刻拒」自相矛盾——
     而且多打一个 `./` 是**正常用户可踩**的输入，不是恶意。
     """
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(repo, CHANGE)
@@ -300,7 +301,7 @@ def _build(cli, repo: Path, stage: str, report: str):
 
 def test_round_trip_then_orphan_when_a_manifest_is_removed(repo: Path, cli):
     """真实 CLI：两份报告各 build 一次 → check 绿；删掉一份 manifest → 孤儿。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(repo, CHANGE)

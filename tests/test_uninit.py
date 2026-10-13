@@ -20,6 +20,11 @@ def _init(repo: Path, cli) -> None:
 
 
 def test_uninit_removes_exactly_what_init_created(repo: Path, cli):
+    """`uninit` 删台账里的每一条——**命令文件不在台账**（change adopter-test-gate）。
+
+    它是「产物，但不由台账/冲突管辖」（design D3）：`uninitcmd` 只遍历
+    `created_files`，所以它天然看不见命令文件，**不需要**任何 `uninitcmd` 改动。
+    """
     _init(repo, cli)
     assert (repo / ".witnessloop").is_dir()
     assert (repo / ".github/workflows").is_dir()
@@ -30,21 +35,27 @@ def test_uninit_removes_exactly_what_init_created(repo: Path, cli):
     assert not (repo / C.POLICY_PATH).exists()
     assert not (repo / C.INIT_MANIFEST_PATH).exists()
     assert not (repo / C.GATE_WORKFLOW_PATH).exists()
-    # 空目录被收干净
+    # 空目录被收干净（`.github/workflows` 空了；`.github/` 不是——见下）
     assert not (repo / ".witnessloop").exists()
-    assert not (repo / ".github").exists()
+    assert not (repo / ".github/workflows").exists()
     assert C.POLICY_PATH in out
+    # ⚠️ **声明出来的边界**：命令文件不在台账 ⇒ 不在被删之列，原样留在盘上。
+    assert (repo / C.ADOPTER_TESTS_PATH).read_text(encoding="utf-8") == (
+        C.ADOPTER_TESTS_SENTINEL + "\n"
+    )
 
 
 def test_uninit_round_trip_leaves_repo_clean(repo: Path, cli):
-    """F5 的前半：init → uninit 往返后工作树回到 init 前。"""
+    """F5 的前半：init → uninit 往返后工作树回到 init 前——**除了**命令文件。"""
     before = git(repo, "status", "--porcelain")
     _init(repo, cli)
     assert git(repo, "status", "--porcelain") != before  # init 确实动了树
 
     code, _, _ = cli("uninit", "--root", str(repo))
     assert code == C.EXIT_PASS
-    assert git(repo, "status", "--porcelain") == before
+    # 往返**不再逐字节干净**：命令文件不进台账 ⇒ 不被 `uninit` 删除（D3 的代价，
+    # 刻意接受）。这里把它钉成契约，而不是放宽断言成「大致干净」。
+    assert git(repo, "status", "--porcelain", "-uall") == f"?? {C.ADOPTER_TESTS_PATH}\n"
 
 
 def test_uninit_is_idempotent(repo: Path, cli):

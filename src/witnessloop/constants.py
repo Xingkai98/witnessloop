@@ -15,6 +15,22 @@ POLICY_PATH = ".witnessloop/policy.json"
 INIT_MANIFEST_PATH = ".witnessloop/init-manifest.json"
 GATE_WORKFLOW_PATH = ".github/workflows/witnessloop.yml"
 
+# 接入方的**测试执行点**（change adopter-test-gate / issue #4）：一行 shell 命令，
+# 由 `gate.yml` 在与 `check` **同一个 job** 里执行 ⇒ 测试失败 = required check 失败。
+#
+# 它是**产物**，但**不进 `desired_files()`、不进 init 台账、不参与冲突判定**
+# （design D3）：`desired_files()` 同时喂写盘、台账与两条冲突判定，种子一旦进去，
+# 接入方改过命令之后 plain `init` 就会 exit 1（实测）——而改命令是**正常用法**。
+#
+# 双重身份的另一半：`init` 只在**文件不存在**时种哨兵（无 flag 时），`--test-command`
+# 则**总是覆盖**（显式意图优先，不得静默 no-op）。
+ADOPTER_TESTS_PATH = ".github/witnessloop-tests.txt"
+
+# 未接线占位（哨兵）。`check` 判「文件里含这个子串 ⇒ 未接线 ⇒ 红」；
+# `gate.yml` 用**同一个常量**比对，跳过执行（否则哨兵会被 `sh` 当命令跑：
+# `sh: Syntax error`、实测 exit 2 —— 症状与「没接线」毫无相似之处）。
+ADOPTER_TESTS_SENTINEL = "<<REPLACE-ME>>"
+
 # change 目录默认根（policy 可覆写）。
 DEFAULT_CHANGES_ROOT = "openspec/changes"
 

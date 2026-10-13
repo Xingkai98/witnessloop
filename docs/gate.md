@@ -6,13 +6,29 @@
 
 ## 1. 目标仓里长什么样
 
-`witnessloop init` 只写三个文件（幂等、只增不改、不 auto-commit）：
+`witnessloop init` 写**三个台账产物**（幂等、只增不改、不 auto-commit）**外加一份命令文件**：
 
 ```
 .witnessloop/policy.json          # 受保护路径 + 必需 artifact + 证据格式
 .witnessloop/init-manifest.json   # 创建清单（含 sha256 台账）+ init 前 base ref
 .github/workflows/witnessloop.yml # 极薄 caller：uses: <owner>/witnessloop/.../gate.yml@v1
+.github/witnessloop-tests.txt     # 测试执行点：一行命令，门禁在与 check 同一个 job 里跑它
 ```
+
+⚠️ **命令文件的双重身份**（change adopter-test-gate / design D3）：它是**产物**——
+`--dry-run` 与产物清单都会列出它（且只列**真会写**的那些），但
+
+- **不进 `init` 台账**（`.witnessloop/init-manifest.json` 的 `created_files` 恒为上面三条）；
+- **不进 `desired_files()`**，因而不参与任何一条冲突判定（`initcmd.conflicting_files`）；
+- 因此**不被 `uninit` 删除**（`uninitcmd` 只遍历台账条目 ⇒ 它天然看不见该文件）。
+
+理由：`desired_files()` 同时喂**三个**消费者（写盘、台账、**两条冲突判定**），种子一旦进去，
+接入方**改过命令之后** plain `init` 就会 exit 1——而「改命令」是**正常用法**（§11）。
+代价（刻意接受）：`uninit` 往返**不再逐字节干净**，命令文件留在盘上；不要它就自己删。
+
+写入语义：无 flag 时**只在文件不存在**时写**哨兵** `<<REPLACE-ME>>`（未接线 ⇒ `check` 判红）；
+`init --test-command "<cmd>"` **总是覆盖**已有内容；`init --no-tests` 显式**不写**该文件
+（并在 policy 里写 `tests.disabled: true`）。三态与判定见 §11。
 
 一个 change 目录（OpenSpec 形状，硬编码，无 spec 适配器）：
 
@@ -275,7 +291,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / **测试执行点缺失、为空或未接线**（§11）/ base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 
@@ -424,3 +440,75 @@ review manifest。缺失 ⇒ **红**并**点名现有 stage**。
 ⚠️ **对**接入方**是行为变更**：**改了代码**（触及 `require_change_for`）的 PR 现在**必须**有
 `stage=grill-adversarial` 的审阅证据（= 跑过设计阶段对抗验证），**否则红**。**没有过渡开关**
 （开关 = 静默绕过面）。
+
+## 11. 测试执行点：接入方的测试进 CI（change adopter-test-gate / issue #4）
+
+**背景**：`init` 写的 caller workflow 只跑 `witnessloop check` ⇒ **接入方自己的测试没有任何自动
+执行点**（实测：M3 acid test 那条真实 PR 的 job 列表只有 `gate / check`，pytest 一次都没跑）。
+本 change 交付**机械**版本：**没有测试执行点的仓会被拦住**，测试失败的 PR **合不了**
+（⚠️ 这只保证「执行点存在且已接线」，**不保证**它跑的是真测试——四条诚实边界见 §11.3）。
+
+**形态**（design D1 甲：命令文件 + `gate.yml` 读它）：
+
+- `init` 写 `.github/witnessloop-tests.txt`（内容 = **一行 shell**）；`--test-command` **总是覆盖**。
+- `gate.yml` 新增一步 `adopter tests`，与 `check` **同一个 job**（`if: ${{ !cancelled() }}`）：
+  **文件缺失 _或_ 内容含哨兵 ⇒ 跳过**；否则 `sh -c "$(cat <文件>)"`。命令失败 ⇒ job 失败 ⇒
+  **合不了**（required 粒度是 job ⇒ 接入方**不需要新增**任何平台操作）。
+  ⚠️ 这只保证「命令被执行了」，**不保证**它是真测试（见下面的边界 ①）。
+- 测试步骤排在 **`check` 之后**：门禁红的时候**最需要**测试反馈（一次 CI 里同时看到「缺必需件」
+  与 pytest 失败明细）；用 `!cancelled()` 而不是 `always()` 是为了**run 被取消时不再跑一遍**
+  （曾有说法称 `always()` 会「掩蔽」`check` 的失败——**实测为假**：失败步骤 + 后续 `skipped`
+  步骤 ⇒ job 结论仍 `failure`；真正的掩蔽开关是 `continue-on-error`）。
+
+### 11.1 `check` 侧的三条判据（**零依赖**）
+
+在策略**声明了执行点**的前提下，`check` 要求「**① 文件存在 ② 去空白后非空 ③ 不含未替换哨兵**」。
+判定只做**文件存在与字符串包含**检查：**不解析 YAML、不执行**该命令（执行是门禁那一步的职责）。
+
+| 命令文件的状态 | `check` | 门禁那一步 |
+|---|---|---|
+| 不存在 | **红**（点名路径） | 跳过 |
+| 空 / 纯空白 | **红**（`测试执行点为空（未接线）`） | `sh -c ""` ⇒ exit 0 |
+| 含未替换哨兵 | **红** | 跳过 |
+| 已接线 | 绿 | 执行命令 |
+
+⚠️ **空文件那一态必须判**：只判「存在 + 无哨兵」时，空文件会让 `check` 判绿 **且** 门禁
+`sh -c ""` 退 0 ⇒ 「有执行点、门禁跑了、required 绿、测试一个没跑」——正是 issue #4 的形态
+外加一枚绿勾。**所以「空 ⇒ 红」只能由 `check` 给**，门禁那一步给不了。
+
+哨兵与路径是**子串口径**：`check` 判「文件内容里含哨兵串」，门禁用同一个常量做 `case` 匹配——
+两侧**必须同源**（`constants.ADOPTER_TESTS_PATH` / `ADOPTER_TESTS_SENTINEL`，
+`tests/test_gate_workflow.py` 钉住三处逐字一致），否则会出现「`check` 判红、门禁却静默跳过」。
+
+### 11.2 策略语义：**缺省 ⇒ 声明**，唯一的 opt-out 是 `tests.disabled: true`
+
+- **字段缺省 ⇒ 声明**（用默认路径判）——与 `require_change_for` 同一条既有惯例
+  （§2：保护性默认，别让老 policy 静默失去这条规则）。⇒ **已接入的仓会被立刻判**；
+  补文件的迁移步骤见 README 的接入段。
+- **唯一的 opt-out 字面是布尔 `tests.disabled: true`**（`init --no-tests` 写它）。
+  `""` / `null` / `false` **都不是** opt-out：`Policy.from_doc` 沿既有惯例用 `or DEFAULT`
+  （falsy 即回落），所以这两个字段只认布尔真。
+- ⚠️ 出厂 policy doc **不物化** `tests` 键（`default_policy_doc()` 里没有它）——物化会让
+  **已接入的仓**跑 plain `init` 时因「本次期望 ≠ 磁盘」命中冲突分支 **exit 1**。
+- ⚠️ **`tests.disabled` 只关 §11.1 那条判定，不关门禁那一步**：门禁只看「文件在不在 /
+  含不含哨兵」，与 policy **正交**。想「连跑都别跑」要**删掉命令文件**（那一步会跳过）。
+- **已接入仓的 opt-out 摩擦（两条，都是实测）**：① `--no-tests` 是**接入期**的 flag——已接入且
+  policy 还是出厂默认的仓给它会**报冲突退 1**（「本次期望 ≠ 磁盘」；只有 policy 已经是
+  `tests.disabled: true` 时 `init --no-tests` 才幂等 exit 0）⇒ 已接入仓的 opt-out 走改
+  `.witnessloop/policy.json`，而它是不变集且状态是 `M` ⇒ **每次都要写一条
+  `protected_path_write` 解释事件**（§5）；② 改完 policy 之后 plain `init` 会因「本次期望 ≠
+  磁盘」**exit 1**（直到你再带 `--no-tests`）——任何定制 policy 都如此，不是本字段独有。
+
+### 11.3 诚实边界（README 有同口径的四条）
+
+① `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试：
+`|| true`、`--collect-only`、一行 `# TODO` 注释、甚至 `true` / `:` 都能骗过存在性判定
+（§11.1 的第三条判据只堵**意外**写出来的空文件——「写了个占位注释」不在它的射程里）。
+「真跑了」由**平台侧 required check** 保证。
+② **PR 可以改掉自己的命令文件 / CI 配置**（`.github/workflows/**` 不在保护路径、
+`required_approving_review_count: 0`）而 required check 依旧绿。
+③ 测试命令是**任意代码**，会在每个 PR（含 **fork PR**）的 runner 上执行。
+④ **能力天花板**：走本执行点意味着测试跑在**别人的 job** 里——只有 `contents: read` 权限
+（reusable workflow 的权限不能超出 caller），**没有 `services:`、不能加自己的 `uses:` 步骤、
+不能上 matrix/缓存**，命令只能是**一行 shell**。需要这些能力的仓应当改用**自己的 workflow**
+（代价：自己再勾一次 required）。**把「同 job」说成普遍更优即为过度承诺。**

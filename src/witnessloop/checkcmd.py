@@ -1,9 +1,11 @@
 """``witnessloop check``：CI 入口，**fail-closed**。
 
-校验三件事（design §5.1）：
+校验四件事（design §5.1）：
 1. change 目录契约（D2）
 2. review manifest 存在且 hash 绑定、reviewer ≠ author（D3/D4）
 3. 受保护路径的写入有结构化解释事件（D5）
+4. **测试执行点存在且已接线**（change adopter-test-gate / issue #4，见
+   `_tests_execution_point`）——只做存在性与字符串检查，**不执行**那条命令
 
 外加不变集（D6）：policy / manifest 恒受保护，repo policy 移除不掉。
 任何一步出错都非零退出——**未接入时也绝不静默通过**（D1）。
@@ -106,11 +108,62 @@ def run(args: argparse.Namespace) -> int:
                 label=f"{pol.changes_root.rstrip('/')}/{change_id}",
                 reason="本 change 改了受管控代码，必须有实现后的独立审阅证据（review-loop）",
             )
+    findings += _tests_execution_point(root, pol)
     findings += _require_change(pol, changes, change_ids)
     findings += _protected_writes(root, pol, changes)
 
     _report(base, head, changes, change_ids, findings)
     return C.EXIT_FAIL if findings else C.EXIT_PASS
+
+
+def _tests_execution_point(root: Path, pol: policy_mod.Policy) -> list[contract.Finding]:
+    """D4：策略声明了测试执行点 ⇒ 要求「**文件存在 + 去空白非空 + 不含哨兵**」。
+
+    **零依赖**：只看文件与字符串，**不解析 YAML、不执行该命令**——执行是 `gate.yml`
+    那一步的职责（这里跑命令会既慢又给出错误归因）。
+
+    第三条判据（非空）不可省：只判「存在 + 无哨兵」时，**空文件**会让 `check` 判绿
+    **且** 门禁 `sh -c ""` 退 0 ⇒ 「有执行点、门禁跑了、required 绿、一个测试没跑」，
+    正是 issue #4 的形态外加一枚绿勾（grill v2 实测）。
+    """
+    if pol.tests_disabled:
+        # 显式 opt-out（`tests.disabled: true`）⇒ 本条不判。
+        # ⚠️ 它**只关这条判定**：门禁那一步照旧「文件在就跑、不在就跳过」（正交）。
+        return []
+
+    rel = C.ADOPTER_TESTS_PATH
+    path = root / rel
+    if not path.is_file():
+        return [
+            contract.Finding(
+                rel,
+                "策略声明了测试执行点，但该文件不存在（执行点缺失）。"
+                "写入要跑的测试命令，或在 policy 里显式 `tests.disabled: true` 退出这条判定。",
+            )
+        ]
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # 读不出 ⇒ 不可核验 ⇒ 红（与「证据文件读不出」同口径）。绝不静默放行。
+        why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+        return [contract.Finding(rel, f"测试执行点{why}：{exc}")]
+
+    if not content.strip():
+        return [
+            contract.Finding(
+                rel,
+                "测试执行点为空（未接线）。空文件会让 `check` 与门禁**同时**判绿而一个测试都不跑。",
+            )
+        ]
+    if C.ADOPTER_TESTS_SENTINEL in content:
+        return [
+            contract.Finding(
+                rel,
+                f"测试执行点未接线（仍是哨兵 {C.ADOPTER_TESTS_SENTINEL}）。"
+                "把它替换成真实的测试命令。",
+            )
+        ]
+    return []
 
 
 def _code_hits(pol: policy_mod.Policy, changes) -> list[str]:

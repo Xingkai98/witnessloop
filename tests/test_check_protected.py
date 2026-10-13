@@ -12,6 +12,7 @@ from helpers import (
     check,
     commit_content,
     commit_evidence,
+    init_wired,
     write_change,
     write_event,
     write_review,
@@ -171,7 +172,7 @@ def test_renaming_a_protected_file_out_of_the_area_is_rejected(repo: Path, cli):
 def test_renaming_with_an_event_is_allowed(repo: Path, cli):
     """给了针对**旧路径**的解释事件，改名外逃应该放行。"""
     _write_spec(repo, "# baseline spec\n")
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "main：已有受保护 spec")
     git(repo, "checkout", "-q", "-b", "feature")
 
