@@ -492,3 +492,114 @@ PR B（head 不含该文件，例如一条改 README 的 PR）→ [SIM 新判据
 | 两个 commit 是否动过实现？ | **没有**：只有 `design.md` / `tasks.md` / `proposal.md` / `reviews/*.md` | `git show --stat 866046e` / `4468f5d` |
 | 基线是否仍绿？ | **是**：**431 passed in 24.55s**（新副本 + 全新 venv） | `/tmp/adv3/repo` |
 | 唯一 opt-out 字面是否四处同口径？ | **是**：`spec.md:12` / `design.md:104,152` / `tasks.md:12,14,37` | `grep -rn "tests.disabled"` |
+
+---
+
+# 定案后重跑（R4）
+
+> 依 `templates/grill.md` 的时序：停轮尘埃落定后、**写码之前**，对抗轮针对**定稿**再跑一次。
+> 被审 revision：`4df66e9`（分支 `adopter-test-gate/2026-10-12`）——⚠️ **工作区不是干净的**：
+> `design.md` / `tasks.md` 有**未提交**改动，另有**未跟踪**的 `reviews/grill.manifest.json`（本节把它们一并核了）。
+> 方法：`/tmp/adv4/repo`（`cp -a` 后 `rm -f .git && git init -q …` + `rm -rf .venv && uv sync` ⇒ 基线 **431 passed**）+
+> `/tmp/adv4/full`（`git clone` 的**带历史**副本，用于跑**真** `check` / `guard` / `sha256_tree`）。
+> 本轮只读；唯一写入是本小节。
+
+## Verdict
+
+**CHANGES_REQUESTED**（3 条，全是**文件卫生 + 证据自洽**，各 ≤5 行；**设计内容本身已定案且可执行**，
+`guard` 已放行 `src/**`——见第 4 条。修完这三条即可开始实现，不必再走一轮对抗）。
+
+- **W1｜`reviews/grill-review.md` 有**两份**同名 `## User Confirmation`**：`:373` 是**旧空占位**
+  （「本小节刻意留空…**没有任何用户答复可记**」+「`check` 会报 Q1–Q8 未经用户确认，这是**预期状态**」），
+  `:412-425` 才是真正的 Q1–Q8 答复。⇒ 决策记录**自己打自己**（答复上方写着「没有答复」），
+  且占位里那句机械提示在定案后**已经是假的**。修法：删掉 `:373-379` 那段占位（或改成一行「见文末」指针）。
+  （**机械上仍能过**——见第 3 条——所以是人读面的缺陷，不是门禁缺陷。）
+- **W2｜`reviews/grill.manifest.json` 与它自己的 `head_sha` 不自洽**：`tasks_hash=bba69b16…` 是
+  **工作区那份未提交的 `tasks.md`** 的哈希，而 `tasks.md@4df66e9 = 691d085b…`（同一 `sha256_tree`，实测）
+  ⇒ 这份 manifest 断言的内容**不在它声明的 revision 里**。实测后果（`/tmp/adv4/full`，真 `check`）：
+  - 检 **`4df66e9`（= CI 会检出的样子）** ⇒ 2 项红：`tasks_hash 不匹配` + 孤儿（见 W3）；
+  - 检 **作者本机脏工作区** ⇒ 只剩孤儿 1 项红（哈希对上了）。
+  ⇒ 它**只能在脏工作区里自洽**；`design.md` / `tasks.md` 一提交，`head_sha` 之后就有非证据文件变更
+  ⇒ `contract.py:340-353` 的 stale 判据照红。修法：**提交定案内容之后再 `manifest build` 一次**（G1 本来就列了这件事，
+  但那份未跟踪的 manifest 别按现状提交/沿用）。
+- **W3｜`design.md:184` 与状态行互相矛盾**：`:3` 已写「状态：**已定案**」，而 `## 6. 停轮（Q1..Q8 —— **待用户确认**）`
+  的表头一字未改，表里（`:186-196`）仍以「推荐」口吻并列 **甲／乙／丙** 等未选分支，
+  与 `tasks.md:128-134`（定案节：「未选分支**不再保留**」）冲突。修法：`:184` 改「## 6. 停轮（Q1..Q8 —— **已由用户确认，见 `reviews/grill-review.md` 的 User Confirmation**）」，
+  并把表头「推荐」列改成「用户裁定」。
+
+（**W3 只是文件卫生**；若作者判定 §6 作为「当时的提问记录」保留原样更有价值，可只改标题、不删表——我不坚持删表。）
+
+## 逐条核验
+
+### 1. 定案是否完整且一致地落进**四处**（逐份点名）
+
+| # | 位置 | 结论 |
+|---|---|---|
+| 1 | **`design.md` 状态行** | ✅ **有**：`design.md:3-4`「状态：**已定案**（用户 2026-10-13 逐条确认 Q1..Q8：**Q6 批准发版**…其余七条按推荐）。下一步：G0 → G0b → 实现（TDD）」。⚠️ 与 `:184` 的「待用户确认」矛盾 ⇒ **W3**。⚠️ 且**未提交**（工作区改动） |
+| 2 | **`tasks.md` 的「定案」节** | ✅ **有**：`tasks.md:128-134`「## 定案（用户 2026-10-13）」——Q6=做发版（P1/P2，分步，**移 tag 需用户在场**）；Q1–Q5、Q7、Q8=按推荐；「未选分支（乙／丙）**不再保留**」。⚠️ 未提交 |
+| 3 | **`spec.md`** | ✅ **形态即甲**（`spec.md:71-72`「测试步骤 SHALL 与 `check` **处于同一个 job**」+ `:93-96` 第四条能力天花板）；**无** `甲/乙/丙`、**无** `待定案/二选一/任选/TBD/待补`（`grep` 零命中）✅ |
+| 4 | **`reviews/grill-review.md` 的 `## User Confirmation`** | ✅ 有 Q1–Q8 逐条**非占位**答复（`:412-425`，八条都带「用户答复：…；确认时间: 2026-10-13」）——但**同名小节出现两次**（`:373` 空占位 + `:412` 真答复）⇒ **W1**。另：小节位置在 `## Sources` / `## 对抗轮回写` **之后**，与模板的段序不同（不影响解析） |
+
+> 补充：`proposal.md` 未在四处之列，但 `:38`（目标 1「命令在接入时给」）与 `:53`（「同 job 时不需要新增勾选」）与定案**一致** ✅。
+
+### 2. 有没有新引入的矛盾
+
+- **Q6「做发版」与 P 节是否一致（含「移 tag 需用户在场」）**：✅ **一致**——
+  `tasks.md:69-73`（P1 发 tag / P2 移 tag，P2 明写「⚠️ **改写已发布 ref 的对外动作，执行前需用户在场确认**」+ 同步改 tag 注记）
+  与 `tasks.md:128-131`（定案节）同口径；`design.md:119-124`（D7）的「补执行点 → 发 `v1.6.0` → 移 `v1`」顺序一致 ✅。
+- **Q4 放弃 `ci.yml` required 后的残留相反表述**：✅ **无**——`tasks.md:81-83`（P5 已划掉 + 「已放弃」理由）、
+  `design.md:191`（Q4 行写「**放弃**把 `ci.yml` 的 `test` 勾 required」）、`tasks.md:138`（「明确不做」也写了「替接入方勾 required（同 job 时不需要）」）。
+  唯一还提「勾 required」的地方是**甲方案之外**的 乙（`design.md:38`）与**平台既有事实**（`design.md:25`），不构成矛盾。
+- **新矛盾**：**W2**（manifest 哈希 vs head_sha，机械可验）与 **W3**（design 内部 状态行 vs §6 表头）；**W1** 是记录文档自相矛盾。
+
+### 3. `## User Confirmation` 是否真能过 grill 正文判据（机械验证）
+
+**结论：能过** ✅ —— 在 `/tmp/adv4/full` 里跑**真** `check`（源码 CLI，`--base origin/main --head HEAD`），
+**没有任何一条**「Open Question Qn 未经用户确认」。机制：`evidence.py:52-64` 的 `_sections()`
+对**同名标题用 `setdefault` 累加**，两份 `## User Confirmation` 的正文被**合并**成一节，
+所以 `:412` 起的 `- **Qn**: 用户答复：…` 仍被 `_confirmations()`（`:85-94`）抓到；占位那段的 `>` 引用行不匹配 `_CONF_LINE_RE`（`:35`）。
+
+**但整个 `check` 是红的**（本节顺带核实，两种状态都跑了）：
+
+```
+TEST A（干净 4df66e9 = CI 视角）           ✗ 2 项
+  1. reviews/grill.manifest.json：tasks_hash 不匹配（evidence 与 artifact 已漂移）
+  2. reviews/grill-adversarial.md：孤儿报告：未被任何 manifest 绑定
+TEST B（叠加作者的未提交改动 = 本机态）    ✗ 1 项
+  1. reviews/grill-adversarial.md：孤儿报告：未被任何 manifest 绑定
+```
+
+⇒ 第 2 条**是预期中间态**（`tasks.md:122-124`（G1）会建 `stage=grill-adversarial` 的 manifest 来绑本文件）；
+第 1 条就是 **W2**。两条都必须在合 PR 前清掉，且**现在这份 manifest 不能直接用**。
+
+### 4. 本 change 现在可以开始实现了吗？
+
+**可以** ✅（三条 W 都不阻塞写码，只阻塞「证据定稿」）——实测依据：
+
+- **本地 `guard` 已放行**（脏工作区，真跑）：`guard --root . --path src/witnessloop/checkcmd.py --change adopter-test-gate` ⇒ **exit 0**；
+  `.github/workflows/gate.yml` 亦 exit 0（`.github/**` 不命中 `require_change_for`）。
+  ⇒ G0 的「建 grill manifest 放行 `src/**`」**已生效**。
+- **A/B/B4b/C/N/E/F/G/P 逐条看过**，**无「靠猜才能做」**项：A1（常量两条）、A2（两条字面）、A3（四条判定）、A4/A5（先红单测 + 不执行命令）、
+  B1/B2/B3（三分支：无 flag 不覆盖 / 有 flag 覆盖 / `--no-tests` 写 `disabled`）、B4（既有断言改点已点名到 `文件:行号`）、
+  B4b（两条分支各一条断言：覆盖不说「幂等，无改动」≠ plain-init 才说）、B5/B6（回归 + golden literal）、
+  C1–C5（step 形态 / `env:` 主语 / `!cancelled()` / 三处同源断言 / job 名不变）、N1–N3、E1–E3、F1–F4、G0–G4、P0–P5 全部**可执行**。
+- **`spec.md` 的每条 Requirement 都有任务**：①执行点写入→B1/B2/B3/B4/B4b；②`check` 三判据→A1–A5；③门禁执行→C1–C5；
+  ④诚实边界（四条 + 文档守卫 Scenario）→F1/F2/N2；⑤零依赖→N1；⑥产物契约→B4/E2 ✅。
+- **⊘ 一处空转**：`tasks.md:103-104`（**E2a**「把 v1 的两份报告移出 `reviews/`」）**已经完成**
+  （`bd53fdf` 就做了；`openspec/changes/adopter-test-gate/history/v1/` 下三份文件已在）⇒ 应直接标 `[x]` 或删除，
+  否则实现者会去找一份早已搬走的文件。（E2b 与 G1 的 manifest 落盘有重叠，无害。）
+- **两处「覆盖含糊」**（非阻塞，建议顺手在 F 节点名）：
+  (a) `spec.md:17`「SHALL 在**文档里给出补文件的迁移步骤**」——F1（README 接入段）/F2（`docs/gate.md` 新小节）的措辞**没点名**这件事（P0 是本仓的动作、不是文档内容）；
+  (b) R3 已提的 **O2**（B4b 的「退出码仍为 0」宜限定为「无其它冲突时」，否则 `init --test-command X --policy <不同>` 会吞掉 `initcmd.py:265-278` 的 policy 冲突）——实现时与 Z1 的落点一并定即可。
+
+## 本轮 Code-Resolved
+
+| 问题 | 结论 | 证据 |
+|---|---|---|
+| `## User Confirmation` 能过机械判据吗？ | **能**：真 `check` 下 0 条「未经用户确认」（同名标题被 `_sections` 合并） | `/tmp/adv4/full` 实跑；`evidence.py:52-64,85-94` |
+| 现存 `grill.manifest.json` 自洽吗？ | **不自洽**：`tasks_hash` = 工作区版本（`bba69b16…`），`tasks.md@4df66e9` = `691d085b…`（同 `sha256_tree`）；`spec_hash`/`report_hash` 则**对得上** | 用 `witnessloop.hashing.sha256_tree` 在三处实算 |
+| 它能在 CI 里过吗？ | **不能**：检 `4df66e9` ⇒ `tasks_hash 不匹配`（+孤儿） | TEST A 实跑 |
+| 孤儿是缺陷还是中间态？ | **中间态**：G1（`tasks.md:122-124`）会建 `grill-adversarial` manifest 绑本文件 | TEST A/B 都只剩它 |
+| 本 change 是否已放行写码？ | **是**：`guard --path src/witnessloop/checkcmd.py` ⇒ exit 0 | TEST B 实跑 |
+| 两个新 commit 动过实现吗？ | **没有**：`4df66e9` 只改 `reviews/*.md`；`design.md`/`tasks.md` 的定案改动**还在工作区**（未提交） | `git show --stat 4df66e9` + `git status` |
+| 基线？ | **431 passed**（`/tmp/adv4/repo`，全新 venv） | 见上 |
