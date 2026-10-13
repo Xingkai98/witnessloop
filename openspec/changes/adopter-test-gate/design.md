@@ -73,13 +73,18 @@
 - name: adopter tests
   if: ${{ !cancelled() }}
   env:
-    WL_TESTS_FILE: .github/witnessloop-tests.txt
+    WL_TESTS_FILE: .github/witnessloop-tests.txt      # ⚠️ 必须等于 constants 里的默认路径
+    WL_TESTS_SENTINEL: "<<REPLACE-ME>>"               # ⚠️ 必须等于 constants 里的哨兵串
   run: |
-    if [ ! -f "$WL_TESTS_FILE" ]; then echo "::notice::无测试执行点"; exit 0; fi
+    [ -f "$WL_TESTS_FILE" ] || { echo "::notice::无测试执行点"; exit 0; }
     CMD=$(cat "$WL_TESTS_FILE")
-    case "$CMD" in *REPLACE-ME*) echo "::notice::执行点未接线"; exit 0;; esac
+    case "$CMD" in *"$WL_TESTS_SENTINEL"*) echo "::notice::执行点未接线"; exit 0;; esac
     sh -c "$CMD"
 ```
+
+⚠️ **口径必须与 `check` 共用同一个来源**（对抗轮 X3）：路径与哨兵串都由 `constants.py` 定义，
+workflow 里的字面量必须与之**逐字相同**——否则会出现「`check` 判红、门禁却静默跳过」（或反过来）。
+⇒ 加一条**测试**钉住三处一致（`constants` / `gate.yml` / `policy` 默认值）。
 
 - **路径经 `env:`、命令在运行时读**：`${{ }}` 插值发生在**解析期**，文件内容不受控 ⇒ 插值等于把接入方内容
   当 workflow 源码；`env:` + `cat` 让内容永远只是**数据**。
@@ -92,6 +97,12 @@
 
 - `policy.py:94-95` 的注释明写「保护性默认，别让老 policy 静默失去这条规则」；`require_change_for` 就是三态
   （缺省→默认、显式 `[]`→关）。本字段照抄这个三态。
+- ⚠️ **但出厂 policy doc 里不物化 `tests` 键**（对抗轮 X2）：`init` 的 desired policy 一旦多一个键，
+  **已接入仓**跑 plain `init` 就会因「本次期望 ≠ 磁盘」**exit 1**（实测，与本仓 `init --dry-run` 那条同机制）。
+  ⇒ **语义默认只活在 `from_doc` 里**（缺省 ⇒ 用默认路径判），**不写进 `default_policy_doc()`**。
+- ⚠️ **opt-out 的字面必须显式**（X2 后半）：`from_doc` 用的是 `evidence.get(k) or DEFAULT`（falsy 即回落）
+  ⇒ `""` / `null` / 缺省**都会**被读成「声明」。⇒ 唯一的「不判」形态是显式布尔 **`tests.disabled: true`**
+  （`init --no-tests` 写它）。这条是「一句话能被实现成两种结果」的典型，必须钉字面。
 - 后果与配套：**本仓自己与 `wl-test` 的 policy 都没有 `tests` 键** ⇒ 移动 `v1` 后**立刻**跑上新 CLI、**立刻红**
   （文件不存在）⇒ **必须补一条迁移任务，且排在移 tag 之前**（D7）。
 - 取「缺省 ⇒ 不判」的代价：本仓要 opt-in = 改受保护路径 = **一条解释事件**，一样要一次人工动作，
@@ -105,10 +116,12 @@
   ③ `wl-test` 同样换（无 branch protection，影响仅限此）；④ 将来按文档接入的仓拿到 v1.6.0 语义（意图内）；
   ⑤ 读者按 `README.md:20` 本地 `uv tool install …@v1` 的 CLI 也一起换；
   ⑥ **tag 的 annotated 注记会变错**（现文「当前指向 v1.5.0」）⇒ 一起改。
-- **执行粒度**：**发 `v1.6.0`（一个 PR）→ 给本仓补执行点（D6 的迁移任务）→ 移 `v1`（单独一次操作）→
+- **执行粒度**：**给本仓补执行点（一个 PR）→ 发 `v1.6.0` → 移 `v1`（单独一次操作）→
   在移完后的第一个 PR 上人工确认 `gate / check` 的结论符合预期**。
-  ⚠️ 顺序不能颠倒：本仓的 `init` 已坏（§1），补执行点**只能靠手工提交**，而它本身也要过 required check ⇒
-  先移 tag 会有一个「本仓合不了任何 PR」的窗口。
+  ⚠️ **原稿这里写过「先移 tag ⇒ 本仓合不了任何 PR（含补执行点那条）」——对抗轮实测证伪**：
+  `check` 判的是**被检 head 的树**，而补执行点那条 PR **自己就带着那个文件** ⇒ 它是绿的。
+  真实代价只是「**在途** PR 在补文件落地前会红」⇒ 顺序仍按上面的写法（先补、再移），
+  但理由是「**缩小红的窗口**」，不是「避免自锁」。
 
 ### D8 v1 的两份报告**移出 `reviews/`** —— **Q5**
 
@@ -129,6 +142,9 @@
 - `templates/review-loop.md`：补一句「测试须由 CI 执行」。
 - ⚠️ **已接入仓 opt-out 的摩擦要写明**：`--no-tests` 只在**新接入**时可用；已接入仓只能改
   `.witnessloop/policy.json`，而它是**不变集**且状态是 `M` ⇒ **每次都要写一条 `protected_path_write` 事件**。
+- ⚠️ **opt-out 只关 `check`，不关「门禁那一步」**（对抗轮 X7）：`tests.disabled: true` 时 `check` 不判，
+  而 `gate.yml` 的测试步骤**照旧会跑**（文件在就跑、不在就跳过）⇒ 若接入方想「连跑都别跑」，
+  那要删掉命令文件（步骤会跳过）。这条 SHALL 写进文档，避免「opt-out 了却还在跑测试」的困惑。
 
 ## 3. 接线点
 

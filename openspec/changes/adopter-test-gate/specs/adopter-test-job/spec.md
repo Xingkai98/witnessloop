@@ -7,10 +7,15 @@
 
 `init` SHALL 让新接入的仓**开箱即有一个测试执行点**：
 `init --test-command "<cmd>"` SHALL 把该命令写入**命令文件**（默认 `.github/witnessloop-tests.txt`）；
-未给命令时 SHALL 写入**哨兵占位**（未接线 ⇒ 由下一条 Requirement 判红）。
-`init --no-tests` SHALL 显式**不写**该文件并在策略里**声明不判**（opt-out）。
-策略字段的**缺省语义** SHALL 与既有轴同形（`policy.py:94-95` 的三态）：**字段缺省 ⇒ 声明**（用默认路径）、
-**显式空 ⇒ 不判**。（⇒ 已接入的仓会被立刻判；SHALL 在文档里给出补文件的迁移步骤。）
+**该 flag SHALL 覆盖已有内容**（显式意图优先——不得因为文件已存在而静默 no-op）。
+未给该 flag 时 SHALL 只在**文件不存在**时写入**哨兵占位**（未接线 ⇒ 由下一条 Requirement 判红）。
+`init --no-tests` SHALL 显式**不写**该文件，并在策略里写 **`tests.disabled: true`**（**这是唯一的 opt-out
+字面**：`from_doc` 用 `or DEFAULT` 取默认值 ⇒ `""` / `null` / 缺省**都会**被读成「声明」）。
+
+策略字段的**缺省语义**：**字段缺省 ⇒ 声明**（用默认路径）。⚠️ **出厂 policy 文档 SHALL NOT 物化
+`tests` 键**——否则已接入的仓跑 plain `init` 会因「本次期望 ≠ 磁盘」而 exit 1（实测）。
+（⇒ 已接入的仓会被立刻判；SHALL 在文档里给出补文件的迁移步骤。）opt-out 只在**新接入**时可用；
+已接入的仓改 `policy.json`（不变集、状态 `M`）SHALL 需要一条 `protected_path_write` 解释事件。
 
 该命令文件 SHALL **不进 `init` 台账**、SHALL **不进 `desired_files()`（即不参与冲突判定）**、
 SHALL **不参与 `uninit` 的删除**。⇒ 接入方改命令之后，**再跑 plain `init` 仍 SHALL 成功**（不得 exit 1）；
@@ -29,14 +34,17 @@ SHALL **不参与 `uninit` 的删除**。⇒ 接入方改命令之后，**再跑
 - **Then** **红**，且文案点名「执行点未接线（仍是哨兵）」
 
 ### Scenario: opt-out 不误伤
-- **Given** `init --no-tests`（或无测试的仓）
+- **Given** `init --no-tests`（策略里为 `tests.disabled: true`）
 - **When** 运行 `check`
 - **Then** **不**因缺少执行点而红
+- ⚠️ **边界**：`disabled` 只关 `check` **不关**门禁那一步——命令文件不在 ⇒ 门禁步骤跳过；
+  若接入方想「连跑都别跑」，删掉命令文件即可。文档 SHALL 写明（否则会困惑「opt-out 了却还在跑」）。
 
 ### Scenario: 改命令不撞台账（可机械验证）
 - **Given** 一个已接入的仓
 - **When** 接入方直接改写命令文件的内容并提交
-- **Then** `init` / `uninit` 的台账判定**不受影响**（该文件不在台账里）；`check` 仍判绿
+- **Then** `init` / `uninit` 的台账判定**不受影响**（该文件不在台账里）；`check` 仍判绿；
+  并且**改完命令后再跑 plain `init` 仍 SHALL 成功**（不得 exit 1）
 
 ## Requirement: `check` 机械要求「执行点存在且已接线」
 
@@ -80,6 +88,8 @@ reusable workflow SHALL 读取命令文件并在**门禁的 job 内**执行该�
 - **When** 用 YAML 解析它
 - **Then** 存在读命令文件的 step；**文件路径**出现在 `env:` 里、`run:` 里不出现裸 `${{ }}`（尤其**不得**
   对文件内容/命令文本做 `${{ }}` 插值）；文件缺失**或内容含哨兵**时跳过；测试步骤用 `!cancelled()`
+- **And** `gate.yml` 里的**路径**与**哨兵**字面量 SHALL 与 `constants.py` 的常量、`policy` 的默认路径
+  **三处逐字一致**（否则 `check` 与门禁会出现「一边判红、一边静默跳过」的口径分裂）
 
 ## Requirement: 诚实边界（文档必须写清，否则算过度承诺）
 

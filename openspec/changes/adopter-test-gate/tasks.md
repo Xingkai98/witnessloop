@@ -9,9 +9,11 @@
 ## A. `check` 的机械判定（D4，核心增量）
 
 - [ ] A1 `constants.py`：命令文件路径（`.github/witnessloop-tests.txt`）+ **哨兵串**（如 `<<REPLACE-ME>>`）
-- [ ] A2 `policy.py`：`tests.execution_point` —— **三态**（与 `require_change_for`/`policy.py:94-95` 同形）：
-      **字段缺省 ⇒ 声明（用出厂默认路径）**、显式空 ⇒ 不判（供 `--no-tests`）。
-      ⚠️ 缺省取「声明」意味着**已接入仓（含本仓自己、`wl-test`）会立刻被判**⇒ 见 D 节的迁移任务
+- [ ] A2 `policy.py`：`tests.execution_point` —— **语义三态**（缺省 ⇒ 声明、`tests.disabled: true` ⇒ 不判）
+      ⚠️ **两条字面必须钉死**（对抗轮 X2）：① **`default_policy_doc()` 不物化 `tests` 键**
+      （否则已接入仓 plain `init` 会 exit 1）；② opt-out 只能写 **`tests.disabled: true`**
+      （`from_doc` 是 `or DEFAULT` ⇒ `""`/`null`/缺省**都会**被读成「声明」）
+      ⚠️ 缺省取「声明」意味着**已接入仓（含本仓自己、`wl-test`）会立刻被判**⇒ 见 P 节的迁移任务
 - [ ] A3 `checkcmd.py`：新判定——声明了执行点时：**文件不存在 ⇒ 红**、**去空白后为空 ⇒ 红**、
       **含哨兵 ⇒ 红**、否则绿（**零依赖**：文件存在 + 字符串检查，**不解析 YAML**、不执行命令）
       ⚠️ **「去空白后非空」这一条是 grill v2 实测补的**：只判「存在 + 无哨兵」时，**空文件**会让
@@ -27,7 +29,10 @@
       输出与产物清单要单独加一行（`initcmd.py:181-186`/`:196-198`）
       ⚠️ **不需要改 `uninitcmd.py`**：它只遍历台账条目（`uninitcmd.py:42-60`）⇒ 文件不在台账就天然不会被删
       （改了反而危险：`uninitcmd.py:37` 是 `desired_files(gate_ref)` 的**单参**调用）
-- [ ] B2 `init --test-command "<cmd>"` ⇒ 写入该命令；无参 ⇒ 写**哨兵**（未接线 ⇒ `check` 判红，D4）
+- [ ] B2 `init --test-command "<cmd>"` ⇒ **总是写入该命令（覆盖）**——⚠️ 对抗轮 X1：原稿与 B1 的
+      「不存在才写」冲突，实测「文件已存在 + 给了 flag」会**静默 exit 0「幂等，无改动」**、命令不生效，
+      而默认路径（plain `init` 先写哨兵）恰好让文件存在 ⇒ **最常见的接线序列里这个 flag 是坏的**。
+      无 flag 时 ⇒ 只在**文件不存在**时写哨兵（未接线 ⇒ `check` 判红，D4）
 - [ ] B3 `init --no-tests` ⇒ 不写该文件 + `tests.execution_point` 置空（显式 opt-out）
       ⚠️ **已接入仓的 opt-out 摩擦要写进文档**（grill v2 的 CRQ-6）：`--no-tests` 只在**新接入**时可用；
       已接入仓只能改 `.witnessloop/policy.json`，而它是**不变集**且状态是 `M` ⇒ **每次都要写一条解释事件**
@@ -47,23 +52,37 @@
 - [ ] C3 **失败交互已定案**：测试步骤 `if: ${{ !cancelled() }}`、`check` 步骤排在前。
       ⚠️ 原稿的「`always()` 会掩蔽 check 的失败」**已被实测证伪**（失败步骤 + 后续 `skipped` ⇒ job 结论仍
       `failure`；真掩蔽开关是 `continue-on-error`）⇒ 理由改写为「门禁红时最需要测试反馈」+「取消时不重跑」
-- [ ] C4 单测：pyyaml 结构化断言（step 存在、命令走 `env:`、无文件时跳过）+「gate.yml 既有断言全绿」
+- [ ] C4 单测：pyyaml 结构化断言（step 存在、**路径**走 `env:`、无文件/哨兵时跳过）+「gate.yml 既有断言全绿」
+      ⚠️ **再加一条一致性测试**（对抗轮 X3）：`gate.yml` 里的路径与哨兵字面量 == `constants.py` 的两个常量
+      == `policy` 的默认路径（三处同源）；否则会出现「`check` 判红、门禁静默跳过」的口径分裂
 - [ ] C5 **`gate / check` 这个 job 名不变**（接入方已把它勾成 required ⇒ 改名 = 静默失效）
 
-## D. 发版 / ref（D7 · **Q6 定案后执行**）
+## P. 发版 / ref（design D7 · **Q6 定案后执行**）
 
-- [ ] D0 **（排在移 tag 之前，D6/Q4）给本仓补执行点**：手工提交 `.github/witnessloop-tests.txt`
-      （内容 `uv run pytest -q`）。⚠️ 本仓的 `init` **今天就坏**（定制 policy 撞出厂默认，实测 exit 1）
-      ⇒ 只能手工提交；而它本身也要过 required check ⇒ **先移 tag 会有一个「本仓合不了任何 PR」的窗口**
-- [ ] D1 发 tag `v1.6.0`（含这 6 个提交 + 本 change）
-- [ ] D2 把 `v1` **移动**到 `v1.6.0`（⚠️ **改写已发布 ref 的对外动作，执行前需用户在场确认**）
+> ⚠️ 本节 id 用 `P*`（publish）而非 `D*`：`design.md` 的决策编号是 `D1..D9`，两个 `D` 含义不同
+> 会造成「D3 指哪一条」的歧义（对抗轮 X6）。
+
+- [ ] P0 **（第一步）给本仓补执行点**：手工提交 `.github/witnessloop-tests.txt`（内容 `uv run pytest -q`）。
+      ⚠️ 本仓的 `init` **今天就坏**（定制 policy 撞出厂默认，实测 exit 1）⇒ 只能手工提交。
+      ⚠️ 原稿写「先移 tag ⇒ 本仓合不了任何 PR」——**实测证伪**（这条 PR 自带文件 ⇒ 绿）；
+      真实代价只是「**在途** PR 在补文件落地前会红」⇒ 先补是为了**缩小红的窗口**（对抗轮 X4）
+- [ ] P1 发 tag `v1.6.0`（含这 6 个提交 + 本 change）
+- [ ] P2 把 `v1` **移动**到 `v1.6.0`（⚠️ **改写已发布 ref 的对外动作，执行前需用户在场确认**）
       并**同时改 tag 的 annotated 注记**（现文「当前指向 v1.5.0」会变错）
-- [ ] D3 移动后**复核本仓自举**：本仓 PR 的 `gate / check` 开始跑新 CLI（会执行 #13/#16 的新门禁）
+- [ ] P3 移动后**复核本仓自举**：本仓 PR 的 `gate / check` 开始跑新 CLI（会执行 #13/#16 的新门禁）
       ⇒ 若历史 change 目录因此报红，那说明**门禁真的生效了**，**不要**为了绿而回退 tag
-- [ ] D4 文档写明 `wl-test`（唯一存量、可删）的规避法：把它的 caller 钉回 `v1.5.0`
-- [x] ~~D5 （Q4）把本仓 `ci.yml` 的 `test` 勾成 required~~ —— **已放弃**（grill v2 的 Q4）：
+- [ ] P4 文档写明 `wl-test`（唯一存量、可删）的规避法：把它的 caller 钉回 `v1.5.0`
+- [x] ~~P5 （Q4）把本仓 `ci.yml` 的 `test` 勾成 required~~ —— **已放弃**（grill v2 的 Q4）：
       执行点已经进了 `gate / check`（它才是 required）⇒ 再勾一次只会让**同一批 pytest 跑两遍**；
       且本仓 `test` 非 required 这件事**不属于本 change 的范围**（另记）
+
+## N. spec 有、tasks 缺的三条（对抗轮 X5）
+
+- [ ] N1 **依赖为空**要有测试钉住（`pyproject.toml` 的 `dependencies == []`，或 wheel METADATA 无 `Requires-Dist`）
+- [ ] N2 **文档守卫**（照 `tests/test_docs.py` 现成范式）：每处「拦住合并/合不了」都带限定（±2 行窗口）；
+      文档里不出现「手改 `init` 产物」「先 `uninit` 再 `init`」的教法；README 接入段出现「四条边界」的关键词
+- [ ] N3 **`README.md:66` 那句在移 tag 后会变成假**（grill v2 的 R-v2-7 / X5）：`init --policy` 现在标着
+      “尚未随 @v1 发布”，而 P2 移 tag 后它**已发布** ⇒ 一并订正
 
 ## E. 回归
 
