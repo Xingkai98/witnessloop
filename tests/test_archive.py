@@ -15,7 +15,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all, git
-from helpers import change_dir, check, commit_content, commit_evidence
+from helpers import change_dir, check, commit_content, commit_evidence, init_wired
 
 CHANGE = "add-retry"
 ARCHIVE_REL = "openspec/changes/archive"
@@ -23,7 +23,7 @@ ARCHIVE_REL = "openspec/changes/archive"
 
 def _repo_with_a_complete_change(repo: Path, cli) -> Path:
     """在 main 上放一个完整、有证据的 change，然后切到 feature 分支。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_content(repo, CHANGE)
     commit_evidence(repo, CHANGE)
     git(repo, "checkout", "-q", "-b", "archive-it")

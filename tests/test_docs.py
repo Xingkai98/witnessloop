@@ -160,3 +160,58 @@ def test_docs_no_longer_call_hooks_advisory_only(relpath: str):
             f"{relpath} 仍把 hooks 说成「{claim}」——本地层已升为会拦的守卫（D7）"
         )
     assert "guard" in text, f"{relpath} 没提到本地守卫 `guard`"
+
+
+#: 测试执行点门禁（change adopter-test-gate / `docs/gate.md §11`）的**承诺面**。
+#:
+#: 它承诺「测试失败 = 合不了」，所以必须**逐条**写出四条诚实边界——少一条就是过度承诺
+#: （spec 的「诚实边界」Requirement 把这件事定义成硬要求，靠文档不靠自觉）。
+ADOPTER_TESTS_DOCS = ("README.md", "docs/gate.md")
+ADOPTER_TESTS_BOUNDARY_KEYWORDS = (
+    "不保证",  # ① 只保证「有一个已接线的执行点」，不保证它真跑过/跑的是真测试
+    "可以改",  # ② PR 可以改掉自己的命令文件 / CI 配置（保护面不含 .github/workflows/**）
+    "fork",  # ③ 测试命令是任意代码，每个 PR（含 fork PR）都会跑
+    "天花板",  # ④ 能力天花板：只有 contents: read、无 services/matrix、命令只能一行 shell
+)
+
+#: 涉**合并**的承诺（spec 点名的两个措辞）。每一处都要在 ±2 行内带上面某条限定。
+MERGE_CLAIM_PHRASES = ("合不了", "拦住合并")
+
+
+@pytest.mark.parametrize("relpath", ADOPTER_TESTS_DOCS)
+def test_docs_spell_out_the_four_adopter_test_boundaries(relpath: str):
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    missing = [k for k in ADOPTER_TESTS_BOUNDARY_KEYWORDS if k not in text]
+    assert not missing, f"{relpath} 少了诚实边界的关键词：{missing}——那就是过度承诺"
+
+
+@pytest.mark.parametrize("relpath", ADOPTER_TESTS_DOCS)
+def test_every_merge_claim_is_qualified(relpath: str):
+    """「合不了 / 拦住合并」必须带限定（同 `test_every_idempotency_claim_...` 的 ±2 行范式）。
+
+    本 change 的立论是「机械」，所以「承诺面」也要机械化：没有这条，下一处新写的
+    「测试失败 = 合不了」可以在任何人都不察觉的情况下把四条边界甩掉。
+    """
+    lines = (REPO_ROOT / relpath).read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if not any(phrase in line for phrase in MERGE_CLAIM_PHRASES):
+            continue
+        window = "\n".join(lines[max(0, index - 2) : index + 3])
+        assert any(k in window for k in ADOPTER_TESTS_BOUNDARY_KEYWORDS), (
+            f"{relpath}:{index + 1} 有「测试失败 = 合不了」式承诺却没带任何一条诚实边界："
+            f"{line.strip()}"
+        )
+
+
+@pytest.mark.parametrize(
+    "relpath", ("README.md", "docs/gate.md", "templates/review-loop.md")
+)
+def test_docs_never_teach_editing_init_artifacts(relpath: str):
+    """不许把「手改 `init` 产物」或「先 `uninit` 再 `init`」教成配置通道（实测死锁）。
+
+    （超出 spec 的**额外**守卫：spec 只点名「拦住合并」那条承诺面，这两条是同一族的
+    教法禁令——`init`/`uninit` 同时 exit 1 而没有任何 flag 可确认，走进去就没出口。）
+    """
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    for forbidden in ("手改 `init` 产物", "先 `uninit` 再 `init`"):
+        assert forbidden not in text, f"{relpath} 教了「{forbidden}」——那是一条死锁路"

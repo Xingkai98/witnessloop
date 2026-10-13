@@ -46,6 +46,10 @@ def default_policy_doc() -> dict:
             "grill_adversarial_stage": C.DEFAULT_GRILL_ADVERSARIAL_STAGE,
             "building_stage": C.DEFAULT_BUILDING_STAGE,
         },
+        # ⚠️ 刻意**不物化** `tests` 键（change adopter-test-gate / 对抗轮 X2）：
+        # 出厂 doc 一旦多一个键，**已接入的仓**跑 plain `init` 就会因「本次期望 ≠ 磁盘」
+        # 命中冲突分支 exit 1（实测）——而 `init` 是唯一的升级入口。
+        # 「缺省 ⇒ 声明」这条语义**只活在 `from_doc` 里**。
     }
 
 
@@ -61,6 +65,9 @@ class Policy:
     grill_stage: str
     grill_adversarial_stage: str
     building_stage: str
+    #: 策略里**显式**写了 `tests.disabled: true`（= 唯一的 opt-out 字面）。
+    #: 缺省 / `""` / `null` / `false` 一律读成「**声明了**测试执行点」（见 `from_doc`）。
+    tests_disabled: bool
 
     @property
     def archive_root(self) -> str:
@@ -91,6 +98,9 @@ class Policy:
         evidence = doc.get("evidence") or {}
         if not isinstance(evidence, dict):
             raise PolicyError("policy.evidence 必须是 JSON 对象")
+        tests = doc.get("tests") or {}
+        if not isinstance(tests, dict):
+            raise PolicyError("policy.tests 必须是 JSON 对象")
         # 语义：字段**缺省** → 用出厂默认（保护性默认，别让老 policy 静默失去这条规则）；
         # 显式写 `[]` → 关掉这条规则。
         raw_require_change = doc.get("require_change_for")
@@ -124,6 +134,14 @@ class Policy:
             building_stage=str(
                 evidence.get("building_stage") or C.DEFAULT_BUILDING_STAGE
             ),
+            # 测试执行点（change adopter-test-gate / design D6）。**缺省 ⇒ 声明**——与
+            # `require_change_for` 同一条既有惯例（保护性默认，别让老 policy 静默失去这条规则）。
+            #
+            # 唯一的 opt-out 字面是**布尔** `tests.disabled: true`：这里刻意用 `is True`
+            # 而不是 truthiness——本文件别处是 `value or DEFAULT`（falsy 即回落），
+            # 于是 `""` / `null` / 缺省**都会**被读成「声明」。若 opt-out 也走 truthiness，
+            # 「显式置空 ⇒ 不判」就会被实现成「不判 ⇒ 其实还判」，两种读法后果相反。
+            tests_disabled=tests.get("disabled") is True,
         )
 
 def policy_path(root: str | Path) -> Path:

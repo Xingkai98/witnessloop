@@ -7,7 +7,7 @@ from pathlib import Path
 from witnessloop import constants as C
 
 from conftest import commit_all
-from helpers import check, commit_content, commit_evidence, write_change
+from helpers import check, commit_content, commit_evidence, init_wired, write_change
 
 
 def test_check_without_policy_is_not_onboarded(repo: Path, cli):
@@ -45,7 +45,7 @@ def test_check_with_unresolvable_base_is_fail_closed(gated: Path, cli):
 
 def test_bootstrap_pr_adding_init_files_passes(repo: Path, cli):
     """接入 PR 自己不能被自己的门禁拦下（受保护写入的鸡生蛋）。"""
-    code, _, err = cli("init", "--root", str(repo))
+    code, _, err = init_wired(repo, cli)
     assert code == C.EXIT_PASS, err
     commit_all(repo, "接入 witnessloop")
 

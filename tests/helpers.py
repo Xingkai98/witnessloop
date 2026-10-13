@@ -14,9 +14,21 @@ from pathlib import Path
 from witnessloop import constants as C
 from witnessloop.hashing import sha256_tree
 
-from conftest import commit_all, git
+from conftest import WIRED_TEST_COMMAND, commit_all, git
 
 CHANGES_ROOT = C.DEFAULT_CHANGES_ROOT
+
+
+def init_wired(repo: str | Path, cli, *extra: str):
+    """跑 `init`，并把**测试执行点接线**（``--test-command``）。
+
+    change adopter-test-gate 起策略**缺省即声明**执行点，而 plain `init` 只种**哨兵**
+    占位（未接线 ⇒ `check` 判红）⇒ 「已接入且门禁能绿」的最小基线必须接线。
+    哨兵/缺失/空三态由 `tests/test_adopter_tests.py` 显式构造。
+    """
+    return cli(
+        "init", "--root", str(repo), "--test-command", WIRED_TEST_COMMAND, *extra
+    )
 
 #: 一份**合格**的 grill 决策记录（满足 `evidence.grill_evidence_findings` 的全部判据）。
 #: 造 change 的测试默认用它当 `stage=grill` 的报告——`check` 现在会校验它。

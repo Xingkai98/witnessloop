@@ -2,6 +2,9 @@
 
 覆盖 B1 policy.json / B2 init-manifest.json / B3 caller workflow /
 B4 幂等+只增不改+不 auto-commit / B5 --dry-run。
+
+⚠️ 产物契约自 change adopter-test-gate 起是「三个 + **命令文件**」：命令文件是产物，
+但**不进台账**（故下面的台账断言仍是三条），`uninit` 也不删它。
 """
 
 from __future__ import annotations
@@ -15,12 +18,16 @@ from witnessloop.policy import INVARIANT_PROTECTED_PATHS
 from conftest import git
 
 
-def test_init_creates_three_files(repo: Path, cli):
+def test_init_creates_the_expected_files(repo: Path, cli):
+    """三个台账产物 + **第四个**：命令文件（哨兵占位；未接线 ⇒ `check` 判红）。"""
     code, out, _ = cli("init", "--root", str(repo))
     assert code == C.EXIT_PASS
     assert (repo / C.POLICY_PATH).is_file()
     assert (repo / C.INIT_MANIFEST_PATH).is_file()
     assert (repo / C.GATE_WORKFLOW_PATH).is_file()
+    assert (repo / C.ADOPTER_TESTS_PATH).read_text(encoding="utf-8") == (
+        C.ADOPTER_TESTS_SENTINEL + "\n"
+    )
     assert "已接入" in out
 
 
@@ -70,6 +77,10 @@ def test_init_manifest_ledger_and_base_ref(repo: Path, cli, read_json):
 
     by_path = {e["path"]: e for e in manifest["created_files"]}
     assert set(by_path) == {C.POLICY_PATH, C.GATE_WORKFLOW_PATH, C.INIT_MANIFEST_PATH}
+    # 命令文件是**产物**，但**不进台账**（design D3）。这不是遗漏：`desired_files()`
+    # 同时喂写盘、台账与两条冲突判定，种子一旦进去，接入方改过命令后 plain `init`
+    # 就会 exit 1——而改命令是正常用法（回归见 tests/test_init_tests_command.py）。
+    assert C.ADOPTER_TESTS_PATH not in by_path
     # 台账如实记录两个文件的 hash
     assert by_path[C.POLICY_PATH]["sha256"] == sha256_file(repo / C.POLICY_PATH)
     assert by_path[C.GATE_WORKFLOW_PATH]["sha256"] == sha256_file(
@@ -100,7 +111,12 @@ def test_init_is_idempotent(repo: Path, cli):
     cli("init", "--root", str(repo))
     snapshot = {
         p: (repo / p).read_bytes()
-        for p in (C.POLICY_PATH, C.GATE_WORKFLOW_PATH, C.INIT_MANIFEST_PATH)
+        for p in (
+            C.POLICY_PATH,
+            C.GATE_WORKFLOW_PATH,
+            C.INIT_MANIFEST_PATH,
+            C.ADOPTER_TESTS_PATH,  # 命令文件也在幂等范围内（无 flag ⇒ 不动已存在的）
+        )
     }
     code, out, _ = cli("init", "--root", str(repo))
     assert code == C.EXIT_PASS

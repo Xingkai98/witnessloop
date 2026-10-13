@@ -3,7 +3,13 @@
 契约（design §5.1 / grill Q10）：
 幂等 · 只增不改 · 不 auto-commit · 支持 ``--dry-run``。
 写入 ``.witnessloop/policy.json``、``.witnessloop/init-manifest.json``、
-一个极薄 caller workflow。
+一个极薄 caller workflow，外加一份**测试执行点**命令文件
+（``constants.ADOPTER_TESTS_PATH``，change adopter-test-gate / issue #4）。
+
+命令文件是**产物**，但它走一条**独立路径**：不进 ``desired_files()``、不进台账、
+不参与冲突判定。理由是 ``desired_files()`` 同时喂**三个**消费者（写盘、台账、两条冲突
+判定），种子一旦进去，接入方**改过命令之后** plain ``init`` 就会 exit 1（实测）——
+而「改命令」是本 change 定义的**正常用法**，不能让工具唯一的升级入口对它坏掉。
 """
 
 from __future__ import annotations
@@ -47,6 +53,18 @@ def desired_files(gate_ref: str, policy_doc: dict | None = None) -> dict[str, st
         C.POLICY_PATH: policy.dumps(doc),
         C.GATE_WORKFLOW_PATH: caller_workflow(gate_ref),
     }
+
+
+def tests_file_content(command: str | None) -> str:
+    """命令文件的落盘内容：给定命令，或（``None``）哨兵占位；恒以单个换行结尾。"""
+    body = C.ADOPTER_TESTS_SENTINEL if command is None else command.rstrip("\n")
+    return body + "\n"
+
+
+def write_tests_file(root: Path, content: str) -> None:
+    path = root / C.ADOPTER_TESTS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def load_policy_override(path_str: str) -> dict:
@@ -156,6 +174,17 @@ def run(args: argparse.Namespace) -> int:
             print(f"init：{exc}", file=sys.stderr)
             return C.EXIT_FAIL
 
+    tests_command = getattr(args, "test_command", None)
+    no_tests = bool(getattr(args, "no_tests", False))
+    if no_tests:
+        # 显式 opt-out：不写命令文件 + 策略里写 `tests.disabled: true`。
+        # ⚠️ **不是**「置空」：`Policy.from_doc` 沿既有惯例用 `or DEFAULT`（falsy 即回落）
+        # ⇒ `""` / `null` / 缺省**都会**被读成「声明了执行点」。故唯一的 opt-out 字面是布尔真。
+        policy_doc = (
+            policy.default_policy_doc() if policy_doc is None else dict(policy_doc)
+        )
+        policy_doc["tests"] = {"disabled": True}
+
     manifest_path = root / C.INIT_MANIFEST_PATH
     # gate_ref 的缺省：已接入的仓沿用**台账**里的值（否则曾以非默认 --gate-ref 接入的仓，
     # 之后跑不带该 flag 的 init 会因 caller 内容不同被误判「冲突」）；未接入用出厂默认。
@@ -163,8 +192,34 @@ def run(args: argparse.Namespace) -> int:
     gate_ref = args.gate_ref or ledger_gate_ref(manifest_path) or C.DEFAULT_GATE_REF
     desired = desired_files(gate_ref, policy_doc)
 
+    # 命令文件写什么（`None` ⇒ 不写）。**不进 `desired_files()`** ⇒ 不进台账、不参与冲突判定。
+    if no_tests:
+        tests_write = None  # 显式 opt-out：不写（也不删接入方已有的那份）
+    elif tests_command is not None:
+        tests_write = tests_file_content(tests_command)  # 显式意图优先：**总是覆盖**
+    elif (root / C.ADOPTER_TESTS_PATH).exists():
+        tests_write = None  # 无 flag 且文件已在：不动它（幂等）
+    else:
+        tests_write = tests_file_content(None)  # 无 flag：种哨兵（未接线 ⇒ check 判红）
+
     if manifest_path.is_file():
-        return _already_initialized(root, desired, manifest_path)
+        note = None
+        if tests_write is not None:
+            if args.dry_run:
+                print(f"init：[dry-run] 将写入测试执行点 {C.ADOPTER_TESTS_PATH}")
+                note = "[dry-run] 未落盘，其余文件无改动"
+            else:
+                # 写在前、其余判定照旧参与退出码（Z1/O2）：后续若报冲突，**不回滚**这次写入，
+                # 但也绝不静默——这一行当场点名文件。
+                write_tests_file(root, tests_write)
+                why = (
+                    "--test-command 覆盖已有内容"
+                    if tests_command is not None
+                    else "此前不存在"
+                )
+                print(f"init：已写入测试执行点 {C.ADOPTER_TESTS_PATH}（{why}）")
+                note = "其余文件无改动，未 commit"
+        return _already_initialized(root, desired, manifest_path, note=note)
 
     # 只增不改：目标文件已存在且内容不同 → 冲突，报 diff 并拒绝。
     try:
@@ -183,6 +238,9 @@ def run(args: argparse.Namespace) -> int:
         for rel in desired:
             print(f"  + {rel}")
         print(f"  + {C.INIT_MANIFEST_PATH}")
+        # 只列**真会写**的那些：文件已在就不会动它，列出来等于说会写（N3）。
+        if tests_write is not None:
+            print(f"  + {C.ADOPTER_TESTS_PATH}")
         return C.EXIT_PASS
 
     for rel, content in desired.items():
@@ -196,18 +254,33 @@ def run(args: argparse.Namespace) -> int:
     print("init：已接入 witnessloop（文件未 commit，请人工审阅后提交）：")
     for rel in (*desired, C.INIT_MANIFEST_PATH):
         print(f"  + {rel}")
-    if policy_doc is not None:
+    if tests_write is not None:
+        write_tests_file(root, tests_write)
+        print(f"  + {C.ADOPTER_TESTS_PATH}")
+    if policy_override:
         print(
             "init：policy 来自 --policy（**轻校验**：仅确认是 JSON 对象）；"
             "语义合法性由 `check` 兜底，`init` 不保证。"
+        )
+    if no_tests:
+        # 判据用 `policy_override` 而不是 `policy_doc is not None`：`--no-tests` **也会**改
+        # policy doc（加 `tests.disabled`），但它不是 `--policy`——否则会误打上面那句话。
+        print(
+            "init：--no-tests ⇒ 未写测试执行点，并在 policy 里写了 `tests.disabled: true`。"
+            "⚠️ 它只关 `check` 的判定，门禁那一步照旧（文件在就跑、不在就跳过）。"
         )
     return C.EXIT_PASS
 
 
 def _already_initialized(
-    root: Path, desired: dict[str, str], manifest_path: Path
+    root: Path, desired: dict[str, str], manifest_path: Path, note: str | None = None
 ) -> int:
-    """幂等：已接入且台账未漂移 → 无改动退出 0；漂移 → 报 diff 退出 1。"""
+    """幂等：已接入且台账未漂移 → 无改动退出 0；漂移 → 报 diff 退出 1。
+
+    ``note``：本次对命令文件做了什么（已写 / dry-run 将写 / 没动）。非 ``None`` 时**不得**
+    说「幂等，无改动」——工具不撒谎（B4b）；命令文件不在台账里，所以它**不是**漂移，
+    退出码照旧（其余冲突判定照常参与）。
+    """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -277,5 +350,8 @@ def _already_initialized(
             print(render_diff(rel, current, want), file=sys.stderr)
         return C.EXIT_FAIL
 
-    print("init：已接入 witnessloop（幂等，无改动）。")
+    if note:
+        print(f"init：已接入 witnessloop（{note}）。")
+    else:
+        print("init：已接入 witnessloop（幂等，无改动）。")
     return C.EXIT_PASS

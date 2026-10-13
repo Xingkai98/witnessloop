@@ -56,15 +56,25 @@ def cli(capsys):
     return _run
 
 
+#: 「已接线」的测试执行点内容——`gated` 用它接入。
+#:
+#: change adopter-test-gate 起，策略**缺省即声明**测试执行点，而 plain `init` 只会种
+#: **哨兵**占位 ⇒ 哨兵态是「未接线」，`check` 判红。所以一个「正常已接入」的仓必须
+#: 走 `--test-command`；哨兵/缺失/空三态由 `tests/test_adopter_tests.py` 显式构造。
+WIRED_TEST_COMMAND = "uv run pytest -q"
+
+
 @pytest.fixture
 def gated(repo: Path, cli) -> Path:
-    """已接入 witnessloop（init 已提交到 main）的仓，且切到 feature 分支。
+    """已接入 witnessloop（init 已提交到 main、测试执行点**已接线**）的仓，且切到 feature 分支。
 
     门禁生效的最小基线：check 拿它当 base 才有意义。
     """
     from witnessloop.constants import EXIT_PASS
 
-    code, _, err = cli("init", "--root", str(repo))
+    code, _, err = cli(
+        "init", "--root", str(repo), "--test-command", WIRED_TEST_COMMAND
+    )
     assert code == EXIT_PASS, err
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")

@@ -20,6 +20,7 @@ from helpers import (
     commit_content,
     commit_evidence,
     head_sha,
+    init_wired,
     write_artifact,
     write_change,
 )
@@ -51,7 +52,7 @@ def _build(cli, repo: Path, *extra: str, **kwargs):
 
 def _ready_to_build(repo: Path, cli) -> Path:
     """init + 内容提交 + 一份写好的报告（尚未提交）——build 就绪态。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(repo, CHANGE)
@@ -86,7 +87,7 @@ def test_round_trip_build_then_check_is_green(repo: Path, cli):
 
 def test_round_trip_with_a_protected_spec_write(repo: Path, cli):
     """完整回路：改了受保护 spec（带解释事件）+ build → check 绿。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")
     commit_content(

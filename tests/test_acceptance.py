@@ -17,6 +17,7 @@ from helpers import (
     check,
     commit_content,
     commit_evidence,
+    init_wired,
     write_change,
     write_event,
     write_review,
@@ -33,7 +34,7 @@ def _write_spec(repo: Path) -> None:
 
 def test_f1_end_to_end_green(repo: Path, cli):
     """init → change → grill → 实现 → review-loop 通过 → check 绿。"""
-    assert cli("init", "--root", str(repo))[0] == C.EXIT_PASS
+    assert init_wired(repo, cli)[0] == C.EXIT_PASS
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "add-retry-policy")
 
@@ -55,7 +56,7 @@ def test_f2_handwritten_allow_event_is_not_blocked(repo: Path, cli):
     这是 design §2 明写的诚实边界：默认只防漂移、不防蓄意伪造。
     本测试把这个边界**钉成契约**——若哪天它开始报错，说明话术要同步改。
     """
-    assert cli("init", "--root", str(repo))[0] == C.EXIT_PASS
+    assert init_wired(repo, cli)[0] == C.EXIT_PASS
     commit_all(repo, "接入")
     git(repo, "checkout", "-q", "-b", "sneaky")
 
@@ -93,10 +94,14 @@ def test_f4_no_init_reports_not_onboarded(repo: Path, cli):
 
 
 def test_f5_init_uninit_round_trip(repo: Path, cli):
-    """负例 (d)：init → uninit 回滚往返，工作树回到原点。"""
+    """负例 (d)：init → uninit 回滚往返，工作树回到原点——**除了**命令文件。
+
+    命令文件不在 init 台账里（change adopter-test-gate / design D3）⇒ `uninit` 不删它。
+    这条边界是**声明出来的**（spec：该文件 SHALL 不参与 `uninit` 的删除）。
+    """
     before = git(repo, "status", "--porcelain")
     assert cli("init", "--root", str(repo))[0] == C.EXIT_PASS
     assert git(repo, "status", "--porcelain") != before
 
     assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
-    assert git(repo, "status", "--porcelain") == before
+    assert git(repo, "status", "--porcelain", "-uall") == f"?? {C.ADOPTER_TESTS_PATH}\n"

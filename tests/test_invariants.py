@@ -19,10 +19,13 @@ from helpers import (
     check,
     commit_content,
     commit_evidence,
+    init_wired,
     write_change,
     write_event,
     write_review,
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_invariant_set_is_capped():
@@ -103,7 +106,7 @@ def test_events_file_stays_protected_even_if_repo_policy_forgets(repo, cli, read
 
 def test_adding_new_evidence_needs_no_event(repo, cli, read_json):
     """不变集只对「修改/删除」要解释——新增证据本体是正常工作流。"""
-    cli("init", "--root", str(repo))
+    init_wired(repo, cli)
     _emptied_policy(repo, read_json)
     commit_all(repo, "main：清空受保护路径")
     git(repo, "checkout", "-q", "-b", "feature")
@@ -132,3 +135,17 @@ def test_matching_semantics(path, expected):
     from witnessloop import paths
 
     assert paths.matches_any(path, INVARIANT_PROTECTED_PATHS) is expected
+
+
+def test_no_runtime_dependencies():
+    """零运行时依赖是**承诺**（change adopter-test-gate 的 spec 要求有测试钉住它）。
+
+    `check` 对测试执行点的判定只做「文件存在 + 字符串包含」——不解析 YAML、不引第三方库。
+    一旦 `[project].dependencies` 非空，这条承诺就破了（wheel 会多出 `Requires-Dist`）。
+    读表格的手法与 `tests/test_entry.py` 读 console script 一致（不依赖 `tomllib`，py3.10 也跑）。
+    """
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    project_table = text.split("[project]", 1)[1].split("\n[", 1)[0]
+    assert "dependencies = []" in project_table, (
+        "pyproject 的 [project].dependencies 不再是空表——本项目不引入运行时依赖"
+    )
