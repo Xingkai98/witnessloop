@@ -9,9 +9,14 @@
 `init --test-command "<cmd>"` SHALL 把该命令写入**命令文件**（默认 `.github/witnessloop-tests.txt`）；
 未给命令时 SHALL 写入**哨兵占位**（未接线 ⇒ 由下一条 Requirement 判红）。
 `init --no-tests` SHALL 显式**不写**该文件并在策略里**声明不判**（opt-out）。
+策略字段的**缺省语义** SHALL 与既有轴同形（`policy.py:94-95` 的三态）：**字段缺省 ⇒ 声明**（用默认路径）、
+**显式空 ⇒ 不判**。（⇒ 已接入的仓会被立刻判；SHALL 在文档里给出补文件的迁移步骤。）
 
-该命令文件 SHALL **不进 `init` 台账**、SHALL **不参与 `uninit` 的删除**——
-它属于接入方，之后**改命令是一次普通 commit**（不撞台账、不需要解释事件）。
+该命令文件 SHALL **不进 `init` 台账**、SHALL **不进 `desired_files()`（即不参与冲突判定）**、
+SHALL **不参与 `uninit` 的删除**。⇒ 接入方改命令之后，**再跑 plain `init` 仍 SHALL 成功**（不得 exit 1）；
+改命令本身 SHALL 是一次普通 commit（不需要解释事件）。
+⚠️ **已接入仓的 opt-out 摩擦**：`--no-tests` 只在**新接入**时可用；已接入仓改 `policy.json`
+（不变集、状态 `M`）SHALL 需要一条 `protected_path_write` 解释事件——文档 SHALL 写明。
 
 ### Scenario: 给了命令就接线
 - **Given** 一个新接入的仓，`init --test-command "uv run pytest -q"`
@@ -36,7 +41,8 @@
 ## Requirement: `check` 机械要求「执行点存在且已接线」
 
 在策略**声明了执行点**的前提下，`check` SHALL 要求：① 该路径的**文件存在**；
-② 它**不含未替换的哨兵**。任一不满足 ⇒ SHALL 报错并**非零退出**。
+② 它**去空白后非空**；③ 它**不含未替换的哨兵**。任一不满足 ⇒ SHALL 报错并**非零退出**。
+（② 是必需的：只判 ①③ 时**空文件**会同时骗过 `check`（绿）与门禁（`sh -c ""` exit 0）⇒ 双重绿、零测试。）
 
 该判定 SHALL **零依赖**（只做文件存在与字符串包含检查，SHALL NOT 解析 YAML、SHALL NOT 执行该命令）。
 
@@ -45,6 +51,11 @@
 - **When** 运行 `check`
 - **Then** 非零退出，文案点名**路径**与「缺失」
 
+### Scenario: 执行点为空 ⇒ 红
+- **Given** 命令文件存在但是**空文件**（或全是空白）
+- **When** 运行 `check`
+- **Then** 非零退出，文案点名「执行点为空（未接线）」
+
 ### Scenario: `check` 不执行命令（边界）
 - **Given** 命令文件内容是一条**必然留下痕迹/必然失败**的命令
 - **When** 运行 `check`
@@ -52,17 +63,23 @@
 
 ## Requirement: 门禁执行该命令，测试失败 ⇒ required check 失败
 
-reusable workflow SHALL 读取命令文件并在**门禁的 job 内**执行该命令（命令 SHALL 经 **`env:`** 传入，
-SHALL NOT 裸内联进 `run:`）；文件不存在时 SHALL 跳过执行（是否判红由上面的 `check` 决定）。
+reusable workflow SHALL 读取命令文件并在**门禁的 job 内**执行该命令——**文件路径** SHALL 经 `env:` 传入、
+命令 SHALL 在 `run:` 里**运行时读取**（SHALL NOT 把命令文本或文件内容做 `${{ }}` 插值：
+插值发生在解析期 ⇒ 等于把接入方内容当 workflow 源码）。**文件缺失 _或_ 内容含哨兵时 SHALL 跳过执行**
+（是否判红由上面的 `check` 决定）。
 
-测试步骤 SHALL 与 `check` **处于同一个 job**（required 的粒度是 job ⇒ 这样接入方**无需新增任何平台操作**
-即可让「测试失败 = 合不了」成立）；两者的**失败交互**（先跑谁、测试是否 `if: always()`）SHALL 在
-实现前**显式钉死并写入本节**（默认语义下 `check` 失败会跳过测试步骤；`always()` 会掩蔽归因——**没有两全解**）。
+测试步骤 SHALL 与 `check` **处于同一个 job**（required 的粒度是 job ⇒ 接入方**无需新增任何平台操作**
+即可让「测试失败 = 合不了」成立）；`check` 步骤 SHALL 排在测试步骤**之前**；测试步骤 SHALL 用
+`if: ${{ !cancelled() }}`——理由是 ① 门禁红时**最需要测试反馈**（一次 CI 里看到两条问题）；
+② run 被取消时不必再跑一遍测试。（`always()` 会连取消的 run 一起跑；默认语义则在 `check` 红时
+完全不跑测试。⚠️ 曾有说法称 `always()` 会「掩蔽」`check` 的失败——**实测为假**：失败步骤 + 后续
+`skipped` 步骤 ⇒ job 结论仍 `failure`。）
 
 ### Scenario: 结构断言（可机械验证）
 - **Given** `gate.yml`
 - **When** 用 YAML 解析它
-- **Then** 存在读命令文件的 step；命令出现在 `env:` 里；`run:` 中不出现裸 `${{ }}`；文件不存在时跳过
+- **Then** 存在读命令文件的 step；**文件路径**出现在 `env:` 里、`run:` 里不出现裸 `${{ }}`（尤其**不得**
+  对文件内容/命令文本做 `${{ }}` 插值）；文件缺失**或内容含哨兵**时跳过；测试步骤用 `!cancelled()`
 
 ## Requirement: 诚实边界（文档必须写清，否则算过度承诺）
 
@@ -73,6 +90,10 @@ SHALL NOT 裸内联进 `run:`）；文件不存在时 SHALL 跳过执行（是�
 2. **PR 可以改掉自己的命令文件/CI 配置**（`.github/workflows/**` 不在保护路径、
    `required_approving_review_count: 0`）而 required check 依旧绿 ⇒ 承诺必须带这个限定。
 3. 测试命令是**任意代码**，会在每个 PR（含 **fork PR**）的 runner 上执行。
+4. **能力天花板**：走本 change 的执行点意味着测试跑在**别人的 job** 里——只有 `contents: read` 权限
+   （reusable workflow 的权限不能超出 caller），**没有 `services:`、不能加自己的 `uses:` 步骤、
+   不能上 matrix/缓存**，命令只能是**一行 shell**。需要这些能力的仓应当改用「自己的 workflow」
+   （代价：自己再勾一次 required）。把「同 job」说成普遍更优即为**过度承诺**。
 
 ### Scenario: 文档不含无限定承诺（机械可验证）
 - **Given** `README.md` / `docs/gate.md`
