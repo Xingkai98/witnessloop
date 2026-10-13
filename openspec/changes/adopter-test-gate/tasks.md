@@ -3,7 +3,7 @@
 > 依据 `design.md`（v2，方向反转：用户 2026-10-13 指出「没有存量接入方」这条前提不成立）。
 > 原则：**测试先行（TDD）**。
 > ⚠️ change 目录必须**全程完整**（本文件 + `specs/adopter-test-job/spec.md`）。
-> ⚠️ **Q1–Q8 未定案前，A/B/C/D 四节的形态不确定**——定案后**必须**先把 `spec.md` 的对应段落替换成定案，
+> ⚠️ **Q1–Q8 未定案前，A/B/C/P 几节的形态不确定**——定案后**必须**先把 `spec.md` 的对应段落替换成定案，
 > 并**删掉未选分支**。
 
 ## A. `check` 的机械判定（D4，核心增量）
@@ -24,7 +24,8 @@
 
 ## B. `init` 侧（D3/D6）
 
-- [ ] B1 `init` 种命令文件：**不存在才写**、**走独立路径**——⚠️ **不能进 `desired_files()`**
+- [ ] B1 `init` 种命令文件（**无 flag 时**）：**不存在才写**、**走独立路径**——⚠️ **不能进 `desired_files()`**
+      （带 `--test-command` 时见 B2：**总是覆盖**）
       （否则接入方改过命令后 plain `init` 就 exit 1，实测 `initcmd.py:265-278`）；代价：`--dry-run`
       输出与产物清单要单独加一行（`initcmd.py:181-186`/`:196-198`）
       ⚠️ **不需要改 `uninitcmd.py`**：它只遍历台账条目（`uninitcmd.py:42-60`）⇒ 文件不在台账就天然不会被删
@@ -33,11 +34,16 @@
       「不存在才写」冲突，实测「文件已存在 + 给了 flag」会**静默 exit 0「幂等，无改动」**、命令不生效，
       而默认路径（plain `init` 先写哨兵）恰好让文件存在 ⇒ **最常见的接线序列里这个 flag 是坏的**。
       无 flag 时 ⇒ 只在**文件不存在**时写哨兵（未接线 ⇒ `check` 判红，D4）
-- [ ] B3 `init --no-tests` ⇒ 不写该文件 + `tests.execution_point` 置空（显式 opt-out）
+- [ ] B3 `init --no-tests` ⇒ 不写该文件 + 策略里写 **`tests.disabled: true`**（显式 opt-out）
+      ⚠️ **不是「置空」**：`from_doc` 用 `or DEFAULT`（falsy 即回落）⇒ `""` / `null` / 缺省**都会**被读成「声明」
+      （对抗轮 Y1：本行原写「置空」与 A2/spec 的唯一字面直接相反）
       ⚠️ **已接入仓的 opt-out 摩擦要写进文档**（grill v2 的 CRQ-6）：`--no-tests` 只在**新接入**时可用；
       已接入仓只能改 `.witnessloop/policy.json`，而它是**不变集**且状态是 `M` ⇒ **每次都要写一条解释事件**
 - [ ] B4 **契约变更进 spec + 改既有断言**：`docs/gate.md:9`「只写三个文件」、
       `tests/test_init.py:18,72,103`（三文件枚举）——新产物是第四个（D6/R7）
+- [ ] B4b **覆盖分支的对外表现要定死**（对抗轮 Z1）：`--test-command` 在**已接入**仓上覆盖命令文件时，
+      `init` 的**输出**不得说「幂等，无改动」（那会与「命令已生效」矛盾）、退出码仍为 0；
+      plain `init` 且文件已存在时才是「幂等，无改动」⇒ 两条分支各一条断言
 - [ ] B5 单测：三态 + **幂等** + **`uninit` 之后命令文件仍在** +
       ⚠️ **回归重点**（D3 的兑现）：**接入方改过命令文件之后，plain `init` 仍 exit 0**（这条不测，D3 就是空话）
 - [ ] B6 ⚠️ **不许改 `caller_workflow()` 的字节**（否则本仓 init 台账与磁盘不一致，R9）——golden literal 钉住
@@ -81,7 +87,9 @@
 - [ ] N1 **依赖为空**要有测试钉住（`pyproject.toml` 的 `dependencies == []`，或 wheel METADATA 无 `Requires-Dist`）
 - [ ] N2 **文档守卫**（照 `tests/test_docs.py` 现成范式）：每处「拦住合并/合不了」都带限定（±2 行窗口）；
       文档里不出现「手改 `init` 产物」「先 `uninit` 再 `init`」的教法；README 接入段出现「四条边界」的关键词
-- [ ] N3 **`README.md:66` 那句在移 tag 后会变成假**（grill v2 的 R-v2-7 / X5）：`init --policy` 现在标着
+- [ ] N3 **X7 的文档要求要有落点**：写清「`tests.disabled: true` 只关 `check`，门禁那一步照旧会跑
+      （文件在就跑、不在就跳过）」⇒ 归入 F1 的四条边界之外的第五条说明
+- [ ] N4 **`README.md:66` 那句在移 tag 后会变成假**（grill v2 的 R-v2-7 / X5）：`init --policy` 现在标着
       “尚未随 @v1 发布”，而 P2 移 tag 后它**已发布** ⇒ 一并订正
 
 ## E. 回归

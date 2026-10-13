@@ -391,3 +391,20 @@
   （`gh api repos/Xingkai98/witnessloop/actions/runs/38123102904/jobs`），见 CD-6 与 R-v2-8。
 - 其余全部结论来自本机实测（`/tmp/grill2/repo`、`/tmp/sim/`）与真仓 `gh` 取证（80 仓存在性扫描、
   branch protection、Actions 历史），不依赖第三方复述。
+
+## 对抗轮回写（证伪记录 · 依 `templates/grill.md:134` 的硬要求）
+
+> 本节由作者在**停轮之前**回填：本文件里被后续审阅**证伪/订正**的结论在此登记，避免读者按已失效的说法施工。
+
+- **CD-8（本 change 命中自身门禁的正面要求）** ⚠️ **被证伪**：本 change 的 PR 由 **`v1` CLI** 把关
+  （`.github/workflows/witnessloop.yml:14` + `gate.yml:19-23` 的 `witnessloop-ref` 默认 `v1`），
+  而 v1 **没有 `evidence` 模块**、`REVIEW_MANIFEST_REQUIRED_FIELDS` **不含 `stage`**
+  ⇒ 实测同一 diff「v1 报 1 条 / main 报 4 条」。⇒ 「必须有三份 manifest 否则红」**只在 main 及其后的 ref 上成立**。
+- **CRQ-1（死锁的恢复路径）** ⚠️ **订正**：「恢复路径只有『恢复字节 + 删台账』」**为假**——
+  实测三条**文件级**出口（恢复字节 / 删掉该文件 / 改台账 sha 仅对 `uninit` 有效），
+  「删台账」**既不必要也不充分**。
+- **CRQ-7 / 多轮 `always()` 的掩蔽说法** ⚠️ **订正**：「`always()` 会掩蔽 `check` 的失败」**为假**
+  （失败步骤 + 后续 `skipped` ⇒ job 结论仍 `failure`；真掩蔽开关是 `continue-on-error`）⇒ 定案改用 `!cancelled()`。
+- **方案整体（v1 的「模板 + 文档」路线）** ⚠️ **被推翻**：其前提「有存量接入方」经用户指出、
+  并以**更硬口径**复核（穷举 owner 全部 80 个仓）后**不成立** ⇒ v2 改为**机械版**。
+  v1 的记录已移至 `history/v1/`。

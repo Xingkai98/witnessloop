@@ -284,3 +284,145 @@ PR B（head 不含该文件，例如一条改 README 的 PR）→ [SIM 新判据
 一旦开始 `manifest build`：`grill-review.md` 与本文件**各需一份 manifest**（否则报孤儿），
 本文件的 manifest 用 `--stage grill-adversarial` ⇒ 落在 `reviews/grill-adversarial.manifest.json`，**不与 `grill.manifest.json` 撞名**。
 另：本次未跑 `manifest build`（对抗轮不得自证），落盘由作者在 `tasks.md:94`（G0）之后统一做。
+
+---
+
+# 第 2 轮（R2）
+
+> 复审对象：`41e5df7`（R1 的 X1–X7 修复）。**只核机械项是否真关掉**，另附顺手发现。
+> 方法：副本 `/tmp/adv2/repo`（`rm -f .git && git init -q && git add -A && git commit -qm base` + `rm -rf .venv && uv sync`），
+> 基线 **431 passed in 29.82s**（与任务书一致；`41e5df7` 只改 `openspec/**` 四份文件，未动 `src/`）。
+> 本轮**只读**：除本小节外未改任何文件。被审 revision 仍为分支头 `41e5df7`。
+
+## Verdict
+
+**CHANGES_REQUESTED**（3 处「改一行」；X1–X7 的**实质全部落地**，但 X2 与 X4 各有一处**旧字面残留**，
+且残留的那两处正是**实现者会照做**的地方——照做出来的 `opt-out` 是坏的，照做出来的风险表仍挂着已证伪的理由句）。
+
+- **Y1（X2 未关 · 阻塞）｜`tasks.md:36`（B3）**：「`init --no-tests` ⇒ 不写该文件 + **`tests.execution_point` 置空**（显式 opt-out）」
+  —— 与同文件 `tasks.md:13-15`（A2，「opt-out 只能写 `tests.disabled: true`」）和 `spec.md:12-13` **直接相反**；
+  按 B3 字面实现的后果正是 D6 新写的那句：`""` 是 falsy ⇒ `or DEFAULT` 回落 ⇒ 被读成「**声明**」⇒ `--no-tests` 之后**没有文件**却仍判 ⇒
+  `spec.md:36-39` 的 Scenario「opt-out 不误伤」**不成立**。改法：`tests.disabled: true`。
+- **Y2（X2 未关 · 阻塞）｜`design.md:152`**（接线点）：「`policy.py`：`tests.execution_point`（**三态**：缺省→默认、**显式空→不判**）」
+  —— 与 `design.md:103-105`（D6 新写）**直接相反**，而 §3 接线点是实现者照着做的那一栏。改法：`tests.disabled` + 常量路径（见 Z2）。
+- **Y3（X4 未关 · 阻塞级措辞）｜`design.md:161`（§4 风险 1/R1）**：仍原样写着
+  「先移 tag 再补执行点 ⇒ **本仓合不了任何 PR**（含那个补执行点的 PR）⇒ D7 的粒度是硬要求」——
+  D7（`design.md:119-124`）已把同一句标为**实测证伪**，风险表却没跟着改。风险表是审阅者最先读的地方，留着等于把已删的理由换个地方继续传。
+
+其余 4 条（X1/X3/X5/X6/X7 各自的缺口）均为**非阻塞残留**，见下逐条。
+
+## 逐条核验
+
+### 1. X1（`--test-command` 静默 no-op）
+
+- **`spec.md:9-11` ✅ 改齐**：`:9` SHALL 写入；`:10`「**该 flag SHALL 覆盖已有内容**（显式意图优先——不得因为文件已存在而静默 no-op）」；
+  `:11`「**未给该 flag 时** SHALL 只在**文件不存在**时写入哨兵占位」。
+- **`tasks.md:32-35`（B2）✅ 同口径**：「**总是写入该命令（覆盖）**…无 flag 时 ⇒ 只在**文件不存在**时写哨兵」。
+- **`tasks.md:27`（B1）⚠️ 残留**：仍是无限定的「**不存在才写**」。与 B2 表面冲突——只看 B1 的实现者会把覆盖分支写没。
+  改法：B1 加限定「（**无 flag 时**）不存在才写」。（非阻塞：B2 就在下面且写得很明确）
+- **`spec.md:43-47`（Scenario）✅ 顺手补强**：Then 加了「并且**改完命令后再跑 plain `init` 仍 SHALL 成功**（不得 exit 1）」——
+  这条正是 R1 说 CRQ-3「字面真、用户可见假」时缺的那半句，现在补上了 ✅。
+- ⇒ **实质关掉**；B1 一处措辞残留。
+
+### 2. X2（出厂 doc / opt-out 字面）
+
+- **① 不物化 `tests` 键：`design.md:100-102` ✅ / `spec.md:15-16` ✅**，两处口径**一致**（都说了后果 = 已接入仓 plain `init` exit 1）。
+- **② 唯一 opt-out 字面 = `tests.disabled: true`：`design.md:103-105` ✅ / `spec.md:12-13` ✅**，两处**一致**
+  （都写了 `""` / `null` / 缺省 ⇒ 被读成「声明」，理由都是 `from_doc` 的 `or DEFAULT`）。
+- **❌ `design.md:152`（Y2）、`tasks.md:36`（Y1）** 两处旧字面未清（见 Verdict）。
+- **⚠️ `spec.md` 全文不出现 `tests.execution_point`**（`grep -n execution_point specs/adopter-test-job/spec.md` ⇒ 零命中）：
+  规格面只钉了 `tests.disabled`，而「路径」这个字段**在 spec 里没有主语**。这同时让 R1-N5 的**后半仍开着**：
+  只要 `execution_point` 还是「**路径值**」，接入方设成别的路径 ⇒ `check` 判 A 文件、`gate.yml`（`design.md:76` 硬编码）读 B 文件 ⇒ 又回到「一边绿一边跳过」。
+  ⇒ 见 **Z2**。
+- ⇒ **blocking 未关**（两处旧字面 + 一处缺主语）。
+
+### 3. X3（口径同源）
+
+| 要求 | 位置 | 结论 |
+|---|---|---|
+| D5 的 YAML 把**路径与哨兵**都放进 `env:` | `design.md:76-77`（`WL_TESTS_FILE` / `WL_TESTS_SENTINEL`，各带「必须等于 constants」注释） | ✅ |
+| 注明必须与 `constants` 同源 + 加测试 | `design.md:85-87` | ✅ |
+| tasks 有「三处逐字一致」的测试任务 | `tasks.md:55-57`（C4） | ✅ |
+| spec Scenario 加同一条 **And** | `spec.md:91-92` | ✅ |
+
+- **4/4 齐 ✅ 关掉**。附带：`design.md:81` 的 `case "$CMD" in *"$WL_TESTS_SENTINEL"*)` 已从手抄字面量改成**引用 `env` 变量**
+  ⇒ R1-N5 的**前半**（子串口径分裂）可兑现为「同源」✅。
+- 小 nit：`design.md:87` / `tasks.md:57` 写的断言目标是「`constants` / `gate.yml` / **`policy` 默认值**」——
+  按 X2 的决定，`default_policy_doc()` **不含**该路径 ⇒ 实现者会去那里找一个**不存在**的字段、白写一条断言。
+  措辞应改成「`policy.from_doc` 的默认值（同一个常量）」。
+
+### 4. X4（被证伪的理由句）
+
+- **`design.md:119-124` ✅**：「**给本仓补执行点（一个 PR）→ 发 `v1.6.0` → 移 `v1`**」+「原稿这里写过…**对抗轮实测证伪**…真实代价只是**在途** PR 会红 ⇒ 理由是**缩小红的窗口**」。
+- **`tasks.md:65-71`（P0→P1→P2）✅ 同顺序**；`tasks.md:67-68` ✅ 同样改写。
+- ⇒ **顺序在 design 与 tasks 之间一致 ✅**（先补执行点 → 发 tag → 移 tag）。
+- **❌ `design.md:161` 残留**（Y3）。
+- **❌ 另有一处「回写」义务未做**：`templates/grill.md:134` 要求「**被证伪的决策要回写 `grill-review.md`**——这一步必须在**停轮之前**做完」。
+  `reviews/grill-review.md:243`（Q4 的具体例子）**逐字**还写着「⇒ **本仓合不了任何 PR，包括那份「补执行点」的 PR 本身**」，
+  `:310-311`（R-v2-1）还写着「**修复它的 PR 本身也要过同一个 required**（Q4 的例子）」。
+  本 commit `41e5df7` 未触及 `reviews/grill-review.md` ⇒ 证伪**只写进了 design**，没回写到决策记录。
+  停轮时用户读的正是 grill-review，留着它就等于把这条已被推翻的推论再交一次给用户（**非阻塞，但模板明写是必需步骤**）。
+
+### 5. X5（三条缺任务）
+
+- `tasks.md:81`（**N1** 依赖为空测试）✅ / `tasks.md:82-83`（**N2** 文档守卫）✅ / `tasks.md:84-85`（**N3** `README.md:66` 订正）✅ ⇒ **3/3 关掉**。
+- 小 nit（**Z4**）：N2 里多带了**两条 spec 里没有**的守卫（「文档里不出现『手改 `init` 产物』『先 `uninit` 再 `init`』的教法」、
+  「README 接入段出现『四条边界』的关键词」）——是**加严**不是缺漏，但要么写进 `spec.md` 的诚实边界那节，要么标注为「超出 spec 的额外守卫」。
+
+### 6. X6（标签撞名）
+
+- **`tasks.md:60-63` ✅**：节名改成 `## P. 发版 / ref（design D7 …）`，条目 `P0..P5`，并写了说明
+  「本节 id 用 `P*`（publish）而非 `D*`：`design.md` 的决策编号是 `D1..D9`，两个 `D` 含义不同会造成…歧义（对抗轮 X6）」✅。
+- **`tasks.md:6` ⚠️ 残留**：仍写「…**A/B/C/D 四节**的形态不确定」——`D` 节已改名 `P`，且现在还多了 `N` 节。改法：`A/B/C/P`。
+- 小 nit：`tasks.md:93` 的 `## H. 报告布局` 下条目仍叫 `E2a/E2b`（与 E 节的 `E2` 同前缀）——不重名，危害小，可与 `:6` 一起顺手归一。
+- ⇒ **主体关掉**，一处旧编号残留。
+
+### 7. X7（opt-out 只关 `check`）
+
+- **`design.md:145-147` ✅** / **`spec.md:40-41` ✅**（Scenario「opt-out 不误伤」加了边界 And：「`disabled` 只关 `check` **不关**门禁那一步…
+  若接入方想『连跑都别跑』，删掉命令文件即可。文档 SHALL 写明」）。
+- **`tasks.md` ❌ 无承接**：F1（`tasks.md:102-105`）只列四条边界（①–④，不含这条）、F2（`:106`）只说 `docs/gate.md` §1 + 一小节、
+  B3（`:36-38`）只说 opt-out 的**事件摩擦**。⇒ `spec.md:41` 那句「文档 SHALL 写明」**没有任务**（与 X5 同类，非阻塞）。
+
+### 8. 有没有新引入的矛盾
+
+- **① `--test-command` 覆盖 vs「改命令是接入方的自由」**：**不冲突** ✅ ——
+  `spec.md:10` 的覆盖只发生在**显式给 flag** 时；`spec.md:20-22` 说的是**无 flag** 时的自由编辑 + plain `init` 不坏。
+  但**新出现一处未定**（见 **Z1**）：覆盖落在**哪条分支**、与**退出码/文案**的关系没写，而 `initcmd.py:166-167`
+  的 `_already_initialized` **早返回在任何种子逻辑之前** ⇒ 「总是覆盖」必须插到它之前（或写进它内部），两种落点用户可见结果不同。
+- **② `tests.disabled` 与三条判据 / 门禁跳过条件**：**自洽** ✅ ——
+  `spec.md:51` 的「在策略**声明了执行点**的前提下」把三判据限定在**未 disabled** 时；门禁的跳过条件是「缺失 or 含哨兵」
+  （`spec.md:76-77`），与 `disabled` **正交**（disabled + 文件在 ⇒ 照跑，`spec.md:40-41` 已写明）。三条判据与 `disabled` 无交叠、无空洞。
+- **③ 是否还有引用已被删掉的东西**：**有 3 处**（`design.md:152` / `tasks.md:36` / `design.md:161`，见 Y1–Y3）
+  + **1 处跨件陈旧**：`proposal.md:58` 的**验收**仍写「`check` 在「执行点缺失 / 未替换哨兵 / 已接线」**三态**下的判定」——
+  **漏了 D4 补的「空/纯空白」**（见 **Z3**）。
+
+## 新发现（均为非阻塞）
+
+- **Z1｜覆盖分支的落点、退出码与文案没定（X1 的尾巴）**。`initcmd.py:166-167` 的早返回在前，所以「总是覆盖」要么插在它**之前**、
+  要么写进 `_already_initialized`。两种落点各有一个可见毛病：
+  (a) 插在早返回之前、写完继续走 ⇒ 普通接入方看到的是 exit 0 + 「**init：已接入 witnessloop（幂等，无改动）。**」（`initcmd.py:280`），
+  而这一跑**确实改了**命令文件 ⇒ **工具在撒谎**；
+  (b) 同一落点碰上「policy 与出厂默认不同」的仓（本仓就是，`initcmd.py:265-278`）⇒ **exit 1，但文件已被覆盖** ⇒「失败的 init 带副作用」。
+  ⇒ 建议 spec 补两句：**覆盖后 SHALL 打印点名该文件的一行（不得沿用「无改动」）**；**写入 SHALL NOT 因后续冲突判定回滚**，退出码沿用现有分支语义。
+- **Z2｜`execution_point` 在 spec 里没有主语，且「路径可自定义」会让 check 与门禁分裂**（R1-N5 后半未关）。
+  `spec.md` 只提 `tests.disabled`；`design.md:152`/`tasks.md:12` 仍把它叫 `tests.execution_point`（且 §3 那行还带旧的「显式空→不判」）。
+  ⇒ 最小修法：**在 spec 里明写「命令文件路径是常量（`constants.py`），不是策略旋钮」**，`design.md:152` 改成只列 `tests.disabled` +
+  常量路径；否则 `design.md:76` 的硬编码 `env` 与「三处同源」的断言都只是**默认值**层面的，用户设一个别的路径就破。
+- **Z3｜`proposal.md:58` 的验收清单缺「空文件」一态**：仍写「三态」，未含 D4 的「空/纯空白 ⇒ 红」。
+  验收面比 spec 少一条，收尾时容易漏测。（另：「三态」一词现在同时指策略字段与 check 判据，建议分开命名。）
+- **Z4｜`tasks.md:82-83`（N2）的两条守卫超出 spec**（见 5 的小 nit）。
+- **Z5｜轮次预算提示**：`templates/grill.md:130` 的默认封顶是 **3 轮**，而 `tasks.md:112-113`（G0/G0b）在**停轮与定案之后**还要
+  「**重跑一轮设计对抗**」⇒ R1→R2→R3 正好把封顶用满。Y1–Y3 是**三行**的机械修改，**现在改掉**就不必占用 R3；
+  否则 R3 若再 CHANGES_REQUESTED，按模板只能「到顶交人判断」——那会把一个措辞残留升级成人工裁决。
+- **Z6（nit）**：`design.md:114` 的 `DEFAULT_GROGATE_REF` 拼写有误（应为 `DEFAULT_GATE_REF`；R1 时即在，本轮未动，顺手改）。
+
+## 本轮 Code-Resolved
+
+| 问题 | 结论 | 证据 |
+|---|---|---|
+| `41e5df7` 是否动过实现？ | **没有**：diff 只有 `design.md` / `tasks.md` / `spec.md` / `reviews/grill-adversarial.md` 四份 | `git show --stat 41e5df7` |
+| 基线是否仍绿？ | **是**：**431 passed in 29.82s**（新副本 + `rm -rf .venv && uv sync`） | `/tmp/adv2/repo` |
+| X3 的同源断言是否可兑现？ | **可以**：`design.md:81` 已改成 `case "$CMD" in *"$WL_TESTS_SENTINEL"*)`（引用变量而非手抄字面量） | `design.md:74-82` |
+| `disabled` 会不会让门禁那一步也停？ | **不会**（正交）：门禁只看「文件在不在 / 含不含哨兵」 | `spec.md:76-77` vs `spec.md:40-41` |
+| 证伪是否已回写决策记录（模板第 5 步硬要求）？ | **未回写**：`reviews/grill-review.md:243` 与 `:310-311` 仍是原句 | `templates/grill.md:134` |
