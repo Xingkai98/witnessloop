@@ -215,3 +215,48 @@ def test_docs_never_teach_editing_init_artifacts(relpath: str):
     text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
     for forbidden in ("手改 `init` 产物", "先 `uninit` 再 `init`"):
         assert forbidden not in text, f"{relpath} 教了「{forbidden}」——那是一条死锁路"
+
+
+#: 诚实边界 ① 必须把「能骗过存在性判定」的已知形态**举例**出来（审阅 R1 的 I4）。
+#:
+#: 第三条判据只堵「**意外**空文件」，堵不住「只有注释 / `true` / `:`」——那与
+#: `|| true`、`--collect-only` 是**同一类**（都是已声明的边界，不是缺陷）。但不写出来，
+#: 读者会把「`check` 绿」读成「测试真的会跑」，那就是过度承诺。
+BOUNDARY_ONE_EXAMPLES = ("|| true", "--collect-only", "# TODO")
+
+
+@pytest.mark.parametrize("relpath", ADOPTER_TESTS_DOCS)
+def test_boundary_one_lists_the_known_ways_to_fake_wiring(relpath: str):
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    missing = [e for e in BOUNDARY_ONE_EXAMPLES if e not in text]
+    assert not missing, (
+        f"{relpath} 的边界 ① 少了这些「骗过存在性判定」的举例：{missing}"
+        "——不举例就等于默认读者知道 `check` 的绿不代表测试会跑"
+    )
+
+
+def test_readme_marks_the_init_variants_as_alternatives():
+    """审阅 R1 的 I6③：三条 `init` 放在同一个代码块里读起来像**顺序执行**，
+    而它们是**互斥的替代**（`--policy` 才可组合）。README 得说清这一点。"""
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "三选一" in text
+    assert "不是顺序执行" in text
+
+
+#: 命令文件路径是**常量**（`constants.ADOPTER_TESTS_PATH`），不是 policy 旋钮
+#: ⇒ 不得再把它写成「默认值」——那是旧 `tests.execution_point` 旋钮的残留措辞
+#: （审阅 R1 的 I6①）。
+STALE_TESTS_PATH_DEFAULT_CLAIM = "（默认 `.github/witnessloop-tests.txt`）"
+
+
+@pytest.mark.parametrize(
+    "relpath",
+    ADOPTER_TESTS_DOCS
+    + ("openspec/changes/adopter-test-gate/specs/adopter-test-job/spec.md",),
+)
+def test_docs_do_not_call_the_tests_path_a_default(relpath: str):
+    text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    assert STALE_TESTS_PATH_DEFAULT_CLAIM not in text, (
+        f"{relpath} 仍把命令文件路径写成「{STALE_TESTS_PATH_DEFAULT_CLAIM}」"
+        "——它不是可覆写的默认值，是 constants 里的常量（没有第二个取值）"
+    )

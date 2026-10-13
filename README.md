@@ -19,12 +19,17 @@
 ```bash
 uv tool install git+https://github.com/Xingkai98/witnessloop@v1
 
-# 接入目标仓：幂等、只增不改、不 auto-commit
-cd your-repo && witnessloop init --dry-run   # 先看要写什么
-witnessloop init --test-command "uv run pytest -q"   # 落盘 + 写**测试执行点**（推荐；见下「接入方的测试进 CI」）
-witnessloop init                             # 不带该 flag ⇒ 执行点是哨兵占位（`check` 会判红）
-witnessloop init --no-tests                  # 显式不要测试执行点（见那条的「四条边界」）
-witnessloop init --policy /path/to/policy.json   # 需要非默认 policy 时（见下「本仓自身接入」）
+# 接入目标仓：幂等、只增不改、不 auto-commit。先看要写什么（不落盘）
+cd your-repo && witnessloop init --dry-run
+```
+
+落盘时**三选一**（下面三条是**互斥的替代**，**不是顺序执行**；`--policy` 可与任一条组合）：
+
+```bash
+witnessloop init --test-command "uv run pytest -q"   # ① 推荐：接入 + 写**测试执行点**（见「接入方的测试进 CI」）
+witnessloop init                                     # ② 不带 flag ⇒ 执行点是哨兵占位（`check` 会判红）
+witnessloop init --no-tests                          # ③ 显式不要测试执行点（见那条的「opt-out 的语义」）
+witnessloop init --policy /path/to/policy.json        # + 需要非默认 policy（见下「本仓自身接入」）
 
 # 审阅跑完，落证据（复用 check 同一套哈希；幂等、不 auto-commit）
 witnessloop manifest build --change add-retry --stage building \
@@ -73,8 +78,9 @@ witnessloop init --no-tests                           # 显式不要执行点（
 
 **四条诚实边界**（不写清就是过度承诺）：
 
-1. `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试
-   （`|| true`、`--collect-only` 都能骗过存在性判定）。「真跑了」由**平台侧 required check** 保证。
+1. `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试：
+   `|| true`、`--collect-only`、一行 `# TODO` 注释、甚至 `true` / `:` 都能骗过存在性判定
+   （第三条判据只堵**意外**写出来的空文件）。「真跑了」由**平台侧 required check** 保证。
 2. **PR 可以改掉自己的命令文件 / CI 配置**（`.github/workflows/**` 不在保护路径、
    `required_approving_review_count: 0`）而 required check 依旧绿。
 3. 测试命令是**任意代码**，会在**每个 PR（含 fork PR）**的 runner 上执行——别把密钥写进去
@@ -85,10 +91,14 @@ witnessloop init --no-tests                           # 显式不要执行点（
    （代价：自己再勾一次 required）。**把「同 job」说成普遍更优就是过度承诺**——它是「零新增人工
    步骤」与「测试环境自主权」的交换。
 
-**opt-out 的语义（第五条说明）**：`--no-tests`（或 policy 里 `tests.disabled: true`）**只关 `check`
+**opt-out 的语义（第五条说明）**：`tests.disabled: true`（或新接入时的 `--no-tests`）**只关 `check`
 那条判定，不关门禁那一步**——门禁只看「文件在不在 / 含不含哨兵」。想「连跑都别跑」就**删掉命令
-文件**（那一步会跳过）。另外：`--no-tests` 只在**新接入**时可用；**已接入**的仓要 opt-out 只能改
-`.witnessloop/policy.json`，而它是不变集、状态是 `M` ⇒ **每次都要一条 `protected_path_write` 解释
+文件**（那一步会跳过）。
+
+⚠️ **已接入的仓怎么 opt-out**（这里容易说错）：`--no-tests` 是个**接入期**的 flag——已接入且
+policy 还是出厂默认的仓给它会**报冲突退 1**（「本次期望 ≠ 磁盘」），只有 policy **已经是**
+`tests.disabled: true` 时 `init --no-tests` 才幂等 exit 0。所以已接入的仓要 opt-out 就直接改
+`.witnessloop/policy.json`：它是不变集、状态是 `M` ⇒ **每次都要一条 `protected_path_write` 解释
 事件**；而且改完 policy 之后 plain `init` 会暂时 **exit 1**（任何定制 policy 都如此，不是该字段
 独有——再带一次 `--no-tests` 即可）。
 

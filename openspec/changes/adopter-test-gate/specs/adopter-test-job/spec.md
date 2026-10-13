@@ -6,7 +6,9 @@
 ## Requirement: `init` 写入测试执行点
 
 `init` SHALL 让新接入的仓**开箱即有一个测试执行点**：
-`init --test-command "<cmd>"` SHALL 把该命令写入**命令文件**（默认 `.github/witnessloop-tests.txt`）；
+`init --test-command "<cmd>"` SHALL 把该命令写入**命令文件**（路径**固定**为
+`.github/witnessloop-tests.txt`，见 `constants.ADOPTER_TESTS_PATH`——**不是** policy 旋钮，
+没有第二个取值）；
 **该 flag SHALL 覆盖已有内容**（显式意图优先——不得因为文件已存在而静默 no-op）。
 未给该 flag 时 SHALL 只在**文件不存在**时写入**哨兵占位**（未接线 ⇒ 由下一条 Requirement 判红）。
 `init --no-tests` SHALL 显式**不写**该文件，并在策略里写 **`tests.disabled: true`**（**这是唯一的 opt-out
@@ -14,8 +16,11 @@
 
 策略字段的**缺省语义**：**字段缺省 ⇒ 声明**（用默认路径）。⚠️ **出厂 policy 文档 SHALL NOT 物化
 `tests` 键**——否则已接入的仓跑 plain `init` 会因「本次期望 ≠ 磁盘」而 exit 1（实测）。
-（⇒ 已接入的仓会被立刻判；SHALL 在文档里给出补文件的迁移步骤。）opt-out 只在**新接入**时可用；
-已接入的仓改 `policy.json`（不变集、状态 `M`）SHALL 需要一条 `protected_path_write` 解释事件。
+（⇒ 已接入的仓会被立刻判；SHALL 在文档里给出补文件的迁移步骤。）`--no-tests` 是**接入期**的
+flag：已接入且 policy 仍是出厂默认的仓给它会报冲突（「本次期望 ≠ 磁盘」），只有 policy **已经是**
+`tests.disabled: true` 时它才幂等；⇒ 已接入的仓 opt-out 走改 `policy.json`（不变集、状态 `M`），
+SHALL 需要一条 `protected_path_write` 解释事件，且此后 plain `init` 会暂时退非零（任何定制 policy
+都如此）。
 
 该命令文件 SHALL **不进 `init` 台账**、SHALL **不进 `desired_files()`（即不参与冲突判定）**、
 SHALL **不参与 `uninit` 的删除**。⇒ 接入方改命令之后，**再跑 plain `init` 仍 SHALL 成功**（不得 exit 1）；

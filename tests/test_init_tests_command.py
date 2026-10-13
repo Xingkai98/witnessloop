@@ -114,20 +114,28 @@ def test_overwrite_does_not_swallow_other_conflicts(repo: Path, cli):
 
     已接入仓上 `--test-command` 叠一个**不同**的 `--policy` ⇒ 仍必须报冲突退 1
     （否则「`--policy` 被静默忽略」那个老洞会从新 flag 借尸还魂）。
+
+    ⚠️ 同时钉住**副作用本身**（审阅 R1 的 I5）：这次失败的 `init` **已经把命令文件覆盖了**
+    ——「写在前、不因后续冲突回滚」是认下的行为（当场打印点名那一行 ⇒ 绝不静默）。
+    把它写成断言，免得将来谁把写入挪到判定之后而没人发现行为变了。
     """
     cli("init", "--root", str(repo))
     commit_all(repo, "接入")
+    assert _text(repo) == SENTINEL_BODY
     seed = repo.parent / "seed-policy.json"
     doc = json.loads((repo / C.POLICY_PATH).read_text(encoding="utf-8"))
     doc["changes_root"] = "elsewhere/changes"
     seed.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
 
-    code, _, err = cli(
+    code, err_out, err = cli(
         "init", "--root", str(repo), "--test-command", CMD, "--policy", str(seed)
     )
 
     assert code == C.EXIT_FAIL
     assert "冲突" in err
+    # 副作用：命令文件已被覆盖（这是**声明出来的**行为，不是漏网），且**当场**说了。
+    assert _text(repo) == CMD + "\n"
+    assert TESTS in err_out
 
 
 # ---------------------------------------------------------------- B3：opt-out
@@ -140,11 +148,10 @@ def test_no_tests_writes_the_disabled_policy_and_no_file(repo: Path, cli, read_j
     assert read_json(repo / C.POLICY_PATH)["tests"] == {"disabled": True}
 
 
-def test_no_tests_on_an_onboarded_repo_is_a_conflict(repo: Path, cli):
-    """文档这么写的、也确实是这么回事：**`--no-tests` 只在新接入时可用**。
-
-    已接入的仓再给 `--no-tests` ⇒ policy 的「本次期望」与磁盘不同 ⇒ 冲突退 1
-    （这正是已接入仓的 opt-out 只能改 `policy.json`、因而每次都要一条解释事件的原因）。
+def test_no_tests_on_a_default_policy_repo_is_a_conflict(repo: Path, cli):
+    """已接入且 policy 与出厂默认一致的仓，再给 `--no-tests` ⇒ policy 的「本次期望」
+    与磁盘不同 ⇒ 冲突退 1。（这是已接入仓的 opt-out 只能改 `policy.json`、
+    因而每次都要一条解释事件的原因——**不是**「`--no-tests` 完全不可用」。）
     """
     cli("init", "--root", str(repo))
     commit_all(repo, "接入")
@@ -153,6 +160,22 @@ def test_no_tests_on_an_onboarded_repo_is_a_conflict(repo: Path, cli):
 
     assert code == C.EXIT_FAIL
     assert "冲突" in err
+
+
+def test_no_tests_is_idempotent_on_an_already_disabled_repo(repo: Path, cli, read_json):
+    """订正（审阅 R1 的 I6②）：**已经**是 opt-out 的仓再给 `--no-tests` 是**幂等** exit 0。
+
+    「`--no-tests` 只在新接入时可用」这句**说过头了**——它描述的是「从默认 policy 切到
+    opt-out」那一次（上一条），而不是这个 flag 本身不可用。
+    """
+    code, _, err = cli("init", "--root", str(repo), "--no-tests")
+    assert code == C.EXIT_PASS, err
+
+    code, out, err = cli("init", "--root", str(repo), "--no-tests")
+
+    assert code == C.EXIT_PASS, err
+    assert "幂等" in out
+    assert read_json(repo / C.POLICY_PATH)["tests"] == {"disabled": True}
 
 
 def test_no_tests_does_not_claim_the_policy_came_from_a_file(repo: Path, cli):

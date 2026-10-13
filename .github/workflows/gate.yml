@@ -76,6 +76,10 @@ jobs:
       #
       # 文件缺失 **或** 内容含哨兵 ⇒ 跳过（是否判红由 `check` 决定）：哨兵会被 `sh`
       # 当命令执行，症状是 `sh: Syntax error`（实测 exit 2），与「没接线」毫无相似之处。
+      # ⚠️ 读取时顺带 `tr -d '\r'`：`$(cat …)` **只吃行尾 `\n`**，CRLF 会把一个 `\r` 留在
+      # 命令尾 ⇒ `sh -c "uv run pytest -q\r"` 报 `pytest: error: unrecognized arguments:`
+      # （实测 exit 4）。`check` 侧不受影响（Python 的 `str.strip()` 本来就吃 `\r`），
+      # 所以那是门禁侧独有的、与「接线」毫无关系的红（审阅 R1 的 I3）。
       - name: adopter tests
         if: ${{ !cancelled() }}
         env:
@@ -86,7 +90,7 @@ jobs:
             echo "::notice::没有测试执行点（$WL_TESTS_FILE 不存在），跳过。"
             exit 0
           fi
-          CMD=$(cat "$WL_TESTS_FILE")
+          CMD=$(tr -d '\r' < "$WL_TESTS_FILE")
           case "$CMD" in
             *"$WL_TESTS_SENTINEL"*)
               echo "::notice::测试执行点未接线（仍是哨兵），跳过。"

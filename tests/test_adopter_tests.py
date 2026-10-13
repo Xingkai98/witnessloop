@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,44 @@ def test_policy_default_is_declared_and_only_disabled_opts_out():
     assert policy_mod.Policy.from_doc({"tests": {"disabled": ""}}).tests_disabled is False
     assert policy_mod.Policy.from_doc({"tests": {"disabled": None}}).tests_disabled is False
     assert policy_mod.Policy.from_doc({"tests": {"disabled": True}}).tests_disabled is True
+
+
+@pytest.mark.parametrize("value", [1, "true", "yes", [1], {"a": 1}])
+def test_truthy_but_non_boolean_disabled_is_not_an_opt_out(value):
+    """**真值但非布尔** ⇒ 仍读成「声明」（审阅 R1 的 I2）。
+
+    上面那条只覆盖了 falsy 输入 ⇒ 把 `is True` 换成 `bool(...)` 当时**全绿逃逸**。
+    差异恰好出现在这一组：`1` / `"true"` / `"yes"` 都是真值，但 spec 说唯一 opt-out
+    字面是**布尔** `true` ⇒ 它们必须继续判（判成 opt-out 就是违约：没有执行点还放行）。
+    """
+    assert (
+        policy_mod.Policy.from_doc({"tests": {"disabled": value}}).tests_disabled
+        is False
+    )
+
+
+def test_truthy_but_non_boolean_disabled_still_gets_judged(repo: Path, cli, tmp_path):
+    """同一条的端到端面：`{"disabled": 1}` 的仓仍被要求「执行点已接线」。
+
+    用 `init --policy <seed>` 一次写成（status `A` ⇒ 免解释事件），然后 `check`：
+    `init` 不认这个字面（`--no-tests` 才是显式 opt-out）⇒ 落的是**哨兵** ⇒ 判红。
+    """
+    seed = tmp_path / "seed-policy.json"
+    doc = policy_mod.default_policy_doc()
+    doc["tests"] = {"disabled": 1}
+    seed.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    code, _, err = cli("init", "--root", str(repo), "--policy", str(seed))
+    assert code == C.EXIT_PASS, err
+    assert (repo / TESTS).read_text(encoding="utf-8") == (
+        C.ADOPTER_TESTS_SENTINEL + "\n"
+    )
+    commit_all(repo, "接入（policy 里写了非布尔的 disabled）")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "哨兵" in err  # 只有布尔 true 才是 opt-out
 
 
 def test_non_object_tests_section_is_a_policy_error():

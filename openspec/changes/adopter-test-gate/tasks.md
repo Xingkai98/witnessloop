@@ -40,8 +40,10 @@
 - [x] B3 `init --no-tests` ⇒ 不写该文件 + 策略里写 **`tests.disabled: true`**（显式 opt-out）
       ⚠️ **不是「置空」**：`from_doc` 用 `or DEFAULT`（falsy 即回落）⇒ `""` / `null` / 缺省**都会**被读成「声明」
       （对抗轮 Y1：本行原写「置空」与 A2/spec 的唯一字面直接相反）
-      ⚠️ **已接入仓的 opt-out 摩擦要写进文档**（grill v2 的 CRQ-6）：`--no-tests` 只在**新接入**时可用；
-      已接入仓只能改 `.witnessloop/policy.json`，而它是**不变集**且状态是 `M` ⇒ **每次都要写一条解释事件**
+      ⚠️ **已接入仓的 opt-out 摩擦要写进文档**（grill v2 的 CRQ-6；措辞按审阅 R1 的 I6② 订正）：
+      `--no-tests` 是**接入期**的 flag——已接入且 policy 仍是出厂默认的仓给它会**冲突退 1**，
+      只有 policy 已经是 `tests.disabled: true` 时它才**幂等**；⇒ 已接入仓 opt-out 走改
+      `.witnessloop/policy.json`，而它是**不变集**且状态是 `M` ⇒ **每次都要写一条解释事件**
 - [x] B4 **契约变更进 spec + 改既有断言**：`docs/gate.md:9`「只写三个文件」、
       `tests/test_init.py:18,72,103`（三文件枚举）——新产物是第四个（D6/R7）
 - [x] B4b **覆盖分支的对外表现要定死**（对抗轮 Z1）：`--test-command` 在**已接入**仓上覆盖命令文件时，
@@ -147,9 +149,11 @@
 
 ### 数字
 
-- 全量：**477 passed**（基线 431 ⇒ **新增 46 条**）：新文件 `tests/test_adopter_tests.py` **13**、
-  `tests/test_init_tests_command.py` **19**、`tests/test_gate_workflow.py` **+6**、
-  `tests/test_docs.py` **+7**、`tests/test_invariants.py` **+1**（13+19+6+7+1 = 46）。
+- 全量：**496 passed**（基线 431 ⇒ **新增 65 条**）：新文件 `tests/test_adopter_tests.py` **19**、
+  `tests/test_init_tests_command.py` **20**、`tests/test_gate_workflow.py` **+12**、
+  `tests/test_docs.py` **+13**、`tests/test_invariants.py` **+1**（19+20+12+13+1 = 65）。
+  ⚠️ 其中 **19 条**是 review-loop R1（PASS）之后的加固（见「审阅修复」一节）：6 条门禁**行为级**
+  用例 + 6 条 opt-out 字面 + 6 条文档守卫 + 1 条 `--no-tests` 幂等。
 - **既有用例变红 22 条**，全部处置（见下「踩到的坑」#2/#3）——没有一条是「改断言让它绿」。
 
 ### 踩到的坑
@@ -183,7 +187,7 @@
 
 ### 真跑过的（命令 + 结果）
 
-- `uv run pytest -q` ⇒ **477 passed**（基线那次 **431 passed**）。
+- `uv run pytest -q` ⇒ **496 passed**（基线那次 **431 passed**；review-loop R1 加固前是 477）。
 - **真 CLI 端到端**（`/tmp/e2e/r`，真 git 仓，不是测试进程内）：
   - plain `init` ⇒ 清单含 `+ .github/witnessloop-tests.txt`，内容 `<<REPLACE-ME>>`；
     `check` ⇒ **红**，点名路径 + 「未接线（仍是哨兵）」。
@@ -193,10 +197,12 @@
     且**不覆盖**（D3 兑现）；随后 `check` ⇒ **通过 ✓**。
   - `init --no-tests` ⇒ 无命令文件 + policy 里 `"tests": {"disabled": true}`；`check` ⇒ **通过 ✓**。
   - `uninit` ⇒ 三个台账产物删净，**命令文件仍在**。
-- **门禁那一步的 shell 真跑**（从 `gate.yml` 解析出 `run:` 后交 `sh -c`，四态各一次）：
+- **门禁那一步的 shell 真跑**：最初是**手工**跑（从 `gate.yml` 解析出 `run:` 后交 `sh -c`，四态各一次）：
   缺失 ⇒ exit 0 + `::notice::`；哨兵 ⇒ exit 0 + notice；**空 ⇒ exit 0 且无 notice**
   （⇒ 「空」只能由 `check` 判——这条实测正好证明第三条判据不可省）；已接线 `exit 7` ⇒ **exit 7**
   （失败会顶到 job）；已接线真命令 ⇒ 命令**真的执行了**（空目录里跑 pytest 得 exit 5「no tests ran」）。
+  ⚠️ **R1 之后这六态已固化成测试**（`tests/test_gate_workflow.py::test_step_*`，真 `sh` 执行）——
+  手工那次的结论与它们一致。
 
 ### 没验证的（别当成已验证）
 
@@ -208,3 +214,52 @@
 - **本地 `check` 全绿**：还差 G1 的 manifest（现有 `grill.manifest.json` 按 R4-W2 已 stale；
   `grill-adversarial` / `building` 两份未建）⇒ 现在跑是 **3 项红，都不是执行点判定**
   （`report_hash` 不匹配 / 审阅的是旧 revision / 孤儿报告）。
+
+## 审阅修复（review-loop R1 = PASS 后）
+
+> 审阅报告：`reviews/building-review.md`（verdict **PASS**，无阻塞项；3 处「变异存活」的**测试强度**缺口
+> + 4 条非阻塞观察）。下面逐条记**处置**；每条都遵守「先写能红的测试 / 先复现变异，再改实现」。
+> 报告里的 **I5**（失败 `init` 的写入副作用没有断言）不在指定修复清单里，但成本极低且是承重契约，
+> **顺手也做了**（见下）。
+
+- **I1（测试强度 · 中）`gate.yml` 那一步只有文本断言、语义回归会逃逸** ⇒ 新增 **6 条行为级**用例
+  （`tests/test_gate_workflow.py::test_step_*`）：从 `gate.yml` 解析出该 step 的 `run:` **原文**，
+  在临时目录里交**真 `sh`** 执行（env 照抄该 step 的 `env:`），覆盖
+  缺失 / 哨兵 / 空 / 已接线 / 命令失败 / CRLF 六态。
+  **自测它能杀掉报告里那两个逃逸变异**（复现 → 新用例红 → 还原）：
+  - M2b（保留 `case`、只删它内部的 `exit 0`）⇒ `test_step_skips_the_sentinel_instead_of_running_it` **红**
+    （此前 477 全绿）；
+  - M2c（把 `sh -c "$CMD"` 挪到守卫**之前**）⇒ 同上 + `test_step_propagates_the_command_exit_code` **两条红**
+    （此前 477 全绿）。
+- **I2（测试强度 · 中低）「唯一的 opt-out 字面是布尔真」没钉满** ⇒ 补 **5 条**参数化单测
+  （`1` / `"true"` / `"yes"` / `[1]` / `{"a": 1}` ⇒ `tests_disabled is False`）+ **1 条**端到端
+  （policy 里写 `{"disabled": 1}` 的仓**仍被判**、判红在哨兵上）。同样自测变异：`is True` ⇒ `bool(...)`
+  ⇒ **6 条红**（此前 477 全绿）。
+- **I3（健壮性 · 低）CRLF：`check` 绿而门禁红（exit 4，症状与「接线」无关）** ⇒ 按审阅者**订正后的方向**
+  修在**门禁侧**：`CMD=$(tr -d '\r' < "$WL_TESTS_FILE")`（`cat` → `tr`）+ 注释写明成因；
+  用例 `test_step_strips_a_trailing_crlf` 用「痕迹**文件名**」判别（`marker` vs `marker\r`）——
+  **先红后绿**（`checkcmd` 侧**不动**：`str.strip()` 本来就吃 `\r`，问题不在那儿）。
+- **I4（观察 · 低）「只有注释」骗过第三条判据** ⇒ **只写文档、不判**（它与 `|| true` 同属已声明的边界 ①）：
+  `README.md` 与 `docs/gate.md §11.3` 的边界 ① 现在把 `|| true`、`--collect-only`、一行 `# TODO`、
+  `true` / `:` 一起举例；并加守卫 `test_boundary_one_lists_the_known_ways_to_fake_wiring`
+  （两份文档都要有这些例子，少一个就红）。
+- **I5（观察 · 低 · 顺手做）失败的 `init` 会留下写入副作用（此前无断言）** ⇒
+  `test_overwrite_does_not_swallow_other_conflicts` 补两条断言：**命令文件确实已被覆盖**
+  （写在前、不因后续冲突回滚）+ **当场打印点名那一行**（绝不静默）——把认下的行为钉成契约。
+- **I6（措辞 nit）三处「比实现强」** ⇒
+  ① `spec.md` 的「（默认 `.github/witnessloop-tests.txt`）」改成「路径**固定**…**不是** policy 旋钮、
+     没有第二个取值」，并加守卫 `test_docs_do_not_call_the_tests_path_a_default`（spec + 两份文档）；
+  ② 「`--no-tests` 只在**新接入**时可用」在 `spec.md` / `README.md` / `docs/gate.md` **逐处订正**为
+     「接入期 flag：已接入且 policy 仍是出厂默认的仓给它会**冲突**；只有 policy **已经是**
+     `tests.disabled: true` 时它**幂等** exit 0」——并补用例
+     `test_no_tests_is_idempotent_on_an_already_disabled_repo` 把这个实测事实钉住
+     （原 `test_no_tests_on_an_onboarded_repo_is_a_conflict` 改名，避免被读成「flag 完全不可用」）；
+  ③ `README.md` 的用法块**拆成两块**：`--dry-run` 单列，落盘那三条标注
+     「**三选一**（互斥的替代，**不是**顺序执行；`--policy` 可组合）」，并加守卫
+     `test_readme_marks_the_init_variants_as_alternatives`。
+- **I7（环境差异 · 无需动作）**：报告指出「现在跑是 3 项红」是**本机脏工作区**的数，干净克隆是
+  4 / 6 项（**都不含执行点判定**）⇒ 口径已一致，不改。
+
+**未处理（如实记录）**：无阻塞项；I4 的「注释占位」是**声明出来的**边界、不是缺口（那条判据按 spec
+必须**零依赖**，不能去解析命令语义）。**新引入的已知残余**：`tr` 是门禁侧新增的**外部命令依赖**
+（coreutils，ubuntu runner 恒有）——若将来 runner 换成非 coreutils 环境需重估。

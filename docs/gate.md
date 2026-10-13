@@ -492,15 +492,19 @@ review manifest。缺失 ⇒ **红**并**点名现有 stage**。
   **已接入的仓**跑 plain `init` 时因「本次期望 ≠ 磁盘」命中冲突分支 **exit 1**。
 - ⚠️ **`tests.disabled` 只关 §11.1 那条判定，不关门禁那一步**：门禁只看「文件在不在 /
   含不含哨兵」，与 policy **正交**。想「连跑都别跑」要**删掉命令文件**（那一步会跳过）。
-- **已接入仓的 opt-out 摩擦（两条，都是实测）**：① `--no-tests` 只在**新接入**时可用；
-  已接入仓只能改 `.witnessloop/policy.json`，而它是不变集且状态是 `M` ⇒ **每次都要写一条
+- **已接入仓的 opt-out 摩擦（两条，都是实测）**：① `--no-tests` 是**接入期**的 flag——已接入且
+  policy 还是出厂默认的仓给它会**报冲突退 1**（「本次期望 ≠ 磁盘」；只有 policy 已经是
+  `tests.disabled: true` 时 `init --no-tests` 才幂等 exit 0）⇒ 已接入仓的 opt-out 走改
+  `.witnessloop/policy.json`，而它是不变集且状态是 `M` ⇒ **每次都要写一条
   `protected_path_write` 解释事件**（§5）；② 改完 policy 之后 plain `init` 会因「本次期望 ≠
   磁盘」**exit 1**（直到你再带 `--no-tests`）——任何定制 policy 都如此，不是本字段独有。
 
 ### 11.3 诚实边界（README 有同口径的四条）
 
-① `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试
-（`|| true`、`--collect-only` 都能骗过存在性判定）。「真跑了」由**平台侧 required check** 保证。
+① `check` 只保证「**有一个已接线的执行点**」——**不保证**它真跑过，也**不保证**它跑的是真测试：
+`|| true`、`--collect-only`、一行 `# TODO` 注释、甚至 `true` / `:` 都能骗过存在性判定
+（§11.1 的第三条判据只堵**意外**写出来的空文件——「写了个占位注释」不在它的射程里）。
+「真跑了」由**平台侧 required check** 保证。
 ② **PR 可以改掉自己的命令文件 / CI 配置**（`.github/workflows/**` 不在保护路径、
 `required_approving_review_count: 0`）而 required check 依旧绿。
 ③ 测试命令是**任意代码**，会在每个 PR（含 **fork PR**）的 runner 上执行。
