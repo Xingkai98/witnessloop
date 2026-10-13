@@ -125,6 +125,13 @@
 - [ ] G3 PR → 合入（**优先 `--merge`**，见 issue #18）
 - [ ] G4 关 issue **#4**（本 change 现在是**机械**的 ⇒ 名正言顺）
 
+## 定案（用户 2026-10-13）
+
+- **Q6 = 做发版**：发 `v1.6.0` + **移动 `v1`**（P1/P2；分步执行；移 tag 是改已发布 ref 的对外动作，
+  **执行需用户在场**）。
+- **Q1–Q5、Q7、Q8 = 全按推荐**（逐条答复见 `reviews/grill-review.md` 的 `## User Confirmation`）。
+- ⇒ 未选分支（乙：独立测试 workflow／丙：命令进 caller 的 `with:`）**不再保留**。
+
 ## 明确不做（本 change）
 
 `check` 执行测试 · 命令探测 · 手改 `init` 产物当通道 · 「uninit→init」式升级 · 引入运行时依赖 ·

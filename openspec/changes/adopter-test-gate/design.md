@@ -1,6 +1,7 @@
 # Design: adopter-test-gate（v2.1 · 机械版 · 已按 grill v2 回写）
 
-> 状态：**草稿 v2.1**。待对抗验证收敛 → 停轮（Q1..Q8）。
+> 状态：**已定案**（用户 2026-10-13 逐条确认 Q1..Q8：**Q6 批准发版**——发 `v1.6.0` 并移动 `v1`；
+> 其余七条按推荐）。下一步：G0（建 grill manifest 放行写码）→ G0b（定案后重跑一轮对抗）→ 实现（TDD）。
 > 依据 `proposal.md`。流程出处 `templates/grill.md`。决策记录：`reviews/grill-review.md`（v2）、
 > `history/v1/`（**v1 那轮的记录**——它证伪的实测事实仍有效，被推翻的只是方案选择）。
 
