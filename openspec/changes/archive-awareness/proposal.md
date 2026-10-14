@@ -62,10 +62,14 @@ grill 实测纠正，见 `design.md §1.2`）。
 1. **归档 move 使该 change 进入本次 diff 的 change 集合**（id = 归档目录名），
    与 active change **走同一套**契约/证据校验，只是路径落在 `archive/<name>/` 下 ⇒ 症状 ① 消失，
    且**不产生** C3 那种绕过面。
-2. **`manifest build` 支持归档目标**（`--change <归档目录名>`）⇒ 接入方能**在归档之后**重建证据。
-   ⚠️ 配套两条**连锁**必须一并交付（`design.md §1.5`，grill 实测）：归档前 build 的 manifest（`change_id=<源id>`）
-   一进 `archive/<date>-<id>/` 就判「与目录不符」⇒ 顺序是「**先归档 → 用归档目录名重建**」；
-   而重建 = **覆盖** `reviews/*.manifest.json` = `M` 一个不变集路径 ⇒ **每条各要一条解释事件**（实测恰好 3 条）。
+2. **`manifest build` 支持归档目标**（`--change <归档目录名>`），并让**归档前**产出的 manifest 继续有效
+   （**别名 D8**：归档态 target 的 `change_id` 同时接受「归档目录名」与「源 id」）⇒ 接入方**不必**为归档去重建证据。
+   ⚠️ 配套的**正确顺序**（`design.md §1.6`，本仓实测修后 `EXIT=0`）：
+   `① 内容（实现 + 收尾）→ ② 在 active 态 build 证据（绑 ① 的 revision）→ ③ git mv 归档，放最后、纯改名`。
+   ⚠️ **禁止**在**同一个 diff** 里既 move 又改写被 move 的文件（含「归档后在归档态重建 manifest」）：
+   那会把 `R100` 降级成 `R<100` ⇒ ①不授予 ②被搬走的 active 目录**以幽灵 id 回到集合** ③事件需求翻倍
+   （实测 9 → 6 → 3 项，最后 3 项**补事件消不掉**）。要在归档**之后**改写证据 ⇒ 落在**不含 move 的后继 diff**
+   （`M` 不变集路径 ⇒ 每条一条解释事件，实测 3 条 ⇒ 绿）。
 3. **`events` 扫描覆盖归档目录** ⇒ 归档 change 里的事件重新生效。
 4. **归归档的既有行为一条不破**（`is_archive_move` 的纯度判据、`archive/**` 不进 active id、
    `archive/` 不是法外之地、归档 move 免解释事件）。
@@ -74,8 +78,10 @@ grill 实测纠正，见 `design.md §1.2`）。
 
 - **不引入 asterwynd 式的「归档点完成度门禁」**（`_check_archived_completion_gate`）——
   本仓**无 `ChangeType`、无 `primary` 分类、`specs/` 恒备**，照搬不了（`docs/gate.md §10` 已写明沿革）。
-- **不改 `archive/` 的目录命名约定**：`is_archive_move` 只认「落点在 `archive/**`」，
-  **不要求 `<date>-` 前缀**（本仓既有测试就用 `archive/<id>`）。⇒ 本 change **不解析日期前缀**。
+- **不把归档命名收紧成 `archive/<id>`**（对抗轮点名的第三路）：`is_archive_move` 只认「落点在 `archive/**`」，
+  **不要求 `<date>-` 前缀**；授予判据可以是「等值 **或** `-<源id>` 后缀」。⇒ 本 change **不解析日期前缀**，
+  也**不要求**接入方改掉他们现有 **80 份** `<date>-<id>` 目录（那会踩 OpenSpec 自己的归档约定）。
+  ⚠️ 这条**作为政策题**进 `design.md §8` 的 **Q2**（含迁移成本实测）——**不影响本 change 的实现**。
 - **不给「change ↔ 代码路径」建立归属关系**：本工具从来没有这套映射，本 change 也不引入
   （边界见 `design.md §2.5`）。
 - 不引入签名 / 防伪造；不改 `check` 的退出码语义。
@@ -93,6 +99,12 @@ grill 实测纠正，见 `design.md §1.2`）。
   - **N4** 只改 `archive/<name>/` 下已存在文件（`M`）⇒ **不**使该 change 进入集合，`_require_change` 照样红。
   - **N6**（grill 挖出的第 6 面）把 active change `z` 的**单个文件** R100 改入**已存在**的归档目录 `y`
     （`y` 的名字不认得 `z`）⇒ **不授予任何资格**（否则资格会被凭空给 `y`，而 `z` 静默逃检）。
+  - **N7**（对抗轮加的）**同一个 diff 里既 move 又改写被 move 的文件** ⇒ 红，且报出幽灵 active id
+    （`openspec/changes/<源id>：change 目录不存在`）——**不许**因为「它看起来是一次归档」被放过。
+- **别名（D8）**：归档**前**用 `--change <源id>` 产的 manifest，在 `archive/<date>-<id>/` 下**仍通过校验**
+  （实测「只归档、不重建」⇒ 修后 0 项红）；而 `--change <归档目录名>` 产的新 manifest 也通过。
+- **顺序（§1.6）**：base 里已是 active 的 change，本 PR「改代码 → **在 active 态** build 证据 → 归档 move 放最后」
+  ⇒ 修后 **`EXIT=0`，0 项红**（实测）。
 - **回归**：`uv run pytest -q` **496 passed**（实测基线）保持全绿；清单见 `design.md §5.2`。
 
 ## 测试策略
