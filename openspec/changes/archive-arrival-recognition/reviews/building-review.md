@@ -26,17 +26,16 @@
 
 ## Verdict
 
-**CHANGES_REQUESTED（Round 4 复验后仍为此）**
+**CHANGES_REQUESTED（Round 5 复验后仍为此；只剩 1 条，且**不是**安全绕过）**
 
-- **Round 1 的 H1、Round 2 的 H2、Round 3 的 H3/H4 均已修复** ✓（四个原构造复跑：全部拒绝）；
-  **M2 / M4** 已修；battery **`与设计预期不符：0/20`**；Round 2 的 V1–V5、Round 3 的 V6–V8 均判红；
-  `pytest` **631 passed**。
-- 但判据 5 的 **(b) 判定只认「落点路径」、不认「落点内容」**，于是有一条**不需要任何符号链接**的洗白：
-  `git mv <一个与借来文件 ≥50% 相似的 base 文件> <证据路径>`（⇒ 该路径进 `rename_dests`）**再**把内容
-  覆盖成借来的字节 ⇒ **三份逐字节未改的审阅报告**全部过关，`check：通过 ✓`（**H5**，高危；
-  `contract.py:212-215` 的 `_is_reused`）。
-- 另有一条**不终止**：到达目录里放一个**自引用的目录符号链接**（`ln -s .. A/specs/l`）⇒
-  `check` **永不返回**（`seen` 每轮都变、`seen_paths` 去重失效；`contract.py:187-208`）——CI 直接挂死（**H6**，中危）。
+- **Round 1–4 的五条（H1 / H2 / H3+H4 / H5 / H6）全部确已修复** ✓：
+  battery **`与设计预期不符：0/20`**；Round 2 的 V1–V5、Round 3 的 V6–V8 **全部判红**；
+  Round 4 的 `h5_launder.py` 从 `EXIT=0` 变成 **`EXIT=1`**；`pytest` **633 passed**。
+- **仅剩 1 条必须修改项（中危，非安全绕过）**：H6 的修复用了「队列项总数 ≤ `budget = 1024`」这一**数量**上界，
+  它把**病态环路**与**合法的大到达目录**一起封顶 ⇒ **证据树 ≳1010 个文件的合法到达会被判成「不是到达」**，
+  报「没有任何 change 目录」，**并且把本 change 要消灭的幽灵 active id 症状原样带回来**
+  （实测 1015 文件的**纯归档 move** ⇒ `openspec/changes/big：change 目录不存在` ×9 项）。
+  详见 R5-③ 与「Round 5：必须修改项」。
 
 ---
 
@@ -916,3 +915,162 @@ $ echo $?
    建议顺手删掉，别留一个叫 `_removed_..._case` 的空函数。
 4. `design.md §7.5` 仍停在 Round 1 的四行（「均已修复」）。建议每轮复验后同步该表（至少补一行
    「Round 2/3 的 H2/H3/H4 已修；Round 4 的 H5/H6 待修」），否则库里的结论会与实际状态脱节。
+
+---
+
+# Round 5（复验）
+
+**范围**：复核作者声明的 H5/H6 修复 + 收敛判定。作者声明一律当**待验证断言**。
+
+**跑了**：
+
+1. `.venv/bin/pytest -q` → **633 passed**（45.3s；Round 4 是 631，多出的 2 条正是 `F17/F18`）。
+2. `/tmp/rev26/battery.py` → **`与设计预期不符：0/20`**。
+3. `/tmp/rev26/variants2.py`（V1–V5）→ **5/5 全红**；`/tmp/rev26/variants3.py`（V6–V8）→ **3/3 全红**。
+4. `/tmp/rev26/h5_launder.py` → **`EXIT = 1`**（Round 4 时是 `EXIT = 0`），报「没有任何 change 目录」。
+5. **新造变体**（`/tmp/rev26/variants5.py`）：W6 **预算边界扫描**（合法到达 + `specs/` 下 50/200/500/900/1000/1100 个新文件）、
+   W7 同 diff 内「先建后移」、W8 `moved_content` 语义核对；另加一条**大仓纯归档 move**（1015 文件）。
+6. `F17/F18` 的读码 + 回退变异分析。
+
+---
+
+## R5-① 作者声明的修复：逐条复核
+
+| # | 声明 | 复核 | 结论 |
+|---|---|---|---|
+| **H5** | (b) 收紧为「**内容未变的搬移**」：`moved_content` = `(new_path, 源侧 blob)` 二元组，源侧取 `merge-base` 树里 `old_path` 的 sha；落点 blob 必须**等于**源侧 blob | 读 `contract.py`（`moved_content` 的构造 + `_is_reused`）；`h5_launder.py` 复跑 | ✅ **成立**：`h5_launder.py` 现在 `EXIT=1`（Round 4 是 `EXIT=0`）；`_is_reused` 的 (b) 条件已是 `(normalize(path), sha) not in moved_content` —— 看的是**内容**，不再只看路径 |
+| **H6** | 展开循环加显式预算（`budget = 1024`，超限 ⇒ `return False` fail-closed） | 读 `contract.py` 的 `budget`；Round 4 的自引用构造复跑 | ⚠️ **「不终止」确已修好**（下面就是它的**边界**问题）：`specs/l -> ..` 现在**能返回**、且该到达被拒 ✓ |
+| **新增用例** | `F17`（洗白改名）/`F18`（自引用目录链接） | 读 `tests/test_archive_awareness.py` | ✅ 两条都在，且**真在验行为**（见 R5-④） |
+| **规范性正文** | `spec.md` 的 (b) 与「展开 SHALL 有硬上限」写进正文 | `grep -n "内容未变\\|硬上限" spec.md` → `:51-58` | ✅ 已进正文（(b) 的收紧与硬上限都有 `SHALL`） |
+
+## R5-② 复跑原始输出要点
+
+```
+$ .venv/bin/pytest -q                        →  633 passed in 45.25s
+$ python /tmp/rev26/battery.py               →  与设计预期不符：0/20
+$ python /tmp/rev26/variants2.py             →  V1..V5 全部 FAIL(1)
+$ python /tmp/rev26/variants3.py             →  V6/V7/V8 全部 FAIL(1)
+$ python /tmp/rev26/h5_launder.py            →  check：未通过 ✗（1 项）… 没有任何 change 目录   EXIT = 1
+```
+
+⇒ Round 1–4 的五条**全部关闭**，且**没有**误伤 6 条「必须绿」与天花板（battery 仍 0/20）。
+
+## R5-③ 新造的变体
+
+| # | 构造 | 期望 | 实测 |
+|---|---|---|---|
+| **W6** | 合法「出生即归档」+ `specs/` 下 50 / 200 / 500 / 900 / **1000** 个**新写**文件 | 绿 | **全部 `PASS(0)`** ✓（1000 个文件都没事） |
+| **W6′** | 同上，但 `specs/` 下 **1100** 个新文件 | 绿 | ❌ **`FAIL(1)`**：`0 个 change 目录`（到达**没被认出**） |
+| **W6″** | 合法**纯归档 move**（全 `R100`）一个含 **1015** 个文件、证据齐全的 active change | 绿、无幽灵 id | ❌ **`FAIL(1)`，9 项**，第 1 项就是 **`openspec/changes/big：change 目录不存在`**（幽灵 active id 回来了） |
+| **W7** | 同 diff 内「先建 `A/tmp/x.md` 再 `git mv` 到 `A/reviews/extra.md`」 | 到达被认出（源不在 base ⇒ 不该误判） | **到达被认出** ✓（`1 个 change 目录`；该构造另因我自己没给它配 manifest 而报了孤儿报告，与判据 5 无关） |
+| **W8** | 直调纯函数核对 `moved_content` 的语义 | — | 见下 |
+
+**预算边界扫描（实测）**
+
+```
+specs 文件数= 1005 ⇒ 退出码=0（到达被认出）
+specs 文件数= 1015 ⇒ 退出码=1
+specs 文件数= 1021/1022/1023/1024/1030 ⇒ 退出码=1
+```
+
+阈值落在 **1005–1015** 之间，与 `budget = 1024` 每次出队扣 1 相符
+（出队项 = 3 个 artifact 根 + glob 命中的 manifest + `specs` 展开的每个文件 + `reviews` 展开的每个文件）。
+
+**大仓纯归档 move 的完整症状（`/tmp/arr26/battery/bigmove`）**
+
+```
+$ .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+check：基线 main...HEAD，1025 个变更文件，1 个 change 目录
+  change：big                                   ← 只认出**源 id**，归档目录没被认出
+check：未通过 ✗（9 项）
+  1. openspec/changes/big：change 目录不存在（diff 里出现了它的文件，但目录不在工作树中）
+  2. openspec/changes/big：缺少 review manifest …
+  3. openspec/changes/big：无 stage=grill 的 manifest …
+  4-9. …/reviews/*.manifest.json：受保护路径被写入，但没有结构化解释事件（×6）
+```
+
+这 9 项正是 `design.md §1.3` 表格里**改动前**的形态 ii 症状（幽灵 id + 受保护写入），
+即：**大到达目录会让本 change 的核心修复整体失效**，而且文案指向完全错误的方向
+（作者会以为「忘了建 change 目录」）。
+
+## R5-④ `F17`/`F18` 真的在验行为吗？（回退变异分析）
+
+- **`F17_laundering_via_a_similar_file_rename_is_rejected`**（= Round 4 的 H5 形状）：`git mv templates/report.md
+  <到达>/reviews/grill-review.md` + 覆盖成借来的字节；断言 `EXIT_FAIL` + `"没有任何 change 目录"`。
+  **变异**：把 `moved_content` 退回「只存落点路径」（即回退 H5）⇒ 该路径是改名落点 ⇒ 判据 5 放行 ⇒
+  到达被授予 ⇒ 该构造**没有 manifest** ⇒ 报「缺少 review manifest」而**不是**「没有任何 change 目录」⇒ 断言失守。✅
+  （它的注释还把「必须相似但**不**逐字节相同」这条前提写清楚了 —— 逐字节相同会变 `R100`，那本来就属「内容原样搬过来」。
+  这条注释与我的实测一致。）
+- **`F18_self_referential_directory_link_terminates`**（= Round 4 的 H6 形状）：`specs/l -> ..`；
+  断言 `EXIT_FAIL` + `"没有任何 change 目录"`，并显式钉「**check 能返回**」。
+  **变异**：删掉 `budget` ⇒ 该用例**不是断言失守，而是整个用例（乃至整个 pytest 进程）挂死**
+  ⇒ 仍然会被发现，但**发现方式是挂起**而不是一条失败 —— 建议配 `pytest-timeout`（见「建议 2」）。
+  现状：能返回且判红 ✓。
+
+## R5-⑤ 试过但**没有**构成绕过的方向（如实记录）
+
+- **H5 的"残余"**：(b) 现在要求「落点 blob == 源侧 blob」，所以只有当 **base 里另有一份逐字节相同的副本、
+  且它不在 `archive/**` 下**（否则判据 3 直接拒）时，才能把那份副本 `git mv` 进来当豁免。
+  我把「源在 `A` 之内（同 diff 先建后移）」（W7）与「源在 `A` 之外」两条都试了：
+  前者源不在 `merge-base` 树里 ⇒ `moved_content` 根本不会为它记条目 ⇒ 内容只能靠 (a) 过关（实测到达被认出 ✓）；
+  后者若源在 `archive/**` 下则由判据 3 拦。**没找到可在一次 PR 内实现的绕过**（构造「base 里恰好有非归档副本」
+  需要 base 本身满足条件，属既有的「完全旁路」家族）。
+- **`moved_content` 的源侧取 `merge-base` 树 vs head 树**：实现用 `view.entry(base_rev, old_path)`
+  （`base_rev` = `merge_cmd` 算出的 merge-base，与 `base_blobs` 同源）⇒ 两边口径一致 ✓；我未构造出
+  「同一 old_path 在 merge-base 与 head 里内容不同、导致豁免判定翻转」的构造（试了「同 diff 内先改后移」，落到 (a)）。
+- **`R100` 的源在 `A` 之内**（同 diff 先建后移）：见 W7 —— 到达被正确认出，未构成绕过 ✓。
+- **`F17` 的前提（相似度）**：git 默认 `-M` 阈值 50%；我 Round 4 的构造用 95% 相似。
+  更低相似度下是否仍能被配对**未做扫参**（不影响「修好/没修好」的结论，但阈值本身未标定）。
+
+## Round 5：必须修改项
+
+**1）（中危，非安全绕过）展开预算按「队列项数量」封顶 ⇒ **证据树 ≳1010 个文件的合法到达被判成「不是到达」**，
+且症状是本 change 要消灭的幽灵 id**
+
+- 位置：`src/witnessloop/contract.py` 的 `budget = 1024` 与 `while queue: budget -= 1; if budget < 0: return False`
+  （Round 4 我引的是 `:187-208` 一带，本轮该行随修复下移，以 `budget` 字样定位）。
+- 违反对应：本 change 自己的**核心目标**（`design.md §1.3` / `spec.md:116-122` 的「出生即归档」Scenario、
+  `spec.md:124-131` 的「同一 move 内带内容改动」Scenario：退出码 0、**无**幽灵 active id）；
+  以及 `spec.md:57-58` 新写的硬上限条款——它要求「封顶」，但**没有**要求「把合法的**广度**也一起封顶」，
+  更没要求「超限时静默降级成『没有任何 change 目录』」。
+- 复现（两条，都可复算）：
+
+```
+# ① 合法出生即归档 + specs 下 1015 个新文件（全绿内容）
+$ python /tmp/rev26/variants5.py W6      # 见 R5-③；1005 个文件 PASS(0)，1015 个文件 FAIL(1)
+
+# ② 合法纯归档 move（全 R100）+ 1015 个文件
+$ cd /tmp/arr26/battery/bigmove && .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+check：基线 main...HEAD，1025 个变更文件，1 个 change 目录
+  change：big
+check：未通过 ✗（9 项）
+  1. openspec/changes/big：change 目录不存在          ← 幽灵 active id（本 change 就是要消灭它）
+```
+
+- 期望修法（三选一，我倾向前两条一起做）：
+  1. **把封顶对象从「广度」换成「病态深度」**：统计**逻辑路径深度**（或同一 `src` 被重复进入的次数）
+     并设限 —— 自引用链接的特征是 `seen` 不断变长/同一 `src` 被反复进入，而合法的大目录只是「宽」。
+  2. **超限时给一条点名 finding**（如「到达判定的展开超出上限 N ⇒ fail-closed」），**不要**静默降级成
+     「没有任何 change 目录」——后者会把作者引向完全错误的方向。
+  3. 若判定「>1000 文件的到达不在支持范围」，就把这条**明写进 `docs/gate.md §7`（能力边界）与 `spec.md`**，
+     并仍然做第 2 条（点名文案）。
+- ⚠️ 修完请补两条用例：① `specs/` 下 ~1500 个文件的**合法到达** ⇒ **绿**；② 自引用链接 ⇒ **红且能返回**（`F18` 已有）。
+
+## Round 5：未验证项
+
+1. 修复后需重跑 `battery.py` + `variants2/3/5.py` + `h5_launder.py` 全量。
+2. `budget` 的**确切**阈值我只扫到「1005 绿 / 1015 红」这一档（未逐点二分）；扣减口径（每次出队扣 1，
+   含被 `seen` 去重掉的重复项）是我**读码**得出的，未单独构造验证。
+3. `F17` 前提里的「相似度下限」未扫参（见 R5-⑤）。
+4. Round 1–4 的未验证项（浅克隆独立失败面、merge commit 形态、自定义 `review_manifest_glob` 与多段
+   `required_artifacts` 的端到端、接入方真实数字）**仍未验证**。
+5. 本 change 自己的门禁仍红（缺三份 manifest + 相邻 change 的 stale）——流程状态，本轮未复测。
+
+## Round 5：建议（不阻塞）
+
+1. `contract.py` 里 `prefix = seen if seen == src else seen`（Round 4 已提）**仍在**，两个分支同值 ⇒ 直接写 `seen`。
+2. `F18` 这类「靠不终止来暴露」的用例，建议给测试套件配 `pytest-timeout`（或在该用例内用线程/子进程加超时），
+   否则回退变异的表现是**挂起**而不是失败，在 CI 上就是一次超时排障。
+3. `design.md §7.5` 从 Round 1 起就没再更新（现在停在「H1–M4 均已修复」）。四轮复验的结论都只在
+   `reviews/building-review.md` 里；建议在收官时把这五轮的 H1–H6 与各自用例号补进 §7.5，
+   否则 change 的设计档与实际修复史对不上。

@@ -323,3 +323,30 @@ def test_archive_is_never_a_change_id():
     view = FakeTree(trees={"mb": {}, "head": head})
     arrivals = contract.archive_arrivals(changes, _policy(), view, "mb", "head")
     assert contract.changed_change_ids(changes, _policy(), arrivals, view, "head") == []
+
+
+def test_a_wide_arrival_with_more_than_a_thousand_files_is_still_an_arrival():
+    """**广度**不是病（实现审阅 Round 5 的订正）：上千个证据文件的合法到达必须照样被认出。
+
+    ⚠️ 用「队列项总数」封顶的实现会在这里判「不是到达」——对纯归档 move 那类 PR 还会把
+    幽灵 active id 的症状原样带回来。
+    """
+    head: dict = {}
+    _full_change(head, f"{ARCHIVE}/2026-10-15-wide", prefix="w-")
+    for i in range(1100):
+        head[f"{ARCHIVE}/2026-10-15-wide/specs/w{i}.md"] = ("100644", "blob", f"w{i}")
+    assert [a.name for a in _arrivals([], {}, head)] == ["2026-10-15-wide"]
+
+
+def test_a_pathologically_deep_link_chain_is_rejected():
+    """**深度**才是病：逻辑路径深到病态 ⇒ fail-closed（self-ref 目录链接的纯函数等价形态）。"""
+    head: dict = {}
+    _dir(head, f"{ARCHIVE}/2026-10-15-deep", files={
+        "proposal.md": "p", "design.md": "d", "tasks.md": "t",
+        "specs/s.md": "s", "reviews/r.md": "r",
+    })
+    deep = f"{ARCHIVE}/2026-10-15-deep/specs"
+    for i in range(40):                       # 40 层「目录链接指向父目录」的等价形态
+        deep = f"{deep}/l"
+        head[f"{deep}/s.md"] = ("100644", "blob", "s")
+    assert _arrivals([], {}, head) == []

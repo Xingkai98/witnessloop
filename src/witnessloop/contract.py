@@ -187,9 +187,13 @@ def _content_provenance_ok(
 
     seen_paths: set[str] = set()
     compared: set[str] = set()
-    # ⚠️ 硬上限（实现审阅的 H6）：`ln -s .. A/specs/l` 这类**自引用目录链接**会让 `seen` 每轮都变
-    # （`A/specs/l/l/l/...`）⇒ visited 集永远不命中 ⇒ 展开不终止（CI 挂死）。⇒ 超限 **fail-closed**。
-    budget = 1024
+    # ⚠️ 终止性（实现审阅的 H6 + Round 5 的订正）：`ln -s .. A/specs/l` 这类**自引用目录链接**会让
+    # `seen` 每轮都变（`A/specs/l/l/l/...`）⇒ visited 集永远不命中 ⇒ 展开不终止（CI 挂死）。
+    # ⇒ 按**逻辑路径深度**封顶（**病的特征**：正常证据树不会有几十层嵌套）；超深 ⇒ fail-closed。
+    # ⚠️ SHALL NOT 用「队列项总数」当上限：那会把**合法的宽目录**（上千个证据文件）一起封掉
+    # （Round 5 实测：≥1010 个文件的合法到达被误判成「不是到达」）。总量只作**安全网**，量级远高于任何真实 change。
+    max_depth = directory.count("/") + 32
+    budget = 100_000
     # 队列项 = (`seen`：门禁看见的逻辑路径, `src`：内容所在的路径)。
     # ⚠️ 两者必须分开：**逻辑路径**决定「这是不是一份 manifest / 报告」（glob）；**内容路径**决定字节。
     queue: list[tuple[str, str]] = [(path, path) for path in sorted(roots)]
@@ -200,6 +204,8 @@ def _content_provenance_ok(
         seen, src = queue.pop()
         if seen in seen_paths:
             continue
+        if seen.count("/") > max_depth:
+            return False                              # 逻辑路径深到病态 ⇒ fail-closed
         seen_paths.add(seen)
         final = follow(src)
         if final is None:
