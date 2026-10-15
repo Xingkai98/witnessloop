@@ -632,7 +632,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | # | 发现 | 处置 |
 |---|---|---|
 | **H1**（高危，端到端可复现） | 把到达目录的 `reviews/` / `specs` 做成**指向目录的符号链接**（`ln -s _r reviews`）⇒ 旧实现只按 tree/blob sha 比对、**没展开目录** ⇒ 目标里的现成报告被整份复用且 `check` 判绿 | 按 `spec.md` 明写的「目标是目录 ⇒ 其下全部文件逐个比对」重写 `Ev(A)` 的展开器：目录与符号链接都**展开到文件**逐项比对（`contract._content_provenance_ok`）；新增回归用例 `test_F9_symlinked_directory_in_the_arrival_is_rejected` |
-| **M2**（低，规格明文 `SHALL`） | `<A>` 下**非证据位置**的 gitlink 未 fail-closed | 比对前先扫 `<A>` 全域：任何 gitlink ⇒ 不授予；用例 `test_F10_gitlink_anywhere_under_the_arrival_is_disabled`；用例追加 |
+| **M2**（低，规格明文 `SHALL`） | `<A>` 下**非证据位置**的 gitlink 未 fail-closed | 比对前先扫 `<A>` 全域：任何 gitlink ⇒ 不授予；用例 `test_F10_gitlink_anywhere_under_the_arrival_is_rejected` |
 | **M3**（低） | 三条用例未落（基准同源 / fail-closed / 符号链接端到端）+ 死代码 `_targets()` | 新增 `test_F11_arrival_judgment_uses_merge_base_not_the_base_ref` 等；删死代码 |
 | **M4**（低） | `docs/gate.md` 缺「树不可读 ⇒ fail-closed」登记 | 已补进 §5.1.1 |
 
