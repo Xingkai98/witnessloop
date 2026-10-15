@@ -155,41 +155,60 @@ def _content_provenance_ok(
         if fnmatch.fnmatch(rel, manifest_glob):
             roots.add(row.path)
 
-    seen: set[str] = set()
+    def is_manifest(seen: str) -> bool:
+        """**看见的路径**（不是解析后的真身）按 glob 是不是一份 manifest。
+
+        ⚠️ 门禁是从**文件系统** glob `reviews/*.manifest.json` 的 ⇒ 一个**名叫** `x.manifest.json`
+        的符号链接同样被读到（读的是目标的内容）⇒ 这里的判据必须用**看见的路径**，
+        否则「manifest 做成符号链接、`report_path` 指到别处」会让借来的报告永不入比对集（实现审阅的 H2）。
+        """
+        return under_path(seen, directory) and fnmatch.fnmatch(seen[len(directory) + 1:], manifest_glob)
+
+    def queue_report(seen: str, content_src: str) -> None:
+        try:
+            doc = json.loads(view.read(rev, content_src) or "")
+        except ValueError:
+            return
+        if not isinstance(doc, dict):
+            return
+        resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
+        if resolved is not None and under_path(resolved, directory):
+            queue.append((resolved, resolved))
+
+    seen_paths: set[str] = set()
     compared: set[str] = set()
-    queue = sorted(roots)
+    queue: list[tuple[str, str]] = [(path, path) for path in sorted(roots)]
     while queue:
-        path = queue.pop()
-        if path in seen:
+        seen, content_src = queue.pop()
+        if seen in seen_paths:
             continue
-        seen.add(path)
-        entry = view.entry(rev, path)
+        seen_paths.add(seen)
+        entry = view.entry(rev, seen)
         if entry is None:
             continue
         if entry.is_gitlink:
             return False
         if entry.is_symlink:
-            target = _resolve_rel(posixpath.dirname(path), view.read(rev, path) or "")
+            target = _resolve_rel(posixpath.dirname(seen), view.read(rev, seen) or "")
             if target is None or view.entry(rev, target) is None:
                 return False                        # 逃出仓根 / 悬空 / 未被 git 跟踪
-            queue.append(target)
+            if is_manifest(seen):
+                queue_report(seen, target)          # 正文按**内容源**（= 目标）读
+            if under_path(target, directory):
+                queue.append((target, target))      # 目标并入 Ev(A)（按目标自身路径比对）
+            elif _is_reused(view.entry(rev, target).sha, seen, base_blobs, rename_dests):
+                # 逃出 A：按**目标**的 blob 比对；(b) 的判定对象仍是**链接自身**的路径。
+                return False
             continue
         if entry.type == "tree":
-            queue.extend(row.path for row in view.walk(rev, path))
+            queue.extend((row.path, row.path) for row in view.walk(rev, seen))
             continue
-        if path not in compared:
-            compared.add(path)
-            if _is_reused(entry.sha, path, base_blobs, rename_dests):
+        if seen not in compared:
+            compared.add(seen)
+            if _is_reused(entry.sha, seen, base_blobs, rename_dests):
                 return False
-        if under_path(path, directory) and fnmatch.fnmatch(path[len(directory) + 1:], manifest_glob):
-            try:
-                doc = json.loads(view.read(rev, path) or "")
-            except ValueError:
-                doc = None
-            if isinstance(doc, dict):
-                resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
-                if resolved is not None and under_path(resolved, directory):
-                    queue.append(resolved)
+        if is_manifest(seen):
+            queue_report(seen, content_src)
     return True
 
 

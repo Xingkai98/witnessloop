@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from witnessloop import constants as C
+import json
 import os
 import shutil
 
@@ -400,6 +401,31 @@ def test_alias_does_not_loosen_the_change_id_check(repo: Path, cli):
 
     assert code == C.EXIT_FAIL
     assert "manifest.change_id='other' 与目录不符" in err, err
+
+
+def test_manifest_build_prefers_the_active_directory_when_both_exist(repo: Path, cli):
+    """D4 的解析顺序（**回归护栏**，改前也绿）：同名 active 与 archive 并存 ⇒ 解析到 **active**。
+
+    ⚠️ 这条**不是**「先红」用例（改前 `resolve_change_dir` 不存在，行为恰好相同）——
+    它守的是「别把顺序改成 archive 优先」（那样会静默写到另一个目录）。
+    """
+    init_wired(repo, cli)
+    commit_content(repo, "dup")                       # active 的 dup（件齐）
+    (change_dir(repo, "dup") / "reviews" / "building-review.md").write_text("PASS\n", encoding="utf-8")
+    commit_all(repo, "active dup")
+    archived = repo / ARCHIVE_REL / "dup"             # 同名的一个**归档**目录（件齐，手工造）
+    (archived / "reviews").mkdir(parents=True)
+    for artifact in ("proposal.md", "design.md", "tasks.md"):
+        (archived / artifact).write_text("f\n", encoding="utf-8")
+    (archived / "specs").mkdir()
+    commit_all(repo, "同名 archive/dup")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    code, _, err = _build(repo, cli, "dup", "reviews/building-review.md", "building")
+
+    assert code == C.EXIT_PASS, err
+    assert (repo / CHANGES / "dup/reviews/building.manifest.json").is_file()
+    assert not (archived / "reviews/building.manifest.json").exists()
 
 
 def test_manifest_build_prefers_the_active_directory_when_both_exist(repo: Path, cli):
@@ -901,5 +927,86 @@ def test_F11_arrival_judgment_uses_merge_base_not_the_base_ref(repo: Path, cli):
 
     code, _, err = check(repo, cli)
 
-    # 只钉「基准取的是 merge-base」：换回 `base` 原树 ⇒ 该目录不是到达 ⇒ require_change_for 命中。
+    # 只钉「基准取的是 merge-base」：换回 `base` 原树 ⇒ 该目录不是到达 ⇒ require_change_for 命中
+    # （那时 err 里是「没有任何 change 目录」）。到达被认出时该 PR 应当**绿**。
     assert "没有任何 change 目录" not in err, err
+    assert code == C.EXIT_PASS, err
+
+
+def test_F12_symlinked_manifest_still_pulls_in_its_report(repo: Path, cli):
+    """判据 5（**实现审阅 Round 2 的 H2**）：`reviews/*.manifest.json` **本身是符号链接**时，
+    也要按「看见的路径」认出它、并把它 `report_path` 指向的文件拉进比对集——
+
+    ⚠️ 只按**解析后的真身路径**匹配 glob 的实现会漏：真身叫 `_m/x.manifest.json`、不匹配
+    `reviews/*.manifest.json` ⇒ 借来放在 `A/stolen/` 的报告**永不参与比对** ⇒ 判绿。
+    """
+    init_wired(repo, cli)
+    _seed_victim_in_base(repo)
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    target = repo / ARCHIVE_REL / "2026-10-15-linkmanifest"
+    (target / "specs" / "retry").mkdir(parents=True, exist_ok=True)
+    (target / "reviews").mkdir(parents=True, exist_ok=True)
+    (target / "_m").mkdir()
+    (target / "stolen").mkdir()
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n新的。\n"),
+        ("design.md", "# design\n\n新的。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 新的\n"),
+        ("specs/retry/spec.md", "# spec: 新的\n"),
+    ):
+        (target / rel).write_text(body, encoding="utf-8")
+    stolen = target / "stolen" / "grill-review.md"
+    shutil.copy(repo / ARCHIVE_REL / "2026-09-30-old" / "reviews" / "grill-review.md", stolen)
+    manifest = {"schema": "witnessloop/review-manifest@v1", "change_id": "2026-10-15-linkmanifest",
+                "stage": "grill", "reviewer_run_id": "r", "author_run_id": "a",
+                "base_sha": "0" * 40, "head_sha": "0" * 40, "tasks_hash": "x",
+                "spec_hash": "x", "diff_hash": "x", "report_hash": "x",
+                "report_path": "stolen/grill-review.md"}
+    (target / "_m" / "grill.manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    os.symlink("../_m/grill.manifest.json", target / "reviews" / "grill.manifest.json")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "manifest 走符号链接 + 报告借来的")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F13_unreadable_tree_is_fail_closed(repo: Path, cli, monkeypatch):
+    """树读不出来 ⇒ **fail-closed**（报 finding、非零退出），不静默按「已到达 / 未到达」放行。"""
+    from witnessloop import gitutil as gitutil_mod
+
+    init_wired(repo, cli)
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "只改代码")
+
+    def boom(self, rev, path):
+        raise gitutil_mod.GitError("模拟：对象缺失")
+
+    monkeypatch.setattr(gitutil_mod.GitTree, "walk", boom)
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "fail-closed" in err, err
+
+
+def test_F14_dangling_symlink_is_fail_closed(repo: Path, cli):
+    """悬空链接（目标不在树里）⇒ fail-closed（不授予）。"""
+    init_wired(repo, cli)
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    _born_archived_artifacts(repo, "2026-10-15-dangling")
+    os.symlink("nowhere.md", repo / ARCHIVE_REL / "2026-10-15-dangling" / "specs" / "dangling")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "到达目录里一个悬空链接")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
