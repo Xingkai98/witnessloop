@@ -12,6 +12,7 @@ v1 不做语义绑定——**防漂移，不防伪造**。
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,105 +57,377 @@ class ChangeTarget:
     label: str
     accepted_change_ids: frozenset[str]
     source_change_id: str | None = None
+    #: 该 target 是不是**本次到达的归档目录**（`archive/<name>/`）。出生即归档没有源 id，
+    #: 故**不能**用它推 `archived`（旧实现对「无源的到达」会漏标）。
+    archived: bool = False
 
-    @property
-    def archived(self) -> bool:
-        return self.source_change_id is not None
+
+#: 空 blob 的 sha1（git 的常量）——判据 5 里「内容为空者豁免」用。
+EMPTY_BLOB_SHA = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
 
 
-def is_archive_move(change, changes_root: str) -> bool:
-    """`git mv <changes_root>/<id>/… <changes_root>/archive/<id>/…` —— 归档动作。
+class TreeView:
+    """到达判定所需的**树读取口**（注入用：真实现是 `gitutil.GitTree`，测试用假树）。
 
-    只认**纯改名**（状态 ``R100``，没带内容改动）：带走改动的移动不算归档，
-    仍须解释事件。旧路径必须在 active 目录（不能本来就是 archive 里的东西），
-    新路径必须落在 ``<changes_root>/archive/**``。
+    四个方法对应 `design.md §2 D7` 的三种 `ls-tree` 写法 + 读正文。
     """
-    if change.status != "R100" or not change.old_path:
+
+    def entry(self, rev: str, path: str):  # -> TreeEntry | None
+        raise NotImplementedError
+
+    def children(self, rev: str, path: str):  # -> list[TreeEntry]
+        raise NotImplementedError
+
+    def walk(self, rev: str, path: str):  # -> list[TreeEntry]
+        raise NotImplementedError
+
+    def read(self, rev: str, path: str):  # -> str | None
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class Arrival:
+    """一个**本次到达**的归档 change 目录（`design.md §2 D1` 五条判据筛出来的）。
+
+    `records` 是**到达组** = 本次 diff 里 `new_path` 落在该目录之下的记录。
+    `source_ids` 是到达组里出现过的**全部**源 id（用户 2026-10-15 裁定删掉名识别守卫 ⇒ 不再按名字过滤）。
+    """
+
+    name: str
+    directory: str          # 仓根相对：`<changes_root>/archive/<name>`
+    records: tuple          # tuple[gitutil.Change, ...]
+    source_ids: frozenset[str]
+
+
+def under_path(path: str, prefix: str) -> bool:
+    """`path` 是否等于 `prefix` 或落在它之下（两者都先 normalize，**只按路径分量**比）。"""
+    p = pathutil.normalize(path).rstrip("/")
+    q = pathutil.normalize(prefix).rstrip("/")
+    return p == q or p.startswith(q + "/")
+
+
+def _resolve_rel(base_dir: str, target: str) -> str | None:
+    """把 `report_path` / 符号链接文本解析成**仓根相对**路径（posix 规范化 `..`）。
+
+    逃出仓根（绝对路径 / `..` 越过根）⇒ None。与 `resolve_report_path` 同一口径
+    （那里是 `Path.resolve()` + `is_within`；这里是字符串版，便于纯函数单测）。
+    """
+    text = target.strip()
+    if not text or text.startswith("/"):
+        return None
+    joined = posixpath.normpath(posixpath.join(base_dir, text))
+    if joined == ".." or joined.startswith("../"):
+        return None
+    return joined
+
+
+def _content_provenance_ok(
+    view: TreeView,
+    rev: str,
+    directory: str,
+    base_blobs: set[str],
+    moved_content: set,
+
+    manifest_glob: str,
+) -> bool:
+    """判据 5：`Ev(A)` 里**实际交付的每个文件**都必须是「新内容」或「本次搬过来的」。
+
+    `Ev(A)` 的**根**（`design.md §2 D1`，由数据推导、不按路径前缀硬编码）：
+    `HASHED_ARTIFACTS` 的 artifact 路径**整体** + `<A>/reviews` + 字面命中 `review_manifest_glob` 的 manifest；
+    再叠上**每份 manifest 的 `report_path` 目标**（递归到不动点）。
+
+    展开规则（**目录与符号链接都要展开到文件**——实现审阅实测过：只比 tree/blob sha 时，
+    把 `reviews/` 做成 `ln -s _r reviews` 就能把别处的现成报告整份复用且判绿）：
+
+    * **目录** ⇒ 其下全部文件逐个参与比对；
+    * **符号链接** ⇒ 按解析后的内容参与比对（目标可能是文件或目录，见上）；
+    * **未跟踪 / 悬空 / 解析到仓根之外**，或**`<A>` 下任何位置**出现 **gitlink** ⇒ fail-closed。
+    """
+    import fnmatch
+
+    # 0) `<A>` 下**任何位置**的 gitlink ⇒ fail-closed（不只是 `Ev(A)` 成员）。
+    if any(row.is_gitlink for row in view.walk(rev, directory)):
         return False
-    root = changes_root.rstrip("/")
-    new = pathutil.normalize(change.path)
-    old = pathutil.normalize(change.old_path)
-    archive = f"{root}/{C.ARCHIVE_DIR_NAME}"
+
+    roots = {f"{directory}/{artifact}" for _field, artifact in C.HASHED_ARTIFACTS}
+    roots.add(f"{directory}/reviews")
+    for row in view.walk(rev, directory):
+        rel = row.path[len(directory) + 1:]
+        if fnmatch.fnmatch(rel, manifest_glob):
+            roots.add(row.path)
+
+    def is_manifest(seen: str) -> bool:
+        """**门禁看见的路径**（不是解析后的真身）按 glob 是不是一份 manifest。
+
+        ⚠️ 门禁是从**文件系统** glob `reviews/*.manifest.json` 的：一个**名叫** `x.manifest.json`
+        的符号链接同样会被读到（读的是目标内容）⇒ 这里必须用「看见的路径」判，否则
+        「目录链接 + manifest 在里面 + `report_path` 指向别处」会让借来的报告永不入比对集
+        （实现审阅的 H2/H3：作者第一版按**真身路径**判、第二版在**展开目录链接时把逻辑路径覆写掉**，
+        两种写法都判绿）。
+        """
+        return under_path(seen, directory) and fnmatch.fnmatch(seen[len(directory) + 1:], manifest_glob)
+
+    def follow(path: str) -> str | None:
+        """跟随符号链接链到不动点；悬空 / 逃出仓根 / 过深 ⇒ None。
+
+        返回**内容真正所在**的树路径。链上任何一跳是 gitlink 也在这里被挡下（返回 None）。
+        """
+        current = path
+        for _ in range(32):
+            entry = view.entry(rev, current)
+            if entry is None or entry.is_gitlink:
+                return None
+            if not entry.is_symlink:
+                return current
+            target = _resolve_rel(posixpath.dirname(current), view.read(rev, current) or "")
+            if target is None or view.entry(rev, target) is None:
+                return None
+            current = target
+        return None
+
+    seen_paths: set[str] = set()
+    compared: set[str] = set()
+    # ⚠️ 终止性（实现审阅的 H6 + Round 5 的订正）：`ln -s .. A/specs/l` 这类**自引用目录链接**会让
+    # `seen` 每轮都变（`A/specs/l/l/l/...`）⇒ visited 集永远不命中 ⇒ 展开不终止（CI 挂死）。
+    # ⇒ 按**逻辑路径深度**封顶（**病的特征**：正常证据树不会有几十层嵌套）；超深 ⇒ fail-closed。
+    # ⚠️ SHALL NOT 用「队列项总数」当上限：那会把**合法的宽目录**（上千个证据文件）一起封掉
+    # （Round 5 实测：≥1010 个文件的合法到达被误判成「不是到达」）。总量只作**安全网**，量级远高于任何真实 change。
+    max_depth = directory.count("/") + 32
+    budget = 100_000
+    # 队列项 = (`seen`：门禁看见的逻辑路径, `src`：内容所在的路径)。
+    # ⚠️ 两者必须分开：**逻辑路径**决定「这是不是一份 manifest / 报告」（glob）；**内容路径**决定字节。
+    queue: list[tuple[str, str]] = [(path, path) for path in sorted(roots)]
+    while queue:
+        budget -= 1
+        if budget < 0:
+            return False
+        seen, src = queue.pop()
+        if seen in seen_paths:
+            continue
+        if seen.count("/") > max_depth:
+            return False                              # 逻辑路径深到病态 ⇒ fail-closed
+        seen_paths.add(seen)
+        final = follow(src)
+        if final is None:
+            return False                              # 悬空 / gitlink / 逃出仓根
+        entry = view.entry(rev, final)
+        if entry is None:
+            continue
+        if entry.type == "tree":
+            # 目录（可能是链接过来的）：其下文件**保留逻辑前缀**入队 —— H3 的修复点。
+            for row in view.walk(rev, final):
+                rel = row.path[len(final) + 1:]
+                queue.append((f"{seen}/{rel}", row.path))
+            continue
+        if seen not in compared:
+            compared.add(seen)
+            # (b) 的判定对象：目标**在 A 之内** ⇒ 目标自己的路径（合法 move 的目标是改名落点）；
+            # 逃出 A ⇒ **看见的路径**（R7/spec：等价于「把内容 `cp` 到该路径」）。
+            judge_path = final if under_path(final, directory) else seen
+            if _is_reused(entry.sha, judge_path, base_blobs, moved_content):
+                return False
+        if is_manifest(seen):
+            try:
+                doc = json.loads(view.read(rev, final) or "")
+            except ValueError:
+                doc = None
+            if isinstance(doc, dict):
+                resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
+                if resolved is not None and under_path(resolved, directory):
+                    queue.append((resolved, resolved))
+    return True
+
+
+def _is_reused(sha: str, path: str, base_blobs: set[str], moved_content: set) -> bool:
+    """这份内容是不是「基准树里已有、且**不是本次原样搬过来的**」⇒ 白捡。
+
+    (b) 用 `(路径, 源侧 blob)` 二元组判：同一条改名记录必须**内容未变**才算「搬过来的」（H5）。
+    """
     return (
-        pathutil.matches(new, f"{archive}/**")
-        and pathutil.matches(old, f"{root}/*/**")
-        and not pathutil.matches(old, f"{archive}/**")
+        sha != EMPTY_BLOB_SHA     # 空文件豁免
+        and sha in base_blobs
+        and (pathutil.normalize(path), sha) not in moved_content
     )
 
 
-def changed_change_ids(changes, changes_root: str) -> list[str]:
+def archive_arrivals(
+    changes,
+    policy: Policy,
+    view: TreeView,
+    base_rev: str,
+    head_rev: str,
+) -> list[Arrival]:
+    """本次 diff 里**到达**的归档 change 目录（`design.md §2 D1`，判据 1 / 2 / 3 / 5）。
+
+    ⚠️ **基准 revision 必须与 `changed_files` 同源**：传进来的 `base_rev` 应当是
+    `git merge-base(base, head)` 的 sha（`checkcmd` 负责算），不是 `base` ref 自身的树。
+    """
+    root = policy.changes_root.rstrip("/")
+    archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    required = tuple(a for a in policy.required_artifacts if a.strip() and a.strip() != ".")
+    base_blobs = {row.sha for row in view.walk(base_rev, root)}
+    # **(b) 的判定用「内容未变的搬移」**：`(new_path, 源侧 blob)` 二元组。
+    # ⚠️ 只看「落点**路径**是不是改名记录」会被洗白（实现审阅的 H5）：把一条与借来文件 ≥50% 相似的
+    # base 文件 `git mv` 到证据路径、再把内容覆盖成借来的字节 ⇒ 路径是改名落点、而字节是别人的。
+    # 要求「落点的 blob **等于源侧的 blob**」（= 内容确实搬过来了）才免；`R<100` 的字节已变，
+    # 由 (a)（新内容）兜——形态 ii 重建的 manifest 走的正是 (a)。
+    moved_content: set[tuple[str, str]] = set()
+    for change in changes:
+        if change.status[:1] not in ("R", "C") or not change.old_path:
+            continue
+        old = view.entry(base_rev, pathutil.normalize(change.old_path))
+        if old is not None:
+            moved_content.add((pathutil.normalize(change.path), old.sha))
+
+    arrivals: list[Arrival] = []
+    for child in view.children(head_rev, archive_root):
+        if child.type != "tree":
+            continue                                   # 候选只取 tree（`archive/notes.md` 不算）
+        name = child.path[len(archive_root) + 1:]
+        if not name or "/" in name:
+            continue
+        directory = child.path
+        # 判据 1：基准树里该路径**完全没有 entry**（blob 也算「有」）。
+        if view.entry(base_rev, directory) is not None:
+            continue
+        # 判据 2：head 里是 tree（已知）+ 含**全部**必需件（与契约门同一判定语义：路径存在）。
+        present = {row.path for row in view.walk(head_rev, directory)}
+        if not all(
+            any(p == f"{directory}/{a}" or p.startswith(f"{directory}/{a}/") for p in present)
+            for a in required
+        ):
+            continue
+        group = tuple(
+            change for change in changes if under_path(pathutil.normalize(change.path), directory)
+        )
+        # 判据 3：不是从另一个归档目录改名而来。
+        if any(
+            change.old_path and under_path(pathutil.normalize(change.old_path), archive_root)
+            for change in group
+        ):
+            continue
+        # 判据 5：内容来源（`Ev(A)` 逐项：新内容 or 本次搬来的）。
+        if not _content_provenance_ok(
+            view, head_rev, directory, base_blobs, moved_content, policy.review_manifest_glob
+        ):
+            continue
+        sources = {
+            pathutil.normalize(change.old_path)[len(root) + 1:].split("/", 1)[0]
+            for change in group
+            if change.old_path
+            and under_path(pathutil.normalize(change.old_path), root)
+            and not under_path(pathutil.normalize(change.old_path), archive_root)
+        }
+        arrivals.append(
+            Arrival(name=name, directory=directory, records=group, source_ids=frozenset(sources))
+        )
+    return arrivals
+
+
+def near_miss_archives(policy: Policy, view: TreeView, base_rev: str, head_rev: str) -> list[str]:
+    """「像归档目录、但缺必需件」的候选名（**只为诊断文案**，不参与任何判定）。
+
+    R3 的 E-2：判据 2 收紧后，件不齐的到达目录**不是** target ⇒ 只报「没有任何 change 目录」，
+    而**不**点名缺的那一件——对「已经建了归档目录、只是少写一件」的接入方是误导性文案。
+    """
+    root = policy.changes_root.rstrip("/")
+    archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    required = tuple(a for a in policy.required_artifacts if a.strip() and a.strip() != ".")
+    out: list[str] = []
+    for child in view.children(head_rev, archive_root):
+        if child.type != "tree":
+            continue
+        name = child.path[len(archive_root) + 1:]
+        if not name or "/" in name or view.entry(base_rev, child.path) is not None:
+            continue
+        present = {row.path for row in view.walk(head_rev, child.path)}
+        missing = [
+            a for a in required
+            if not any(
+                p == f"{child.path}/{a}" or p.startswith(f"{child.path}/{a}/") for p in present
+            )
+        ]
+        if missing:
+            out.append(f"{name}（缺 {'、'.join(missing)}）")
+    return sorted(out)
+
+
+def changed_change_ids(
+    changes, policy: Policy, arrivals, view: TreeView, head_rev: str
+) -> list[str]:
     """从 diff 里挑出被触碰的 **active** change id。
 
-    归档 move 的两端都要排除：目标在 ``archive/`` 下（否则 ``archive`` 会被当成
-    一个 change id，然后报「缺少必需件 proposal.md」），来源是那个已经搬走的
-    active 目录（它的内容已随归档离开 active，不该再按 active 契约校验）。
+    排除两类路径：
 
-    ⚠️ **归档授予不在这里**：归档 move 带走的那个 change 由 ``archive_grant`` /
-    ``change_targets`` 放回集合（id = 归档目录名）——本函数只认 active 路径首段。
+    * 落在 `archive/` 下的（否则 `archive` 会被当成一个 change id）；
+    * 属于**到达组**、且其源 change 目录在 head 树里**已不存在**的路径——`R`/`C` 记录的
+      `old_path`，**以及 `D` 侧记录的 `path`**（`gitutil._parse_name_status` 对 `D` 记录把被删路径
+      放在 `path`、`old_path` 留空 ⇒ 只认 `old_path` 会让「move + 整体重写」留下幽灵 id）。
+
+    ⚠️ 源目录**仍在 head 里**（只搬走了部分文件）⇒ **不排除**：那个 change 照旧按 active 契约校验
+    （「源 change 不得静默逃检」）。⚠️ 本条是这条路上**唯一**的保护——原来的名识别守卫已由
+    用户 2026-10-15 裁定删除。
     """
-    root = changes_root.rstrip("/")
+    root = policy.changes_root.rstrip("/")
     prefix = root + "/"
-    archived_sources = {
-        pathutil.normalize(change.old_path)
-        for change in changes
-        if change.old_path and is_archive_move(change, changes_root)
-    }
+    archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    # 「已搬走」的源 id = 到达组里出现过的源，且它的目录在 head 树里**已不存在**。
+    # ⚠️ 判定要同时看 `R`/`C` 记录的 `old_path` 与 **`D` 侧记录的 `path`**：
+    # `gitutil._parse_name_status` 对 `D` 记录把被删路径放在 `path`（`old_path` 留空），
+    # 「move + 被搬文件整体重写」正是这种形态（R3 的 A4）。
+    moved_sources: set[str] = set()
+    for arrival in arrivals:
+        for change in arrival.records:
+            candidates = [change.old_path]
+            if not change.old_path:
+                candidates.append(change.path)
+            for raw in candidates:
+                if not raw:
+                    continue
+                normalized = pathutil.normalize(raw)
+                if not normalized.startswith(prefix) or under_path(normalized, archive_root):
+                    continue
+                src = normalized[len(prefix):].split("/", 1)[0]
+                if view.entry(head_rev, f"{root}/{src}") is None:
+                    moved_sources.add(src)
+    excluded: set[str] = set()
+    for change in changes:
+        for path in (change.old_path, change.path):
+            if not path:
+                continue
+            normalized = pathutil.normalize(path)
+            if under_path(normalized, archive_root) or not under_path(normalized, root):
+                continue
+            if normalized[len(prefix):].split("/", 1)[0] in moved_sources:
+                excluded.add(normalized)
     ids: set[str] = set()
     for change in changes:
         for path in (change.path, change.old_path):
             if not path:
                 continue
             normalized = pathutil.normalize(path)
-            if normalized in archived_sources:
+            if normalized in excluded:
                 continue
-            if pathutil.matches(normalized, f"{root}/{C.ARCHIVE_DIR_NAME}/**"):
+            if under_path(normalized, archive_root):
                 continue
             if normalized.startswith(prefix):
-                head = normalized[len(prefix) :].split("/", 1)[0]
+                head = normalized[len(prefix):].split("/", 1)[0]
                 if head:
                     ids.add(head)
     return sorted(ids)
 
 
-def archive_grant(change, changes_root: str) -> tuple[str, str] | None:
-    """这条 diff 记录是不是一次**授予资格**的归档 move？是 ⇒ `(源 id, 归档目录名)`。
-
-    两道闸：
-
-    1. `is_archive_move`（R100 纯改名 + 源在 active + 落点在 `archive/`）；
-    2. **目标目录名认得源 id**：`<name> == <源id>` 或 `<name>.endswith("-" + <源id>)`
-       （纯字符串比对，**不解析日期**）。
-
-    第 2 道挡的是「把 active change 的**单个文件**改入一个**已存在的**归档目录」：
-    那种 move 也是 R100，会把资格**凭空授予目标目录**，而源 change 因 `archived_sources`
-    （见 `changed_change_ids`）被排除、**静默逃检**。名不认得 ⇒ **不授予**（回落到
-    「什么都不建」的行为 ⇒ `_require_change` 照样命中，fail-closed）。
-    """
-    if not is_archive_move(change, changes_root):
-        return None
-    root = changes_root.rstrip("/")
-    new = pathutil.normalize(change.path)
-    old = pathutil.normalize(change.old_path or "")
-    prefix = f"{root}/{C.ARCHIVE_DIR_NAME}/"
-    if not new.startswith(prefix) or not old.startswith(root + "/"):
-        return None  # pragma: no cover - is_archive_move 已保证；双保险
-    name = new[len(prefix):].split("/", 1)[0]
-    source = old[len(root) + 1:].split("/", 1)[0]
-    if not name or not source:
-        return None
-    if name == source or name.endswith("-" + source):
-        return source, name
-    return None
-
-
-def change_targets(root: Path, policy: Policy, changes) -> list[ChangeTarget]:
-    """本次 diff 触及的 change（active ∪ 归档授予），**以目录为键**。
+def change_targets(
+    root: Path, policy: Policy, changes, view: TreeView, base_rev: str, head_rev: str
+) -> list[ChangeTarget]:
+    """本次 diff 触及的 change（active ∪ 到达的归档目录），**以目录为键**。
 
     ⚠️ 返回**列表**、不是 `dict[change_id] -> directory`：同一个单段 id 可以同时来自
-    active 目录与归档授予（构造：同 PR 内同名 move + 新增 active 子文件）——两份都要校验；
+    active 目录与归档到达（构造：同 PR 内 move + 新增 active 子文件）——两份都要校验；
     写成 dict 会**静默丢掉一份**（丢掉哪份取决于实现），而那条 diff 是攻击者可构造的。
     """
     root_rel = policy.changes_root.rstrip("/")
+    arrivals = archive_arrivals(changes, policy, view, base_rev, head_rev)
     targets = [
         ChangeTarget(
             change_id=change_id,
@@ -162,28 +435,21 @@ def change_targets(root: Path, policy: Policy, changes) -> list[ChangeTarget]:
             label=f"{root_rel}/{change_id}",
             accepted_change_ids=frozenset({change_id}),
         )
-        for change_id in changed_change_ids(changes, policy.changes_root)
+        for change_id in changed_change_ids(changes, policy, arrivals, view, head_rev)
     ]
-    # name → **所有**认得它的源 id。⚠️ 收集成集合、不是单个源：同一个归档目录可以被多条 move
-    # 指向（两个源的名字互为后缀，如 `z` 与 `foo-z` 都满足 `-<源id>`），只留一个会让别名随
-    # **diff 顺序**而变（谁先出现谁生效）——那是不可复现的口径，也与「不许静默丢一份」相悖。
-    grants: dict[str, set[str]] = {}
-    for change in changes:
-        grant = archive_grant(change, policy.changes_root)
-        if grant is not None:
-            source, name = grant
-            grants.setdefault(name, set()).add(source)
-    for name in sorted(grants):
-        sources = grants[name]
+    # 别名集合 = {归档目录名} ∪ 到达组里出现过的**全部**源 id（不再按名字过滤：名识别守卫已由
+    # 用户 2026-10-15 裁定删除）。取集合而非单个源 ⇒ 与 diff 顺序无关、也不丢源。
+    for arrival in arrivals:
         targets.append(
             ChangeTarget(
-                change_id=name,
-                directory=archived_change_dir(root, policy, name),
-                label=f"{policy.archive_root}/{name}",
-                # D8 别名：归档**前**产出的 manifest 带的是源 id，归档**后**产出的是目录名。
-                accepted_change_ids=frozenset({name}) | sources,
-                # 诊断用：取**最短**的源（= 该归档目录「本来」是哪个 change）。
-                source_change_id=min(sorted(sources), key=len),
+                change_id=arrival.name,
+                directory=archived_change_dir(root, policy, arrival.name),
+                label=f"{policy.archive_root}/{arrival.name}",
+                accepted_change_ids=frozenset({arrival.name}) | arrival.source_ids,
+                source_change_id=(
+                    min(sorted(arrival.source_ids), key=len) if arrival.source_ids else None
+                ),
+                archived=True,
             )
         )
     return targets
