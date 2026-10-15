@@ -192,7 +192,10 @@ def test_implement_then_archive_in_one_pr_passes(repo: Path, cli):
 
 
 def test_report_still_says_zero_change_dirs_for_a_docs_only_diff(repo: Path, cli):
-    """R6 的回归护栏：`0 个 change 目录` 这个子串不许消失（既有测试按它断言）。"""
+    """R6 / I8 的回归护栏：`0 个 change 目录` 这个子串不许消失（既有测试按它断言）。
+
+    它是 R2-2 那条计数钉子（撞车时报 2）的**另一半**：计数口径改了，但这个子串必须原样留着。
+    """
     init_wired(repo, cli)
     commit_all(repo, "接入 witnessloop")
     git(repo, "checkout", "-q", "-b", "feature")
@@ -463,6 +466,59 @@ def test_manifest_build_prefers_the_active_directory_when_both_exist(repo: Path,
     assert code == C.EXIT_PASS, err
     assert (repo / CHANGES / "dup/reviews/building.manifest.json").is_file()
     assert not (archived / "reviews/building.manifest.json").exists()
+
+
+def test_alias_is_the_union_of_all_sources_regardless_of_diff_order():
+    """I6 的钉子（审阅 R2-1）：同一归档目录被**两条** move 指向 ⇒ 别名取**两源的并集**、与 diff 顺序无关。
+
+    ⚠️ 改前是「取 diff 里**先出现**的那个源」⇒ **换个顺序就换一套别名**（审阅实测过 0 项/3 项翻转）。
+    本用例把**两种顺序各跑一次**并要求结果相同 ⇒ 「退回单个源」的变异必被杀死。
+    """
+    target = f"{ARCHIVE_REL}/2026-foo-z"
+    # z 与 foo-z 都满足「`-<源id>` 后缀」；unrelated 的名不认得 ⇒ 不该进别名集合
+    records = [
+        _move(f"{target}/notes.md", f"{CHANGES}/z/notes.md"),
+        _move(f"{target}/keep.md", f"{CHANGES}/foo-z/keep.md"),
+        _move(f"{target}/other.md", f"{CHANGES}/unrelated/other.md"),
+    ]
+    expected = frozenset({"2026-foo-z", "z", "foo-z"})
+
+    forward = _targets(Path("/repo"), records)
+    backward = _targets(Path("/repo"), list(reversed(records)))
+
+    assert len(forward) == 1 and len(backward) == 1
+    assert forward[0].accepted_change_ids == expected
+    assert backward[0].accepted_change_ids == expected  # ⚠️ 顺序无关（改前这里会漂）
+
+
+def test_the_summary_counts_directories_not_deduped_ids_on_a_tie(repo: Path, cli):
+    """I8 的钉子（审阅 R2-2）：同名单段 id 撞两个目录时，摘要按 **target（目录）数**算 ⇒ **报 2**。
+
+    构造（审阅给的配方）：base 上 active `x`；feature 上「新增 `changes/x/extra.md`」
+    **且**「`git mv changes/x/notes.md → archive/x/notes.md`」（`name == 源 id` ⇒ 授予）⇒
+    同一个 id `x` 同时来自 active 目录与归档。
+    ⚠️ 改前按**去重 id** 算 ⇒ 报 1，把两个目录说成一个（findings 一条不少，纯诊断口径）。
+    `0 个 change 目录` 那个子串由 `test_report_still_says_zero_change_dirs_for_a_docs_only_diff` 守着（仍绿）。
+    """
+    init_wired(repo, cli)
+    commit_content(repo, "x")                     # base：active x（件齐）
+    (change_dir(repo, "x") / "notes.md").write_text("notes\n", encoding="utf-8")
+    commit_all(repo, "base：x 带 notes.md")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    (repo / ARCHIVE_REL / "x").mkdir(parents=True, exist_ok=True)  # git mv 需要目标父目录在盘上
+    git(repo, "mv", f"{CHANGES}/x/notes.md", f"{ARCHIVE_REL}/x/notes.md")
+    (change_dir(repo, "x") / "extra.md").write_text("extra\n", encoding="utf-8")
+    commit_all(repo, "同名 move + 新增 active 子文件")
+
+    code, out, err = check(repo, cli)
+
+    assert "2 个 change 目录" in out, out      # ⚠️ 报 2（去重 id 的实现会报 1）
+    assert "x, x（归档）" in out, out          # 两个 target 都要列出来
+    assert code == C.EXIT_FAIL
+    # 两侧**各出** finding（撞车时两份都校验，与 D7 一致）
+    assert f"{CHANGES}/x：" in err, err
+    assert f"{ARCHIVE_REL}/x：" in err, err
 
 
 # --------------------------------------------------------------------------- E. 否定面

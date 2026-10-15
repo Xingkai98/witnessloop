@@ -257,3 +257,27 @@ grill（独立零记忆审阅者）在隔离副本里重跑了全部对照；**�
 - **I7（文档面已补齐）**：`docs/gate.md §4` 补上「落点从 1 个（`archive/` 根）扩成一族
   （`archive/<任意名>/`），且同款手法改前就能用」这条校准。
 - 本轮新增 **3 条**测试（总数 20 → **23**）；实现前的红基线 10 → **13**（新增的 3 条里有 2 条先红 + N1 的文案断言）。
+
+## 实测记录（building-review **R2** 回写期，2026-10-15）
+
+R2 判 **PASS**（`reviews/building-review.md` 的 `## R2 复审` 节）；它用**变异回退**指出：上一轮的两条
+**行为变更**（I6 并集、I8 计数）**没有测试钉子**。本轮只补钉子、**未改任何生产代码**：
+
+- **R2-1（I6 并集）**：新增 `test_alias_is_the_union_of_all_sources_regardless_of_diff_order`——
+  两条 move 指向同一归档目录（`z` 与 `foo-z` 都满足 `-<源id>` 后缀）+ 一条名字不认得的；
+  **两种 diff 顺序各跑一次**、断言 `accepted_change_ids == {目录名, z, foo-z}` **两次相同**。
+  变异复验：把 `grants` 退回「先出现的源赢」⇒ **1 failed**（`Extra items in the right set: 'foo-z'`）；还原 ⇒ 2 passed。
+- **R2-2（I8 计数）**：新增 `test_the_summary_counts_directories_not_deduped_ids_on_a_tie`——
+  撞车仓（active `x` + `git mv x/notes.md → archive/x/notes.md` + 新增 `x/extra.md`）⇒
+  断言摘要行含 **`2 个 change 目录`**、两行都列出（`x, x（归档）`）、且**两侧各出 finding**。
+  变异复验：把 `len(targets)` 换回 `len({去重 id})` ⇒ **1 failed**（`assert '2 个 change 目录' in '…，1 个 change 目录'`）；还原 ⇒ 2 passed。
+  ⚠️ `0 个 change 目录` 子串的另一半由 `test_report_still_says_zero_change_dirs_for_a_docs_only_diff` 守着（仍绿）。
+- 本轮新增 **2 条**测试（23 → **25**）；全量 `uv run pytest -q` = **521 passed**。
+
+### 后续（非阻塞观察，R2 提出，本 change 不动）
+
+- **R2-3（nit）**：`checkcmd.py` 新 finding 文案里用了 Markdown 粗体 `**归档 move 也算「挂了 change」**`——
+  终端 / CI 日志里会显示**字面星号**，与同文件其它 finding 的纯文本风格不齐。**登记为 nit**，不改（要改就统一全库文案风格）。
+- **R2-4（nit）**：`ChangeTarget.source_change_id` 的**取值**无人消费（全库只用 `is not None` 判 `archived`）——
+  `min(sorted(sources), key=len)` 那句注释描述的取舍**不可观测**。**登记为 nit**：要么日后给它一个消费者
+  （例如诊断里点名「这个归档目录本来是哪个 change」），要么把它降成 `bool`。**本 change 不动**。
