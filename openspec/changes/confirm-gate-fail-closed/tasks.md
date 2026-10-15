@@ -29,7 +29,7 @@
 
 ## A. 候选集合（D2/D3/D6）——判据的地基
 
-- [ ] A1 单测（**先红**）：候选判定函数对 `design.md §D2` 那张表的**每一行**给出期望结果
+- [x] A1 单测（**先红**）：候选判定函数对 `design.md §D2` 那张表的**每一行**给出期望结果
       （逐字 ✅ / `Open Questions（收敛后）` ✅ / `Open Questions（**只有这一条必须用户拍板**）` ✅ /
       `Design-Level Open Questions（已并入 design 的 Q1–Q6）` ✅ / `Remaining Open Questions` ✅ /
       `逐条对抗（针对上游 … / 风险 / Open Questions）` ❌ / `Open Questions 汇总` ❌）
@@ -37,18 +37,18 @@
       `Open Questions（A）（B）`（连续尾括号）✅ / `Open questions`（大小写）❌（**且无附加提示**）/
       **M-E 两条**：`Open Questions（）`（**空括号**）✅ / `Open Questions（a（b）c）`（**嵌套**）❌。
       另两条已知副作用各一行：`Open  Questions`（双空格）❌ 无提示 / `Open Questions：` ❌ **有**提示
-- [ ] A2 实现：模块级正则 + 纯函数（如 `_open_question_sections(sections) -> list[str]`）；
+- [x] A2 实现：模块级正则 + 纯函数（如 `_open_question_sections(sections) -> list[str]`）；
       ⚠️ **排序后**返回（候选来自 `dict` 的 key ⇒ 不排序会依赖插入序，F7 钉住）
-- [ ] A3 单测（**先红·R2 的钉子**）：`## Code-Resolved Questions` **不是**候选
+- [x] A3 单测（**先红·R2 的钉子**）：`## Code-Resolved Questions` **不是**候选
       ——即使它的正文里满是 `Q1`–`Q4`（本仓 6 份真实报告就是这形态）
-- [ ] A4 单测（**回归护栏**）：`_sections()` 的 `setdefault` 合并语义**未动**——
+- [x] A4 单测（**回归护栏**）：`_sections()` 的 `setdefault` 合并语义**未动**——
       两个 `## Open Questions` ⇒ 同一 key、正文首尾相接；两个 `## User Confirmation` ⇒ 同上
       （⚠️ 这两条**实现前也绿**：它们钉的是「别顺手改掉既有语义」，变异证据见 §5.4）
-- [ ] A5 实现（**D8 · M2**）：`stage_manifest_findings_in_change` 的 `:210` 附近——
+- [x] A5 实现（**D8 · M2**）：`stage_manifest_findings_in_change` 的 `:210` 附近——
       `verify_body=True` 时对 `matching` 里**每一份** manifest 各跑一次正文判据
       （`label` = `f"{label}/{rel_report}"`；`verify_body=False` 分支**不动**；
       「报告读不出」那条早退**逐份**适用、互不影响）
-- [ ] A6 实现（**D9 · R2 的 M-D 第 5 类**）：`_sections()`（`:52-64`）增加**围栏状态机**——
+- [x] A6 实现（**D9 · R2 的 M-D 第 5 类**）：`_sections()`（`:52-64`）增加**围栏状态机**——
       围栏内的行**不参与**小节切分。口径**逐字**照 spec 的「`_sections()` SHALL 跳过代码围栏」：
       开始 = 去空白后以 **≥3 个**连续 `` ` `` 或 `~` 开头；结束 = **同字符**、**不短于**开始标记、
       **其后只剩空白**；**未闭合** ⇒ 到文件末尾全算围栏内。
@@ -56,63 +56,63 @@
 
 ## B. `grill_evidence_findings` 的正文判据（D1/D4）
 
-- [ ] B1 单测（**先红·F3**）：**完全没有** Open Questions 类标题的报告 ⇒ 1 条
+- [x] B1 单测（**先红·F3**）：**完全没有** Open Questions 类标题的报告 ⇒ 1 条
       `缺少 \`## Open Questions\` 小节`（与「缺 `## User Confirmation`」**同形**），且**不含**近义提示
-- [ ] B2 单测（**先红·F1/否定 X1**）：只有 `## 悬而未决的疑问`（不含 `Open Question` 字样）+ 无确认 ⇒ **红**
+- [x] B2 单测（**先红·F1/否定 X1**）：只有 `## 悬而未决的疑问`（不含 `Open Question` 字样）+ 无确认 ⇒ **红**
       （今天 **0 条**——这条就是 issue 的招牌攻击）
-- [ ] B3 单测（**先红·F1 第二档**）：只有 `## Open Questions 汇总`（含短语、不合 D2）+ 无确认 ⇒ **红**，
+- [x] B3 单测（**先红·F1 第二档**）：只有 `## Open Questions 汇总`（含短语、不合 D2）+ 无确认 ⇒ **红**，
       且 message **同时**含 `缺少` 与 `Open Questions 汇总`（钉住「响亮报错」而不是静默）。
       ⚠️ 文案断言**不得**写成「这就是你的小节」那类判断句——提示只陈述观察到的事实（`design.md §D4`）
-- [ ] B4 单测（**先红·F2/否定 X2·§1.5 的洞**）：逐字 `## Open Questions` **空着** +
+- [x] B4 单测（**先红·F2/否定 X2·§1.5 的洞**）：逐字 `## Open Questions` **空着** +
       近义小节里放 `- **Q1** …` + `## User Confirmation` 空 ⇒ **红 1 条**
       （`Open Question Q1 未经用户确认`）——⚠️ 今天 **0 条**
-- [ ] B5 实现：`:144-145` 两行改成「候选为空 ⇒ 红（两档文案）；否则 `body = "\n".join(候选正文)`」，
+- [x] B5 实现：`:144-145` 两行改成「候选为空 ⇒ 红（两档文案）；否则 `body = "\n".join(候选正文)`」，
       逐 Q 循环**原封不动**
-- [ ] B6 单测（**先红·否定 X7**）：同名 `## Open Questions` 两次、两次的 Q 不同 ⇒ **两个都要确认**；
+- [x] B6 单测（**先红·否定 X7**）：同名 `## Open Questions` 两次、两次的 Q 不同 ⇒ **两个都要确认**；
       只确认一节 ⇒ **红**（钉住 D3 的**并集**方向）
-- [ ] B7 单测（**先红·F9/X8 · D8 的钉子**）：一个 change 目录里放**两份** `stage=grill` manifest——
+- [x] B7 单测（**先红·F9/X8 · D8 的钉子**）：一个 change 目录里放**两份** `stage=grill` manifest——
       `aaa.manifest.json` → 三节逐字齐全的合规**诱饵**、`zzz.manifest.json` → **不合格**的真报告
       ⇒ **逐条报出那 4 条**（与「没有诱饵」时**逐条相同**），且 label 指向那份的 `report_path`。
       ⚠️ 实现前：诱饵不在 **4 条**、诱饵在场 **0 条**（`design.md §1.1.1` 实测）。
       ⚠️ **fixture 的报告标题必须是逐字的 `## Open Questions`**（对抗轮 M-A）：拿「标题非逐字」的
       报告当 fixture，它在今天本来就少掉 Open Questions 那部分 ⇒ 用例会**因为错误的理由通过**
-- [ ] B8 单测（**F10 · D8 的对照**）：同一造法但**两份都合格** ⇒ **0 条**（逐份 ≠ 「多份即红」）；
+- [x] B8 单测（**F10 · D8 的对照**）：同一造法但**两份都合格** ⇒ **0 条**（逐份 ≠ 「多份即红」）；
       另加：一份报告**读不出** ⇒ 该份报「无法核验」、**另一份**照常判定
-- [ ] B9 单测（**X9 · M4 ②**）：候选小节**之外**的 `Q<n>` **不判**——在 `## Confirmed Decisions`
+- [x] B9 单测（**X9 · M4 ②**）：候选小节**之外**的 `Q<n>` **不判**——在 `## Confirmed Decisions`
       的决策块里写「见 Q7 与 Q9」⇒ **0 条**
-- [ ] B10 单测（**F11 · M-B 的边界钉子 · 护栏**）：真决策记录绑 `building`、`stage=grill` 绑合格 stub
+- [x] B10 单测（**F11 · M-B 的边界钉子 · 护栏**）：真决策记录绑 `building`、`stage=grill` 绑合格 stub
       ⇒ **0 条**——**刻意接受**（今天与 D8 之后都一样）；这条用例守的是**边界声明 11**，
       免得将来有人把它当 bug「修」掉却不改声明
-- [ ] B11 单测（**X10/F12 · M-D 的两条边界钉子**）：① 候选小节**内**、**不写成 `Q<n>`** 的问题
+- [x] B11 单测（**X10/F12 · M-D 的两条边界钉子**）：① 候选小节**内**、**不写成 `Q<n>`** 的问题
       （`- **问题**：…` / `待定：A 还是 B？`）⇒ **0 条**（钉住边界声明 1/3 的**收窄措辞**；
       ⚠️ 顺带钉一条反例：`- **Q１**`（全角数字）**会**被命中 ⇒ 1 条，**不是**漏判）；
       ② `### Open Questions`（H3）⇒ 候选为空 ⇒ **红**，且**断言附加提示不出现**（钉住已知盲区）
-- [ ] B12 单测（**先红·F13/F14/X11 · D9 的钉子**）：① `## Open Questions` 有未确认 `Q1`、
+- [x] B12 单测（**先红·F13/F14/X11 · D9 的钉子**）：① `## Open Questions` 有未确认 `Q1`、
       唯一的 `## User Confirmation`（含 `- **Q1**: …`）写在围栏里 ⇒ **实现前 0 条**、实现后 **2 条**；
       ② 围栏结构：` ```` `（4 个）开启 + 内部一行 ` ``` `（3 个）⇒ 那行**不**结束围栏；
       **未闭合**围栏 ⇒ 其后全部内容视为围栏内（其中的 `## Open Questions` 不成为候选）；`~~~` 同样生效；
       ③ **X11**：把围栏**拿掉**（写成普通小节）⇒ 变绿（钉住「围栏是唯一的差别」）
-- [ ] B13 单测（**X12 · Q4 例子 5(b) 的边界钉子 · 护栏 · **两个输入都要**）**：
+- [x] B13 单测（**X12 · Q4 例子 5(b) 的边界钉子 · 护栏 · **两个输入都要**）**：
       ① `用户答复：待拍板；确认时间: t`（抽出正文 **3 字**，命中 `_UNCONFIRMED_STRONG`）⇒ **红 1 条**；
       ② `用户答复：待拍板，具体细节我会在下周的评审会议上确认；确认时间: t`（抽出正文 **21 字**）⇒ **0 条**。
       两句**只差长度** ⇒ **因正确的理由**钉住「长度阈值」；守的是 spec 边界声明 12。
       ⚠️ **不许**拿 `用户说待确认，稍后补上`（11 字）当第 ② 个输入（R3 的必改 1）：
       它绿是因为 `待确认` 只做**整串相等** ⇒ **把它原样截短照样绿** ⇒ 用例会**因错误的理由通过**。
       ⚠️ 实现时**先跑今天的行为**确认 ① 红、② 绿，再钉（该判据**今天就在**，不是本 change 新增）
-- [ ] B14 单测（**X13 · D9 的对称代价钉子 · 护栏**）：`- **Q2**` 被围在**候选小节内的围栏**里 ⇒
+- [x] B14 单测（**X13 · D9 的对称代价钉子 · 护栏**）：`- **Q2**` 被围在**候选小节内的围栏**里 ⇒
       **实现前 1 条（红）**、实现后 **0 条（绿）**——**刻意接受**，守的是 spec 边界声明 13
-- [ ] B15 单测（**X14 · Q4 第 7 类 / 声明 14 的钉子 · 护栏 · R4 主动构造**）：
+- [x] B15 单测（**X14 · Q4 第 7 类 / 声明 14 的钉子 · 护栏 · R4 主动构造**）：
       ① 某条决策的 `来源:` 写进围栏 ⇒ **实现前 0 条**、实现后 **1 条**「第 1 条 Confirmed Decision 缺 `来源:`」；
       ② **整条决策 bullet** 写进围栏 ⇒ **实现前 0 条**、实现后 **1 条**「只有 2 条，少于硬门槛 3 条」。
       ⇒ **刻意接受**（D9 读法 (i) 的另一侧代价）——用例守的是**声明 14**，
       免得将来有人把它当 bug「修」掉却不改声明
-- [ ] B16 单测（**X15 · Q4 第 8 类 / 声明 6 的钉子 · 护栏 · R5 主动构造**）：一份报告有合格的
+- [x] B16 单测（**X15 · Q4 第 8 类 / 声明 6 的钉子 · 护栏 · R5 主动构造**）：一份报告有合格的
       `## Confirmed Decisions` + **逐字的** `## Open Questions`（正文 `（无）`）+ 一节
       `## Non-Open Questions`（正文 `- **Q9** …`）⇒ **实现前 0 条**、实现后 **1 条**
       （`Open Question Q9 未经用户确认`）。⚠️ 另跑 `## 未解决 Open Questions` 同款；
       **断言 `## Open Questions 汇总` / `## 悬而未决的疑问` 仍是 0 条**（钉住「多收」的边界，
       不是「凡像的都要确认」）。⇒ **刻意接受**，守的是**声明 6**
-- [ ] B17 单测（**X16 · Q4 第 9 类 / 声明 15 的钉子 · 护栏 · R6 主动构造** · **两个方向都要**）：
+- [x] B17 单测（**X16 · Q4 第 9 类 / 声明 15 的钉子 · 护栏 · R6 主动构造** · **两个方向都要**）：
       ① `## User Confirmation` 里同一个 `Q1` 写两行——占位在前、实质在后 ⇒ **0 条**；
       ② **对调**（实质在前、占位在后）⇒ **1 条**（`…的确认是占位文本`）；
       ③ 两条 `## User Confirmation` 小节各写一行 ⇒ 与 ①② **同款**（合并后仍按末行）。
@@ -121,56 +121,57 @@
 
 ## C. 不误伤（**回归护栏**——本 change 的主要风险是「收紧必伤存量」）
 
-- [ ] C1 单测（**F4**）：把 `openspec/changes/archive-awareness/reviews/grill-design.md` 的
+- [x] C1 单测（**F4**）：把 `openspec/changes/archive-awareness/reviews/grill-design.md` 的
       **真实内容**作 fixture（`:61` 非逐字 + `:110` 逐字两处候选）⇒ **0 条**。
       ⚠️ 这条是**护栏**（实现前后都该绿）：它证明「取并集」不把本仓自己的历史报告判红；
       变异证据：把候选集合改成「只取逐字那个」⇒ 仍绿（`:61` 的 Q1 在 `:110` 里也有）
       ⇒ **必须同时补一条「`:61` 里有独立 Q」的构造**才有变异信号（见 C2）
-- [ ] C2 单测（**先红·D3 的钉子**）：构造「逐字小节装 Q1、近义小节装 Q5」⇒ 只确认 Q1 ⇒
+- [x] C2 单测（**先红·D3 的钉子**）：构造「逐字小节装 Q1、近义小节装 Q5」⇒ 只确认 Q1 ⇒
       **红**（`Q5 未经用户确认`）。⇒ 这条才是「并集 vs 只取一个」的**变异钉子**
-- [ ] C3 单测（**F5**）：那 1 份接入方非逐字报告（`Design-Level Open Questions（…）`）的**真实内容**
+- [x] C3 单测（**F5**）：那 1 份接入方非逐字报告（`Design-Level Open Questions（…）`）的**真实内容**
       ⇒ **0 条**（它的 Q1/Q2/Q6 都有实质确认）
-- [ ] C4 单测（**F7·确定性**）：同一段文本连续调用两次 ⇒ 候选集合与 finding 逐条相同（含顺序）
+- [x] C4 单测（**F7·确定性**）：同一段文本连续调用两次 ⇒ 候选集合与 finding 逐条相同（含顺序）
 
 ## D. 回归面（逐条点名，`design.md §5.2`）
 
-- [ ] D1 `tests/test_evidence.py` **全部 9 条**保持绿
+- [x] D1 `tests/test_evidence.py` **全部 9 条**保持绿
       （尤其 `test_missing_sections_are_flagged`——它只断言「有 finding」⇒ 多数一条也过；
       ⚠️ 实现时先确认它**没有**精确计数断言）
-- [ ] D2 `tests/helpers.py::VALID_GRILL_REPORT` 仍合格（三节逐字齐全）
+- [x] D2 `tests/helpers.py::VALID_GRILL_REPORT` 仍合格（三节逐字齐全）
       ⇒ 依赖它的集成用例（`test_check_grill_evidence.py` / `test_guard.py` / `test_archive_awareness.py` …）全绿
-- [ ] D3 `tests/test_archive_awareness.py::SHORT_GRILL` 仍**只**因「`## Confirmed Decisions` 只有 2 条」红 1 项
+- [x] D3 `tests/test_archive_awareness.py::SHORT_GRILL` 仍**只**因「`## Confirmed Decisions` 只有 2 条」红 1 项
       （别多出 Open Questions 相关的红）
-- [ ] D4 `tests/test_manifest_build.py` / `test_check_protected.py` / `test_events*.py` 全绿
-- [ ] D5 全量 `uv run pytest -q` 全绿（本 change **前**实测基线 = **521 passed**；
+- [x] D4 `tests/test_manifest_build.py` / `test_check_protected.py` / `test_events*.py` 全绿
+- [x] D5 全量 `uv run pytest -q` 全绿（本 change **前**实测基线 = **521 passed**；
       ⚠️ **加上本 change 新增的守卫 `tests/test_confirm_gate_docs.py`（12 条）后，全量 = 533**
-      ——别拿 521 对账（R6 的 N26））
+      ——别拿 521 对账（R6 的 N26）；
+      **实现阶段再增 59 条用例** ⇒ **实测 `592 passed`**，见文末「实测记录（实现期）」）
 
 ## E. 产出方：模板与命令（`proposal.md` 目标 5）
 
-- [ ] E1 `templates/grill.md`：**加一句硬口径**（§4 的产物结构块后）——
+- [x] E1 `templates/grill.md`：**加一句硬口径**（§4 的产物结构块后）——
       `## Open Questions` **必须逐字**、**即使为空也保留小节**（写 `（无）`）；
       标题加了限定词 ⇒ 检查器认不出 ⇒ **红**。⚠️ **不新增小节**（结构块 `:107` 已经在产出它）
-- [ ] E2 `templates/grill.md`：§硬约束 ③ 补「小节必须**逐字**存在」
-- [ ] E5（对抗轮 N5）`templates/grill.md`：结构块（`:93-114`）**补一行 `## User Confirmation`**
+- [x] E2 `templates/grill.md`：§硬约束 ③ 补「小节必须**逐字**存在」
+- [x] E5（对抗轮 N5）`templates/grill.md`：结构块（`:93-114`）**补一行 `## User Confirmation`**
       （或明写「停轮后追加」）——现状是它只在第 6 步（`:143-144`）提，而新判据把「小节存在」
       变成硬要求 ⇒ 产出方义务应**自洽**。⚠️ 这是**既有**状态、不是本 change 的新红
-- [ ] E3 **复核**（**不改**）`plugin/commands/grill.md`：它只接线、不复制正文（其 `:7-9`），
+- [x] E3 **复核**（**不改**）`plugin/commands/grill.md`：它只接线、不复制正文（其 `:7-9`），
       且它在 `:27` / `:29` 提到的 `## Open Questions` / `## User Confirmation` 是**行内 code span、
       不在行首** ⇒ `_HEADING_RE`（`evidence.py:31`）根本不当它们是标题
       ⇒ 既不能自造红、也没有第二种措辞可订正。**结论写进实现回报**（别默默跳过）
-- [ ] E4 ⚠️ 改 `templates/grill.md` 前后跑 `uv run pytest -q tests/test_docs.py` 与 `tests/test_templates.py`：
+- [x] E4 ⚠️ 改 `templates/grill.md` 前后跑 `uv run pytest -q tests/test_docs.py` 与 `tests/test_templates.py`：
       `templates/grill.md` 在 `RUN_ID_DOCS` / `IDEMPOTENCY_DOCS` 名单里 ⇒
       新写的句子**不得**出现未限定的「幂等」、且文件里必须**仍有**「确定性」
 
 ## F. 文档
 
-- [ ] F1 `docs/gate.md §8`：判据段（`:392-393`）补「`## Open Questions` 必须**逐字存在**」
+- [x] F1 `docs/gate.md §8`：判据段（`:392-393`）补「`## Open Questions` 必须**逐字存在**」
       与候选集合口径（近义标题的边界照 `design.md §2.5`）
-- [ ] F2 `docs/gate.md §8`：接入指引补 **CQ2 的补救姿势**——「标题非逐字 ⇒ **追加**一个逐字小节即可，
+- [x] F2 `docs/gate.md §8`：接入指引补 **CQ2 的补救姿势**——「标题非逐字 ⇒ **追加**一个逐字小节即可，
       **不改审阅者原文**」（照本仓 `archive-awareness` 的先例）
-- [ ] F3 `README.md:172`：补「（小节必须**逐字**存在）」
-- [ ] F4 ⚠️ 改 `docs/gate.md` / `README.md` 前先读 `tests/test_docs.py`（守卫按**文件整体**扫：
+- [x] F3 `README.md:172`：补「（小节必须**逐字**存在）」
+- [x] F4 ⚠️ 改 `docs/gate.md` / `README.md` 前先读 `tests/test_docs.py`（守卫按**文件整体**扫：
       `Q3_DOCS` 的旧口径、`STALE_CLAIMS` 的动词面、`IDEMPOTENCY_DOCS` 的「幂等」限定语）；
       改完跑 `uv run pytest -q tests/test_docs.py`
 
@@ -505,3 +506,41 @@ R8 判 **CONVERGED（设计已收敛，可进停轮）**，明确「**不建议�
   §8.1 的「机械钉住」改成「机械钉住**那条恒等式**」。**变异**：公式 `+`→`−` ⇒ **仍 12 passed**（已声明）。
 - **R8-⑤**：N31 括注已按 R8-① 改准；docstring 另补「**自洽地加面**同样绿」（原只写了删侧）。
 - **同步**：守卫 **12** 条、全量 **533**；轮次「七」→「**八**」；§7.20 指纹表加 R8 行。
+
+## 实测记录（实现期）
+
+> 按本文件 A–F 节的顺序推进，**测试先行**（每条用例先跑红，再实现）。
+> 改动的文件：`src/witnessloop/evidence.py`（**唯一改动的生产文件**）、
+> `tests/test_evidence.py`、`tests/test_check_grill_evidence.py`、`templates/grill.md`、
+> `docs/gate.md §8`、`README.md`。
+
+- **红→绿**：`uv run pytest -q` 在实现前 **533 passed** ⇒ 新增 **59 条**用例**先红**、
+  实现后 **592 passed（0 failed）**（`tests/test_evidence.py` 9 → 64；`test_check_grill_evidence.py` 5 → 9）。
+- **D1–D9 的落点**：D1/D2/D3/D4 = `_is_open_questions_title` + `_open_question_sections` +
+  `_missing_open_questions_message` + `grill_evidence_findings` 里那一处分支；
+  D5 = `checkcmd.py` / `guardcmd.py` **一行未动**（同一纯函数两处接线）；
+  D6 = `_sections()` 的**签名与 `setdefault` 合并语义未动**（A4 钉住）；
+  D8 = `stage_manifest_findings_in_change` 的 `verify_body=True` 分支改成**逐份**；
+  D9 = 新增 `_fence_run` + `_sections()` 的围栏前置。
+- **变异验证（§5.4 逐条跑过，12 组）**：每组**只**让**对应**用例转红，改回后 sha256 一致 ——
+  候选退回「只认逐字」⇒ F2/X2 + C2 红；放松成「凡含 `Question`」⇒ X6/X10 + 候选判定表红；
+  「只取逐字那个」⇒ C2 红（**C1 仍绿**——这正是 C2 必须存在的原因）；存在性改回 `or ""` ⇒
+  F1/F3/X1 红；`setdefault` 改覆盖式 ⇒ A4 红；D8 退回 `matching[0]` ⇒ F9/X8 红（**F10 仍绿**）；
+  剥尾括号只剥一层 / 只认全角 / 改贪婪 / 不剥空括号 ⇒ 各让候选判定表**那一行**红；
+  关掉围栏状态机 ⇒ D9 的 10 条用例全红。候选集合不排序 ⇒ C4 红。
+- **存量代价（实现期用真实现复算，对照 `git show HEAD:…/evidence.py`）**：
+  - **决策记录语料 194 份**（四份检出里全部 `grill-design.md` / `grill-review.md`）
+    ⇒ finding **0 份有差别**（D1/D2/D4 的「③ 新红 0」成立）。
+  - **D9（跳围栏）**：本仓 `openspec/changes/**/reviews/*.md` **26 份**、三份接入方的
+    `grill-design.md` **63 / 60 / 62 份** ⇒ **各 0 份有差别**；**全部 525 份 `reviews/*.md`
+    里 1 份有差别** —— **本 change 自己的 `reviews/grill-adversarial.md`（1 → 3 条）**：
+    它按对抗轮的习惯在**围栏里**引用带 `## User Confirmation` / `## Open Questions` 的示例片段，
+    跳围栏后那些片段不再算小节。⚠️ 该份是 `verify_body=False`（`grill-adversarial` 只要求
+    **证据存在**）⇒ **这 3 条不进 `check`**，方向是**多报**。
+    ⇒ 「211 份 0 影响」在**当时**的语料上成立；本轮新产生的这份对抗报告是其**唯一**例外。
+- **E3 复核（结论：不改）**：`plugin/commands/grill.md` 里两处提及都在**行内 code span**、
+  **不在行首**（其一在本行中段、其二前有缩进）⇒ `_HEADING_RE` 根本不把它们当标题
+  ⇒ 既不能自造红、也没有第二种措辞可订正。**与设计一致，未改动该文件。**
+- **G1 的前置已就位**：本 change 自己的 `reviews/grill-design.md` 过新判据 = **0 条**
+  （标题本就逐字；停轮答复已按 CQ2 追加）。三份 stage manifest 仍由主流程在**内容冻结点**
+  统一建（本文件 G1，**实现会话刻意不建**）。
