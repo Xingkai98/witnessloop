@@ -78,10 +78,28 @@ def load_events_file(path: Path) -> list[Event]:
 
 
 def load_all(root: Path, policy: Policy) -> list[Event]:
-    """收集仓内所有 change 目录的事件文件。"""
+    """收集仓内所有 change 目录的事件文件：**active 一层 + 归档一层**（change archive-awareness）。
+
+    两条**显式** glob，各自只覆盖一个目录层级——**不用** `rglob`/`**`：那会把
+    `archive/<name>/<sub>/workflow-events.jsonl` 这种**再深一层**的同名文件也读进来，
+    多出「谁都能放一份授权文件」的面。
+
+    ⚠️ ⚠️ 口径写准（别读成「只扫真 change 目录」）：
+    - `changes/*/` 的 `*` **也匹配 `archive`** ⇒ `changes/archive/workflow-events.jsonl`
+      （`archive/` **直接下**、不属于任何 change 目录）**会被读**——这是**既有**行为；
+    - `archive/*/` 的 `*` 匹配**任何**目录名 ⇒ `changes/archive/notes/…` 会被当成一个
+      「归档 change 目录」的事件文件。
+    两者都与 active 一层同款；本 change 不收紧，只把**覆盖范围**从 active 扩到 active + 归档。
+
+    同一 change 在 active 与 archive 各有一份时**两份都读**（`covers` 是存在性判定，不做去重）。
+    """
     events: list[Event] = []
-    for events_file in sorted(root.glob(f"{policy.changes_root}/*/{policy.events_file}")):
-        events.extend(load_events_file(events_file))
+    for pattern in (
+        f"{policy.changes_root}/*/{policy.events_file}",
+        f"{policy.archive_root}/*/{policy.events_file}",
+    ):
+        for events_file in sorted(root.glob(pattern)):
+            events.extend(load_events_file(events_file))
     return events
 
 

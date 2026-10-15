@@ -70,23 +70,32 @@ def run(args: argparse.Namespace) -> int:
         evidence_patterns=pol.stale_exempt_paths,
     )
 
-    change_ids = contract.changed_change_ids(changes, pol.changes_root)
+    # 本次 diff 触及的 change：**active ∪ 归档授予**（change archive-awareness / issue #21）。
+    # 归档 move 把那个 change「归属」回本次 diff——**不豁免任何东西**：它照旧走下面同一套门禁，
+    # 只是路径落在 `archive/<name>/` 下、`change_id` 多一个别名（D8）。⚠️ 以**目录**为键（列表）：
+    # 同一个 id 可以同时来自 active 与归档，两份都要校验。
+    targets = contract.change_targets(root, pol, changes)
+    change_ids = sorted({target.change_id for target in targets})
     # building-review-gate：**本次 diff 落了实现**（触及 require_change_for）⇒ 每个被触及的 change
     # 都要有实现后的独立审阅证据。触发用**客观的 diff 事实**，不用「tasks 是否勾选」那种自声明
     # （不勾选就能绕过）。**多 change 同 PR 时每个都要**——「一个 PR 推进一个 change」是前提。
     code_hits = _code_hits(pol, changes)
     findings: list[contract.Finding] = []
-    for change_id in change_ids:
-        findings += contract.validate_change_dir(root, pol, change_id)
+    for target in targets:
+        findings += contract.validate_change_dir(
+            root, pol, target.change_id, directory=target.directory, label=target.label
+        )
         findings += contract.validate_review_manifests(
-            root, pol, change_id, scope=scope
+            root, pol, target.change_id, scope=scope,
+            directory=target.directory, label=target.label,
+            accepted_change_ids=target.accepted_change_ids,
         )
         # D9/#2：报告正文的**完备性**——与本地 `guard` 共用同一个判定（evidence.py）。
         findings += evidence_mod.grill_evidence_findings_in_change(
-            contract.change_dir(root, pol, change_id),
+            target.directory,
             grill_stage=pol.grill_stage,
             manifest_glob=pol.review_manifest_glob,
-            label=f"{pol.changes_root.rstrip('/')}/{change_id}",
+            label=target.label,
         )
         # building-review-gate / issue #13 + grill-adversarial-gate / issue #16：本次 diff 落了实现 ⇒
         # 该 change 的**设计环**（对抗验证轮）与**实现环**（独立审阅）**两端**都要有证据。
@@ -95,24 +104,24 @@ def run(args: argparse.Namespace) -> int:
         # **不解析报告里的 verdict 文本**、不校验正文（见 docs/gate.md §9 building / §10 grill-adversarial）。
         if code_hits:
             findings += evidence_mod.stage_manifest_findings_in_change(
-                contract.change_dir(root, pol, change_id),
+                target.directory,
                 stage=pol.grill_adversarial_stage,
                 manifest_glob=pol.review_manifest_glob,
-                label=f"{pol.changes_root.rstrip('/')}/{change_id}",
+                label=target.label,
                 reason="设计阶段的对抗验证轮（grill 之后、停轮之前的证伪环节）必须有审阅证据",
             )
             findings += evidence_mod.stage_manifest_findings_in_change(
-                contract.change_dir(root, pol, change_id),
+                target.directory,
                 stage=pol.building_stage,
                 manifest_glob=pol.review_manifest_glob,
-                label=f"{pol.changes_root.rstrip('/')}/{change_id}",
+                label=target.label,
                 reason="本 change 改了受管控代码，必须有实现后的独立审阅证据（review-loop）",
             )
     findings += _tests_execution_point(root, pol)
     findings += _require_change(pol, changes, change_ids)
     findings += _protected_writes(root, pol, changes)
 
-    _report(base, head, changes, change_ids, findings)
+    _report(base, head, changes, targets, findings)
     return C.EXIT_FAIL if findings else C.EXIT_PASS
 
 
@@ -190,6 +199,11 @@ def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contrac
 
     没有这条时，`check` 只保证「**如果你**动了 change 目录/受保护路径，它要齐备」，
     于是最省事的绕过方式是什么都不建——只改 `src/` 的 PR 直接放行。
+
+    ⚠️ **归档感知（issue #21）不是给它加豁免**：`change_ids` 现在由 `change_targets` 派生
+    （active ∪ 归档授予），所以「实现 PR 同时归档」那张 PR 的集合**非空** ⇒ 这一条自然修好。
+    给它加一个「有归档 move 就返回 []」的分支是**错的**——那会让归档 + 改代码的 PR
+    连三条 stage 证据门也一起绕过（实测 0 项红 = 放行）。
     """
     if change_ids:
         return []
@@ -269,15 +283,23 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
     return findings
 
 
-def _report(base, head, changes, change_ids, findings) -> None:
+def _report(base, head, changes, targets, findings) -> None:
     # flush：不 flush 的话 stdout 缓冲会让摘要排在 stderr 的失败明细后面。
+    #
+    # ⚠️ `N 个 change 目录` 这个**子串**被 `tests/test_check_contract.py` 钉着（`0 个 change 目录`），
+    # 别改措辞；计数按**去重后的 id** 算（归档 id 也计入）。
+    change_ids = sorted({target.change_id for target in targets})
     print(
         f"check：基线 {base}...{head}，{len(changes)} 个变更文件，"
         f"{len(change_ids)} 个 change 目录",
         flush=True,
     )
-    if change_ids:
-        print(f"  change：{', '.join(change_ids)}", flush=True)
+    if targets:
+        shown = ", ".join(
+            f"{target.change_id}（归档）" if target.archived else target.change_id
+            for target in targets
+        )
+        print(f"  change：{shown}", flush=True)
     if not findings:
         print("check：通过 ✓")
         return
