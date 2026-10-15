@@ -219,6 +219,16 @@ witnessloop manifest build \
   `report_path` 逃逸出 change 目录、报告不在 `reviews/` 下（把这个坑从
   「CI 里像误报的 stale」变成清楚的即时错误）、缺 `tasks.md`、change 目录不存在、
   仓里没有提交、未接入（exit 3）。
+- **归档目标也支持**（change `archive-awareness` / issue #21）：`--change <名字>` 先看
+  `<changes_root>/<名字>`，不存在再看 `<changes_root>/archive/<名字>`（**精确**命中，
+  **不**按 `*-<id>` 后缀猜）；解析到哪边，`--report` 就相对哪边解析、manifest 就写在哪边
+  （`change_id` = **归档目录名**）。两条额外的即时错误：
+  - **两处都找不到** ⇒ 报错点名该名字、**不写文件**；若 `archive/` 下有 `*-<名字>` 的候选，
+    只**提示**（「归档态要用**目录名**作为 change id」），**不自动认**；
+  - `--change archive` ⇒ 明确报「`archive` 是**归档根目录**、不是 change id」（不拦的话它会走
+    active 分支、报「缺少必需件 proposal.md」，文案与病因毫无相似之处）。
+- ⚠️ **归档后要改写证据** ⇒ 那是**不含该归档 move 的后继 diff**（覆盖 = `M` 不变集路径 ⇒ **每条一条**
+  解释事件，见 §5）；**不许**与那个 move 放进同一个 diff（见 §5.1.1 第二条边界）。
 
 ## 4. 结构化解释事件（`workflow-events.jsonl`）
 
@@ -242,8 +252,23 @@ witnessloop manifest build \
 （`load_all` 是那块的第一句）⇒ 你会**少看到那一块**的 finding（**其它块照常打印**：change 契约、
 manifest、grill 正文…都照旧）。**它仍然是红，不是绿**，所以没有绕过面——只是**归因不完整**：
 先修 events 再重跑，才知道那块里还剩几条。
-⚠️ **覆盖范围是 active change 目录**：`archive/**` 下的 events 文件**既不会被读、也不提供豁免**
-（既有行为）。
+**覆盖范围 = active 一层 + 归档一层**（change `archive-awareness` / issue #21）：
+`<changes_root>/*/workflow-events.jsonl` 与 `<changes_root>/archive/*/workflow-events.jsonl`。
+同一 change 在两处各有一份时**两份都读**、任一条命中即豁免（`covers` 是**存在性**判定，不做去重）。
+⚠️ 两条**既有**口径，别读成「只扫真 change 目录」：
+
+- `changes/*/` 的 `*` **也匹配 `archive`** ⇒ `<changes_root>/archive/workflow-events.jsonl`
+  （`archive/` **直接下**、不属于任何 change 目录）**会被读**；
+- `archive/*/` 的 `*` 匹配**任何**目录名 ⇒ `<changes_root>/archive/notes/workflow-events.jsonl`
+  会被当成一个「归档 change 目录」的事件文件。
+
+真正**不被读**的是**再深一层**的（如 `<changes_root>/archive/<name>/sub/workflow-events.jsonl`）——
+两条 glob 各自只覆盖一个层级，**不用** `rglob`/`**`（那会多出「谁都能放一份授权文件」的面）。
+⚠️ 授权面因此**变大**：事件池的**落点**从「`archive/` 根**一个**路径」扩成「`archive/<任意名>/` **一族**」
+（任意名都算，包括永远不会被任何 change 校验的目录）。它**不是新类**——同款手法改前就能用
+（`openspec/changes/archive/workflow-events.jsonl` 今天就会被 `changes/*/` 那条 glob 读到；
+更一般地，往任意**已存在**的 active change 目录丢一份新 events 文件今天也管用），
+而事件本就是**全局解释**、`change_id` 不被消费（见 §7）⇒ 本 change 不改语义，只如实写明放大面。
 
 ## 5. 受保护写入的两档规则
 
@@ -280,9 +305,39 @@ OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifes
 | active 目录内改名（含改名 manifest） | ❌ 仍要 |
 | 把受保护 spec 挪进 `archive/` | ❌ 仍要 |
 
-配套：归档 move 的两端都不计入 active change id（否则 `archive` 会被当成一个 change
+配套：归档 move 的两端都不计入 **active** change id（否则 `archive` 会被当成一个 change
 id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在」）；`archive/**` 同时
 进 `stale_exempt_paths`（归档不改内容，不该触发「审阅的是旧 revision」）。
+
+#### 5.1.1 归档感知：归档 move 把该 change「归属」回本次 diff（change `archive-awareness` / issue #21）
+
+归档 move **不豁免任何东西**——它只让那个 change **重新成为本次 diff 的 change**，
+于是 ①`require_change_for`（§2）不再对「实现 PR 同时归档」误报、
+②`manifest build` 能解析归档目标（§3.2）、③`events` 扫得到归档目录（§4）。
+判定与 active **同一套**（Q1 拍板 uniform：**接受「纯归档 PR 也会红」**）：
+
+| 动作 | 该 change 进本次 diff？ | 走证据门禁？ |
+|---|---|---|
+| `git mv <changes_root>/<id>/… → <changes_root>/archive/<name>/…`（**R100**、源在 active、且 `<name>` == `<id>` 或以 `-<id>` 结尾） | ✅（id = **归档目录名**） | ✅ 与 active 同一套（契约 / manifest / grill 正文 / stage 门） |
+| **新建** `archive/<name>/…`（无 active 源） | ❌ | —— |
+| 改 / 删 `archive/<name>/` 里**已存在**的文件 | ❌ | —— |
+| 把 active change 的**单个文件**改入**已存在的**归档目录、而目录名**不认得**源 id | ❌（不授予） | —— |
+| 归档 move 的**两端** | —— | 不计入 **active** id |
+
+⚠️ 三条必须知道的边界：
+
+- **归档目录名要认得源 id**（等值、或 `-<id>` 后缀；**不解析日期前缀**）——`archive/<id>` 与
+  `archive/<date>-<id>` 都算，**不要求**统一成哪一种。名不认得 ⇒ **不授予** ⇒ 回落到
+  「什么都不建」的行为（照样红）。这条挡的是「把某个 active change 的单个文件搬进**别人的**
+  归档目录」——那会让资格被凭空授予目标目录、而源 change **静默逃检**。
+- **归档 move 必须是纯改名**：**同一个 diff 里不得同时改写被 move 的文件**（含「归档之后、在归档态
+  重建 manifest」）——git 会报 `R<100`，于是 ①不授予 ②被搬走的 active 目录**以幽灵 id 回到集合**
+  （报「change 目录不存在」）③一次改写要**两条**解释事件（rename 的新旧两半各记一次），
+  且幽灵那几条**补事件也消不掉**。推荐顺序（`design.md §1.6`）：**内容 → 在 active 态产证据 → 归档放最后**。
+- **归档前产出的 manifest 不必重建**：归档态 target 的 `change_id` **接受两个名字**——归档目录名
+  （归档后产出的证据用）与**源 id**（归档**前**产出的证据用，一次改名把两者连起来）。
+  少了这条别名，「实现 PR 同时归档」那张 PR 的既有证据会全部判「与目录不符」，
+  而唯一的补救（重建）又撞上面那条 ⇒ 顺序上无解。
 
 ## 6. 退出码（**按动词分表**——同一数字语义相反）
 
@@ -291,7 +346,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 码 | 含义 |
 |---|---|
 | 0 | 通过 |
-| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / **测试执行点缺失、为空或未接线**（§11）/ base 解析失败） |
+| 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / **归档 change 证据缺件**（§5.1.1——归档态与 active **同一套**判定）/ **测试执行点缺失、为空或未接线**（§11）/ base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
 
@@ -436,6 +491,9 @@ review manifest。缺失 ⇒ **红**并**点名现有 stage**。
   `DESIGN_TYPES` ∧ 有 spec delta）；③证据形态是**裸文件**（`reviews/grill-adversarial.md` 存在即可）。
   本仓**无 archive 门禁、无 `ChangeType`、`specs/` 恒备**，且**裸报告会被孤儿规则判红**（§3）⇒
   形态**必须**是 manifest；触发面也**必然**与它不同。
+  ⚠️ 这里说的「**无 archive 门禁**」指「**不在归档点**跑一道完成度门禁」（asterwynd 的
+  `_check_archived_completion_gate` 是那种）；它与 §5.1.1 的**归档感知**不是一回事——
+  后者只是让归档 move 把 change 归属回本次 diff、并**照旧**跑本 change 已有的门禁。
 
 ⚠️ **对**接入方**是行为变更**：**改了代码**（触及 `require_change_for`）的 PR 现在**必须**有
 `stage=grill-adversarial` 的审阅证据（= 跑过设计阶段对抗验证），**否则红**。**没有过渡开关**

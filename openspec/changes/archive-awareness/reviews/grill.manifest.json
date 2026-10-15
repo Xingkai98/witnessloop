@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "archive-awareness",
+  "stage": "grill",
+  "reviewer_run_id": "grill-archive-awareness-20261015",
+  "author_run_id": "ce58a5a0-44fa-4c0a-8423-7778523d8d11",
+  "base_sha": "ae992565ee2162e5b272af471e9adf895e7f83fb",
+  "head_sha": "158d64f43797afdc716c28ae517b6f03abdc74ed",
+  "tasks_hash": "0467d209b439e6dc3807467644a31285f33ecd7befa2f689217c9969482967eb",
+  "spec_hash": "534d7b409a76d1e644e6f4e271bf428cb95ccc5577616f4864a7ed5e752cb7be",
+  "diff_hash": "cfd27aa35945420754fc7dcd1b40834efff28b13f5255851123670cf846d24cb",
+  "report_hash": "7cfd581b05edd8cdca8d046d6963ca9649a66c732d1b13f8cb191973a0dc54d7",
+  "report_path": "reviews/grill-design.md"
+}

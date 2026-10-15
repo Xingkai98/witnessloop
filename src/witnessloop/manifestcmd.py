@@ -30,6 +30,45 @@ def _fail(message: str, code: int = C.EXIT_FAIL) -> int:
     return code
 
 
+def resolve_change_dir(
+    root: Path, pol: policy_mod.Policy, change_id: str
+) -> tuple[Path, str] | None:
+    """`--change X` 解析成 `(目录, 仓根相对 label)`：active 优先，其次归档（D4）。
+
+    归档态**精确**命中 `<changes_root>/archive/<X>`——**不**按 `*-<id>` 后缀猜：
+    猜就要面对「同一个 id 归档过两次」的歧义，而猜错的那一次会静默写到**别的** change 目录里。
+    名字对不上时只能在报错里**提示**候选（见 `docs/gate.md §3.2`）。
+    """
+    active = root / pol.changes_root / change_id
+    if active.is_dir():
+        return active, f"{pol.changes_root.rstrip('/')}/{change_id}"
+    archived = root / pol.archive_root / change_id
+    if archived.is_dir():
+        return archived, f"{pol.archive_root}/{change_id}"
+    return None
+
+
+def _missing_change_message(root: Path, pol: policy_mod.Policy, change_id: str) -> str:
+    """找不到时的报错：点名 id + **提示**名字里带它的归档候选（不自动认）。"""
+    archive_root = root / pol.archive_root
+    candidates = (
+        sorted(p.name for p in archive_root.iterdir() if p.is_dir() and p.name.endswith("-" + change_id))
+        if archive_root.is_dir()
+        else []
+    )
+    hint = (
+        "⚠️ 归档态要用**归档目录名**作为 change id——archive/ 下有候选："
+        + "、".join(candidates)
+        + f"（例如 `--change {candidates[0]}`）。"
+        if candidates
+        else ""
+    )
+    return (
+        f"change={change_id!r} 在 {pol.changes_root.rstrip('/')}/ 与 {pol.archive_root}/ 下都不存在。"
+        f"{hint}没有写出任何文件。"
+    )
+
+
 def run_build(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     if not root.is_dir():
@@ -57,8 +96,19 @@ def run_build(args: argparse.Namespace) -> int:
             "**单段**目录名。没有写出任何文件。"
         )
 
+    # 归档根目录不是 change id：不拦的话它会走「active」分支、报「缺少必需件 proposal.md」，
+    # 文案与真实病因毫无相似之处（grill R5 的困惑点）。
+    if change_id == C.ARCHIVE_DIR_NAME:
+        return _fail(
+            f"change={change_id!r} 是**归档根目录**（{pol.archive_root}/），不是 change id。"
+            "归档态请用**归档目录名**（例如 `--change 2026-10-14-<id>`）。没有写出任何文件。"
+        )
+
     changes_root = root / pol.changes_root
-    directory = changes_root / change_id
+    resolved = resolve_change_dir(root, pol, change_id)
+    if resolved is None:
+        return _fail(_missing_change_message(root, pol, change_id))
+    directory, label = resolved
     # 与 --report 同款守卫：change id 与 report path 是同一类 agent 输入，
     # 一个守一个不守就会留下「写到仓外」的口子（回归 M2 §4-1）。
     if not pathutil.is_within(directory, changes_root):
@@ -69,7 +119,9 @@ def run_build(args: argparse.Namespace) -> int:
 
     # 与 check 同一套契约判定：否则会出现「build 报成功、check 立刻拒」的自相矛盾
     # （回归 M2 §4-2）。
-    contract_findings = contract.validate_change_dir(root, pol, change_id)
+    contract_findings = contract.validate_change_dir(
+        root, pol, change_id, directory=directory, label=label
+    )
     if contract_findings:
         detail = "\n  ".join(f"{f.path}：{f.message}" for f in contract_findings)
         return _fail(f"change 目录不合契约（与 check 同一套判定）：\n  {detail}")
@@ -146,7 +198,7 @@ def run_build(args: argparse.Namespace) -> int:
         "report_path": report_rel,
     }
 
-    manifest_rel = f"{pol.changes_root.rstrip('/')}/{change_id}/reviews/{args.stage}.manifest.json"
+    manifest_rel = f"{label}/reviews/{args.stage}.manifest.json"
     manifest_path = root / manifest_rel
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(policy_mod.dumps(doc), encoding="utf-8")

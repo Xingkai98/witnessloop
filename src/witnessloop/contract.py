@@ -35,6 +35,33 @@ def change_dir(root: Path, policy: Policy, change_id: str) -> Path:
     return root / policy.changes_root / change_id
 
 
+def archived_change_dir(root: Path, policy: Policy, name: str) -> Path:
+    """`<changes_root>/archive/<name>`——归档 change 的目录。"""
+    return root / policy.changes_root / C.ARCHIVE_DIR_NAME / name
+
+
+@dataclass(frozen=True)
+class ChangeTarget:
+    """本次 diff 触及的**一个** change（active 或归档）。
+
+    归档态与 active 走**同一套**校验（与 active 同构），只差两处：解析到的 `directory`
+    与 `change_id` 的**接受集合**（D8 的别名：归档前产出的 manifest 带的是源 id）。
+
+    ⚠️ 映射**以目录为键**：同一个单段 id 可以同时来自 active 目录与归档授予，
+    两份都要校验（见 `change_targets`）。
+    """
+
+    change_id: str
+    directory: Path
+    label: str
+    accepted_change_ids: frozenset[str]
+    source_change_id: str | None = None
+
+    @property
+    def archived(self) -> bool:
+        return self.source_change_id is not None
+
+
 def is_archive_move(change, changes_root: str) -> bool:
     """`git mv <changes_root>/<id>/… <changes_root>/archive/<id>/…` —— 归档动作。
 
@@ -61,6 +88,9 @@ def changed_change_ids(changes, changes_root: str) -> list[str]:
     归档 move 的两端都要排除：目标在 ``archive/`` 下（否则 ``archive`` 会被当成
     一个 change id，然后报「缺少必需件 proposal.md」），来源是那个已经搬走的
     active 目录（它的内容已随归档离开 active，不该再按 active 契约校验）。
+
+    ⚠️ **归档授予不在这里**：归档 move 带走的那个 change 由 ``archive_grant`` /
+    ``change_targets`` 放回集合（id = 归档目录名）——本函数只认 active 路径首段。
     """
     root = changes_root.rstrip("/")
     prefix = root + "/"
@@ -86,10 +116,94 @@ def changed_change_ids(changes, changes_root: str) -> list[str]:
     return sorted(ids)
 
 
-def validate_change_dir(root: Path, policy: Policy, change_id: str) -> list[Finding]:
-    """D2：OpenSpec 形状的 change 目录契约。"""
-    directory = change_dir(root, policy, change_id)
-    rel = f"{policy.changes_root.rstrip('/')}/{change_id}"
+def archive_grant(change, changes_root: str) -> tuple[str, str] | None:
+    """这条 diff 记录是不是一次**授予资格**的归档 move？是 ⇒ `(源 id, 归档目录名)`。
+
+    两道闸：
+
+    1. `is_archive_move`（R100 纯改名 + 源在 active + 落点在 `archive/`）；
+    2. **目标目录名认得源 id**：`<name> == <源id>` 或 `<name>.endswith("-" + <源id>)`
+       （纯字符串比对，**不解析日期**）。
+
+    第 2 道挡的是「把 active change 的**单个文件**改入一个**已存在的**归档目录」：
+    那种 move 也是 R100，会把资格**凭空授予目标目录**，而源 change 因 `archived_sources`
+    （见 `changed_change_ids`）被排除、**静默逃检**。名不认得 ⇒ **不授予**（回落到
+    「什么都不建」的行为 ⇒ `_require_change` 照样命中，fail-closed）。
+    """
+    if not is_archive_move(change, changes_root):
+        return None
+    root = changes_root.rstrip("/")
+    new = pathutil.normalize(change.path)
+    old = pathutil.normalize(change.old_path or "")
+    prefix = f"{root}/{C.ARCHIVE_DIR_NAME}/"
+    if not new.startswith(prefix) or not old.startswith(root + "/"):
+        return None  # pragma: no cover - is_archive_move 已保证；双保险
+    name = new[len(prefix):].split("/", 1)[0]
+    source = old[len(root) + 1:].split("/", 1)[0]
+    if not name or not source:
+        return None
+    if name == source or name.endswith("-" + source):
+        return source, name
+    return None
+
+
+def change_targets(root: Path, policy: Policy, changes) -> list[ChangeTarget]:
+    """本次 diff 触及的 change（active ∪ 归档授予），**以目录为键**。
+
+    ⚠️ 返回**列表**、不是 `dict[change_id] -> directory`：同一个单段 id 可以同时来自
+    active 目录与归档授予（构造：同 PR 内同名 move + 新增 active 子文件）——两份都要校验；
+    写成 dict 会**静默丢掉一份**（丢掉哪份取决于实现），而那条 diff 是攻击者可构造的。
+    """
+    root_rel = policy.changes_root.rstrip("/")
+    targets = [
+        ChangeTarget(
+            change_id=change_id,
+            directory=change_dir(root, policy, change_id),
+            label=f"{root_rel}/{change_id}",
+            accepted_change_ids=frozenset({change_id}),
+        )
+        for change_id in changed_change_ids(changes, policy.changes_root)
+    ]
+    # name → **所有**认得它的源 id。⚠️ 收集成集合、不是单个源：同一个归档目录可以被多条 move
+    # 指向（两个源的名字互为后缀，如 `z` 与 `foo-z` 都满足 `-<源id>`），只留一个会让别名随
+    # **diff 顺序**而变（谁先出现谁生效）——那是不可复现的口径，也与「不许静默丢一份」相悖。
+    grants: dict[str, set[str]] = {}
+    for change in changes:
+        grant = archive_grant(change, policy.changes_root)
+        if grant is not None:
+            source, name = grant
+            grants.setdefault(name, set()).add(source)
+    for name in sorted(grants):
+        sources = grants[name]
+        targets.append(
+            ChangeTarget(
+                change_id=name,
+                directory=archived_change_dir(root, policy, name),
+                label=f"{policy.archive_root}/{name}",
+                # D8 别名：归档**前**产出的 manifest 带的是源 id，归档**后**产出的是目录名。
+                accepted_change_ids=frozenset({name}) | sources,
+                # 诊断用：取**最短**的源（= 该归档目录「本来」是哪个 change）。
+                source_change_id=min(sorted(sources), key=len),
+            )
+        )
+    return targets
+
+
+def validate_change_dir(
+    root: Path,
+    policy: Policy,
+    change_id: str,
+    *,
+    directory: Path | None = None,
+    label: str | None = None,
+) -> list[Finding]:
+    """D2：OpenSpec 形状的 change 目录契约。
+
+    `directory` / `label` 缺省 = active 路径（`changes_root/<id>`）；归档 target 由
+    `change_targets` 传**解析后的归档目录**——判定本身与 active **同一套**。
+    """
+    directory = directory if directory is not None else change_dir(root, policy, change_id)
+    rel = label or f"{policy.changes_root.rstrip('/')}/{change_id}"
     if not directory.is_dir():
         return [Finding(rel, "change 目录不存在（diff 里出现了它的文件，但目录不在工作树中）")]
 
@@ -119,11 +233,22 @@ class SpanScope:
 
 
 def validate_review_manifests(
-    root: Path, policy: Policy, change_id: str, *, scope: SpanScope
+    root: Path,
+    policy: Policy,
+    change_id: str,
+    *,
+    scope: SpanScope,
+    directory: Path | None = None,
+    label: str | None = None,
+    accepted_change_ids: frozenset[str] | None = None,
 ) -> list[Finding]:
-    """D3 + D4：review manifest 存在、hash 绑定、base/head 真绑；reviewer ≠ author。"""
-    directory = change_dir(root, policy, change_id)
-    rel = f"{policy.changes_root.rstrip('/')}/{change_id}"
+    """D3 + D4：review manifest 存在、hash 绑定、base/head 真绑；reviewer ≠ author。
+
+    `directory` / `label` / `accepted_change_ids` 同 `validate_change_dir` 与 D8 的别名——
+    归档 target 只是换了个目录与名字集合，**判定逻辑一份**。
+    """
+    directory = directory if directory is not None else change_dir(root, policy, change_id)
+    rel = label or f"{policy.changes_root.rstrip('/')}/{change_id}"
     manifests = sorted(directory.glob(policy.review_manifest_glob))
     if not manifests:
         return [
@@ -137,7 +262,12 @@ def validate_review_manifests(
     findings: list[Finding] = []
     bound: set[Path] = set()
     for manifest_path in manifests:
-        findings.extend(_validate_one(root, directory, rel, manifest_path, scope))
+        findings.extend(
+            _validate_one(
+                root, directory, rel, manifest_path, scope,
+                accepted_change_ids=accepted_change_ids,
+            )
+        )
         report = _bound_report(directory, manifest_path)
         if report is not None:
             bound.add(report)
@@ -225,6 +355,8 @@ def _validate_one(
     rel_change: str,
     manifest_path: Path,
     scope: SpanScope,
+    *,
+    accepted_change_ids: frozenset[str] | None = None,
 ) -> list[Finding]:
     manifest_rel = f"{rel_change}/{manifest_path.relative_to(directory).as_posix()}"
     try:
@@ -247,7 +379,16 @@ def _validate_one(
         # 缺字段时后面没法可靠比对，直接返回。
         return findings
 
-    if doc.get("change_id") and doc["change_id"] != rel_change.rsplit("/", 1)[-1]:
+    # change 的身份 = **change 目录的名字**（缺省口径）。归档态多一个**别名**（D8）：
+    # 归档**前**产出的 manifest 带的是**源 id**（一次改名把两个名字连起来）——
+    # 少了这个别名，归档那一刻既有 manifest 会全部判「与目录不符」，而唯一的补救
+    # 「用归档目录名重建」在同一个 diff 里会毁掉 `R100`（见 `design.md §1.5`）。
+    accepted = (
+        accepted_change_ids
+        if accepted_change_ids is not None
+        else frozenset({rel_change.rsplit("/", 1)[-1]})
+    )
+    if doc.get("change_id") and doc["change_id"] not in accepted:
         findings.append(
             Finding(manifest_rel, f"manifest.change_id={doc['change_id']!r} 与目录不符")
         )

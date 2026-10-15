@@ -136,6 +136,20 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 **不需要**手写解释事件；删改证据文件仍然要。边界见
 [docs/gate.md §5.1](docs/gate.md)。
 
+**归档感知**（issue #21）：归档 move 也**只会**做一件事——把那 change「归属」回本次 diff
+（`require_change_for` 不再对它误报、`manifest build` 能解析归档目标、`events` 扫得到归档目录）。
+它**不豁免任何东西**：归档态与 active 走**同一套**证据门禁，归档 PR **也会红**（uniform）。
+三条要记住的操作边界：
+
+- **归档 move 必须是纯改名**：同一个 diff 里**不得**同时改写被 move 的文件（否则 git 报 `R<100`，
+  那次移动就不再算归档、被搬走的 active 目录会以**幽灵 id**回来，且一条改写要吃**两条**解释事件）。
+  推荐顺序：**① 内容（实现 + 收尾）→ ② 在 active 态产证据 → ③ `git mv` 归档放最后**。
+- **归档前的 manifest 不必重建**：归档态 manifest 的 `change_id` 接受「归档目录名」与**源 id**
+  两个名字，两种归档命名（`archive/<id>`、`archive/<date>-<id>`）都算数。
+- **要改归档后的证据** ⇒ 放到**不含该归档 move** 的后继 diff 里（那会是覆盖 = 每条一条解释事件）。
+
+细节与边界表见 [docs/gate.md §5.1.1](docs/gate.md) 与 §4。
+
 `init` 写的 caller workflow 引用本仓的 reusable workflow
 `.github/workflows/gate.yml@v1`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。
@@ -192,6 +206,15 @@ witnessloop init --test-command "uv run pytest -q"            # ② 让 init 写
 
 ⚠️ 本仓自己的 `init` 早就跑不动（定制 policy 撞出厂默认）⇒ 本仓那次是走 ① 手工提交的。
 口径与四条边界见上节与 [docs/gate.md §11](docs/gate.md)。
+
+⚠️ **对**接入方**还有一条行为变更**（**归档感知**，issue #21）：归档 move 现在会把那个 change
+**归属回本次 diff** ⇒ 它照旧要走**同一套**证据门禁（契约 / manifest / grill 正文 / stage 门）。
+**两条后果**：① 「实现 PR 同时归档」不再被误报「没有任何 change 目录」（这是修复）；
+② **纯归档 PR 也会红**——若那份 change 的证据本来就不合规（历史 change），归档那一刻会被点出来
+（Q1 拍板 uniform，接受这条新红类；补救 = 在**归档之前**的 diff 里补证据，见
+[docs/gate.md §5.1.1](docs/gate.md)）。
+**还给两样**：`manifest build --change <归档目录名>` 能在归档目录里产证据；`events` 扫得到
+`archive/*/workflow-events.jsonl`（此前归档 change 的事件一律不生效）。
 
 ### 能力边界（别被「机械可验证」误导）
 
