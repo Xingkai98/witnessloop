@@ -335,3 +335,193 @@ alias 放开（`other` 被拒）、id 撞车（两侧各出 13 项）。唯一�
 两处说法**都站得住**。非阻塞 8 条：**I1** B2 的 `[x]` 一半没做（`_require_change` 文案与改前逐字节相同）；
 **I2** uniform 招牌 Scenario（纯归档 PR ⇒ 恰好 1 项）**仓内零测试**（我实测行为正确）；
 **I4** `--change` active 优先无测试（变异逃逸）；**I5** tasks 三处「先红」标注不实 + 分节计数错。
+
+---
+
+## R2 复审（revision 64f3104）
+
+> **追加节**——R1 正文（上方）**一字未改**。被审 revision = **`64f3104`**（在 `4ad38f0` 之上修 R1 的 8 条，
+> 见 `git show e28e567`（代码/测试）+ `git show 64f3104`（文档/收入 R1 报告））；base 仍 `ae99256`。
+> 本轮**重点**：两条**改了行为**的项（**I6** 别名取并集 / **I8** 计数按目录数）逐条实测；
+> I1–I7 逐条复核；「13 failed / 10 passed」独立复跑；安全面**另造**攻击。
+
+### Reviewer（R2）
+
+- run id: `building-reviewer-archive-awareness-64f3104-r2`（未设 `WITNESSLOOP_RUN_ID` ⇒ 同 R1 的确定性兜底形态）
+- 时间: 2026-10-15（本地）
+- 方法（可复现）：
+  - 三份**隔离副本**（各 `uv sync` 独立 venv）：`/tmp/aa2/base` = `ae99256`、`/tmp/aa2/prev` = `4ad38f0`（R1 被审那版）、
+    `/tmp/aa2/mut` = `64f3104`（变异用）。**不在被审 worktree 上跑任何实验**（唯一写入 = 本节）。
+  - 攻击台 `/tmp/aa2/attacks.py`（12 个配方）+ `e2e_i6.py` + `e2e_i8.py` + `recipe_m_i2.py` + `recipe_events.py`：
+    全部在 `/tmp/aa2/repos/**` 造**真 git 仓**（`git init` + 真 `git mv`，`git diff` 报 **R100**），
+    用 `uv run --project <副本> witnessloop <verb> --root <仓>` 跑**指定 revision 的代码**。
+  - 全量/回归一律 `uv run pytest -q --basetemp=/home/happy/wl-basetemp-rev2`（不用 `/tmp`）；计数一律 `grep -c` / `awk`。
+
+### Verdict
+
+**PASS**（无阻塞）。
+
+R1 的 8 条**全部有兑现**：I1/I2/I3/I4 有可复跑的测试钉子，I5/I7 的文档订正与实测逐字一致，
+**I6/I8 两条行为变更经独立实测判定收敛**（I6：顺序漂移**真的修好了**，且**没有开出新的绕过通道**；
+I8：确认**纯诊断**，判定面一条没动）。作者的两处关键说法——「13 failed / 10 passed」与「`519 passed`」——**逐字复现**。
+新增 **4 条非阻塞**观察（R2-1…R2-4），无一条达到 `CHANGES_REQUESTED` 门槛。
+
+### I6（**改了行为**）｜顺序漂移：**真修好了**；是否开出口子：**没有**
+
+**① 单元探针**（同一份合成 diff、只换记录顺序；`change_targets` 直调，两 revision 同一脚本）：
+
+```
+prev 4ad38f0   A(z 先)  accepted=['2026-foo-z', 'z']        source='z'
+               B(foo-z 先) accepted=['2026-foo-z', 'foo-z'] source='foo-z'   ← 漂移
+head 64f3104   A(z 先)  accepted=['2026-foo-z','foo-z','z'] source='z'
+               B(foo-z 先) accepted=['2026-foo-z','foo-z','z'] source='z'    ← 不漂移
+单源退化情形两版一致；第三条「名字不认得」的源两版都不进集合。
+```
+
+**② 端到端**（真仓：`archive/2026-foo-z/` 里放好三份 manifest，`change_id` = 指定值；feature 上**两条** R100
+分别把 `changes/z/…` 与 `changes/foo-z/…` 的文件搬进该目录；只改目标文件名 ⇒ 只改 git 输出顺序）：
+
+| manifest 的 `change_id` | 顺序 | prev `4ad38f0` | head `64f3104` |
+|---|---|---|---|
+| `z` | z 先 | `EXIT=0` 0 项 | `EXIT=0` 0 项 |
+| `z` | foo-z 先 | **`EXIT=1` 3 项**「manifest.change_id='z' 与目录不符」 | `EXIT=0` 0 项 |
+| `foo-z` | z 先 | **`EXIT=1` 3 项**「…='foo-z' 与目录不符」 | `EXIT=0` 0 项 |
+| `foo-z` | foo-z 先 | `EXIT=0` 0 项 | `EXIT=0` 0 项 |
+
+⇒ **同一个逻辑 diff 在改前会在 0 项 / 3 项之间按顺序翻转**（我实测到两个方向），改后**四种组合全绿**。
+作者的「取 diff 里先出现的源 ⇒ 随顺序漂移」**成立**，「只放宽别名集合」也**严格成立**：
+
+- 新 `accepted` **⊇** 任一顺序下的旧 `accepted`（是**放宽**，不是收紧）；
+- 且**恰好等于**两种顺序的**并**：`{D, z, foo-z} = {D,z} ∪ {D,foo-z}`。
+
+**③ 有没有因此「本该红」的形态变绿？——有**red→green 的形态，但**不是新类、不是绕过口**。理由三条，均可复核：
+
+1. **新增接受的名字只能是「本次 diff 里真有一条 R100 把它搬进该目录」的源。**
+   我另造两个探针（与作者的用例清单无关）：
+   - 配方 **K**：`D=archive/2026-foo-z`、真 move 的是 `foo-z`（授予），manifest 写**无关的** `other`
+     ⇒ `EXIT=1`，3 项 `manifest.change_id='other' 与目录不符`（**别名不吸收无关 id**，`spec.md:137` 的 Scenario 成立）；
+   - 配方 **I**：manifest 写**真搬进去了的** `foo-z` ⇒ `change_id` 那类 finding **消失**（只剩我 fixture 自带的
+     stale-revision 3 项）——即被接受的名字**都能对上一条真 move**。
+2. **`change_id` 是 manifest 里攻击者自己写的字段。** 谁能写 manifest，谁就能把值写成目录名——这道校验是
+   **防漂移/防复制错位**，不是授权闸（`contract.py:8-9` 与 `design.md §5.3` 的原文口径）。
+   放宽它**不可能**新增一项「攻击者本来做不到」的能力。
+3. **全库没有任何下游消费 manifest 的 `change_id`**：`grep -c change_id src/witnessloop/*.py` ⇒
+   `events.py` **0**、`evidence.py` **0**、`hashing.py` **0**；比对只发生在 `contract._validate_one`（一处）。
+   （另：`events.Event` 的字段只有 `event_type/artifact_path/reason/approved_by`——事件的 `change_id` **解析即丢**，
+   `docs/gate.md §4` 的「change_id 不被消费」**是真的**。）
+
+⇒ **诚实标注**：确实存在「改前红、改后绿」的一类形态——就是漂移里**输**的那半边。但它**等于旧代码在另一种顺序下
+已经会绿**的那一态（② 的表格里两行绿、两行红正好对调），所以是**把不可复现的口径改成确定性并集**，
+而不是新开口子。**判为收敛**（`design.md` D8 的订正段、`tasks.md` 回写期记录与我的实测一致）。
+
+### I8（**改了行为**）｜确认**纯诊断口径**，判定面一条没动
+
+**端到端**（真仓：base 上 active `x` 有全套证据，feature 上「新增 `changes/x/extra.md` + `git mv changes/x/notes.md
+changes/archive/x/notes.md`」⇒ 同名单段 id 同时来自 active 与归档）：
+
+```
+prev 4ad38f0   check：基线 main...HEAD，2 个变更文件，1 个 change 目录     ← 两个目录说成一个
+                 change：x, x（归档）
+               check：未通过 ✗（10 项）   [1..10 逐条]
+head 64f3104   check：基线 main...HEAD，2 个变更文件，2 个 change 目录     ← 按目录数
+                 change：x, x（归档）
+               check：未通过 ✗（10 项）   [与 prev 逐条同文，只有 sha 不同]
+```
+
+- **findings 逐条一致**（10 = 10，内容逐字相同，仅 manifest 里绑的 sha 因提交 hash 不同而不同）⇒ **判定未变**。
+- **判定面未动**（读码）：`checkcmd.py:78` 仍由 `targets` **按去重 id** 派生 `change_ids`、仍只喂 `_require_change`；
+  `_report` 里只有那一行 `len(targets)` 变了（`:289-306`），`if targets:` 分支与 `（归档）` 标注未动。
+- **`0 个 change 目录` 子串保留**：配方 B / D / E / J 的原始输出里都逐字出现（见下），
+  `tests/test_check_contract.py:88` 与 `test_report_still_says_zero_change_dirs_for_a_docs_only_diff` **仍绿**。
+
+### I1–I7 逐条（R2 复核）
+
+| # | R1 的判定 | R2 复核（实测/读码，指 `64f3104` 的树） | 结论 |
+|---|---|---|---|
+| **I1** | `[x]` 一半没做：`_require_change` 文案与 base 逐字节相同 | **真改了**：`checkcmd.py:216-225` 的 finding 现在是「…但本次 diff 里没有任何 change 目录（…），**也没有一次把它归档进来的 `git mv …/…`**（**归档 move 也算「挂了 change」**——那个 change 会按归档路径走同一套证据门禁）。补一个 change 目录（或补上那条归档 move）…」。钉子 = `test_N1` 的 `assert "归档 move" in err and "git mv" in err`，**该断言在实现前红**（我复跑：base 上 `test_N1` 正因这一条落到 FAILED，见下 13 条） | **修好** |
+| **I2** | uniform 招牌 Scenario 仓内零测试 | 新增 `test_uniform_validates_a_pure_archive_pr_like_active`（fixture = 新增的 `SHORT_GRILL`：2 条决策 + 归档前用**源 id** 产的证据 + 纯 `git mv`）。**我另造同形态仓复跑原始输出**：base `EXIT=0 / 0 项「通过 ✓」`（空转绿）；HEAD `EXIT=1`、**恰好 1 项**、逐字点名 `…/archive/2026-10-15-add-retry/reviews/grill-review.md：\`## Confirmed Decisions\` 只有 2 条，少于硬门槛 3 条`。变异**三条**都被它抓住：M3'（归档 target 跳过全部门禁）3 failed、M-U1（跳过 grill 正文判定）2 failed、M-U2（gate 指向 active 目录）5 failed | **修好**（钉子真实） |
+| **I3** | 别名「不是放开」无独立用例 | 新增 `test_alias_does_not_loosen_the_change_id_check`（先红，在 13 条内）。双向我都端到端复核过：写 `other` ⇒ `EXIT=1`「与目录不符」（配方 K）；写合法源 id ⇒ 全链 `EXIT=0`（配方 L） | **修好** |
+| **I4** | `--change` active 优先无测试（变异 M9 逃逸） | 新增 `test_manifest_build_prefers_the_active_directory_when_both_exist`。它**不是先红**（我复跑：base 上 **passed**，在 10 passed 内）——与作者自述一致。**变异 M9（archive 优先）⇒ 1 failed，正是它** ⇒ 钉子成立、逃逸口已封 | **修好** |
+| **I5** | tasks 三处「先红」标注不实 + 分节计数错 | 三处已按实测改成**回归护栏**并附变异证据；我复跑 base：`C7` / `C8` / `N5` 三条**都在 10 passed 内**（= 改前也绿），标注订正**对**。分节计数 `grep` 复算 = **A 4 / B 3 / C 5 / D 3 / E 5 + I 3 = 23**，与 tasks 一致；A7 拆成「②③ 先红、① 回归护栏」也与实测一致 | **修好** |
+| **I6** | `grants` 会静默丢掉同名的第二个源（与 D7 原则不一致） | 见上「I6」整节：**漂移真修好、未开出口子** | **修好** |
+| **I7** | 事件池落点 1 → 一族（已文档化） | `docs/gate.md §4` 的订正**逐字与实测一致**。我三个落点各跑两版：`archive/workflow-events.jsonl`（`archive/` 直接下）⇒ **base 与 HEAD 都 `EXIT=0`**（既有口径，作者说「改前就能用」**成立**）；`archive/zzz/workflow-events.jsonl` ⇒ base `EXIT=1` / HEAD `EXIT=0`（本 change 新覆盖的一族）；`archive/zzz/sub/…` ⇒ **两边都 `EXIT=1`**（再深一层不读） | **修好**（文档与实测一致） |
+
+### 「13 failed / 10 passed」独立复跑 —— **逐字复现**
+
+`cp tests/test_archive_awareness.py → /tmp/aa2/base`（`ae99256`）+ `uv run pytest -q tests/test_archive_awareness.py`
+⇒ **`13 failed, 10 passed in 2.09s`**（23 条）。逐条身份（`-v` 取的原文）：
+
+- **红 13** = R1 那 10 条 + **3 条新增**：`test_uniform_validates_a_pure_archive_pr_like_active`、
+  `test_alias_does_not_loosen_the_change_id_check`、`test_N1_...`（**因 I1 的新断言**红——其余断言在 base 上照样通过）。
+- **绿 10** = R1 的 9 条（否定面 N2/N3/N4/N6 + N5 + N7 + 两条回归护栏 + `0 个 change 目录`）
+  + **新增的 `test_manifest_build_prefers_the_active_directory_when_both_exist`**（I4 的**回归护栏**，改前也绿）。
+- ⇒ 作者在 `tasks.md` 回写期写的「新增的 3 条里有 2 条先红 + N1 的文案断言」**逐字准确**。
+
+其余复跑：被审 worktree 全量 **`519 passed in 25.00s`**（= R1 的 516 + 新增 3）；
+F 节回归面 7 个文件 **`85 passed`**；`tests/test_docs.py` **`47 passed`**；
+真 dogfood `witnessloop check --root . --base origin/main --head HEAD` ⇒ `14 个变更文件，1 个 change 目录` /
+`未通过 ✗（4 项）`（缺 review manifest + 三条 stage 门）/ `EXIT=1`——**未建 `reviews/*.manifest.json`**（合规，本 change 禁止我建）。
+
+### 安全面复跑（我自己另造，**不是**跑作者的用例）
+
+| 配方 | 攻击 | HEAD 实测 | 判读 |
+|---|---|---|---|
+| **A** | 只改 `src/`、无 change 目录 | `EXIT=1` · 1 项（新文案） | fail-closed（与 base 同） |
+| **B** | 伪造归档（新建 `archive/2026-10-15-fake/**`）+ 改 `src/` | `EXIT=1` · **0 个 change 目录** · 1 项 | fail-closed |
+| **C** | 删 change 目录（`D`） | `EXIT=1` · 6 项，含「change 目录不存在」 | fail-closed |
+| **D** | 只改**已在 base** 的归档目录里的文件（`M`）+ 改 `src/` | `EXIT=1` · **0 个 change 目录** · 1 项 | fail-closed |
+| **E** | N6：单文件搬进已存在归档目录（名**不认得**源）+ 改 `src/` | `EXIT=1` · **0 个 change 目录** | fail-closed |
+| **F** | 残留边界②：单文件搬进已存在目录、名**认得**源、**不重建**证据 + 改 `src/` | `EXIT=1` · 4 项（缺 manifest + 三条 stage 门，**全部落在归档路径**） | fail-closed |
+| **G** | 两个源都搬进同一目录 + 改 `src/`（我的 fixture 让 `src/` 落在证据之后） | `EXIT=1` · 3 项「审阅的是旧 revision」 | 既有规则（非归档语义） |
+| **I** | 同 G，且 manifest 写**真搬进去的**另一个源 id | `EXIT=1` · 3 项（**无** `change_id` 那类） | 别名按设计吸收 |
+| **J** | D=`archive/2026-other`，move 的名字**认不得**源 + 改 `src/` | `EXIT=1` · **0 个 change 目录** | fail-closed（未凭空授予） |
+| **K** | D 被真 move 授予，但 manifest 写**无关的** `other` | `EXIT=1` · 3 项「与目录不符」 | **别名不是放开** |
+| **L** | 合法全链（`§1.6` 顺序 + 两条 move 进同一目录 + 改 `src/`） | **`EXIT=0` / 0 项**（prev 也 `EXIT=0`） | 未过度收紧 |
+
+⇒ **本 change 仍未开出新的绕过通道**：N1–N6 改前改后全红；两条与「同目录多源」有关的新形态（F 红、G/I 只按既有
+stale 规则红、J 未授予、K 拒无关 id）全部 fail-closed 或与既有边界等价。
+
+### 新发现（R2，**均非阻塞**）
+
+**R2-1（测试网眼 · 低）｜I6 的「并集」本身**没有测试钉住**（变异逃逸）。**
+把 `change_targets` 的 `grants` 回退成「只留先出现的源」（等价于 `4ad38f0` 的语义）⇒ **`23 passed`，零变红**。
+R1 的 I6 只要求「要么对齐、要么写明」，作者选了**改行为**——那就该有钉子。最小修法：在
+`test_change_targets_...` 旁加一条 5 行的单元用例，断言「两条 move 指向同一目录 ⇒
+`accepted_change_ids == frozenset({name, s1, s2})`」。
+
+**R2-2（测试网眼 · 低）｜I8 的「按目录数」也没有测试钉住。** 把 `len(targets)` 换回 `len({t.change_id for t in targets})`
+⇒ **`519 passed`**。同 id 撞车那个形态（我的 `e2e_i8` 仓）没进仓。最小修法：把撞车仓固化成一条
+`check` 级用例（断言摘要行含 `2 个 change 目录`）。⚠️ 我**第一次**把变异误写成 `len(change_ids)`（`_report` 作用域里没这个名字）
+⇒ 直接 `NameError`、17 failed——那是我的失误，已重做为正确变异，结论以上面为准。
+
+**R2-3（nit）｜新文案是全库唯一在 finding 里用 Markdown 粗体 `**…**` 的。**
+`checkcmd.py:221` 的 `**归档 move 也算「挂了 change」**` 在终端 / CI 日志里是**字面星号**；
+其余 finding（含同文件的其它几条）都写纯文本。非缺陷，只是风格不齐。
+
+**R2-4（nit）｜`source_change_id` 的「取值」无人消费。** `contract.py:186` 的 `min(sorted(sources), key=len)`
+（注释：「取最短的源 = 该归档目录本来是哪个 change」）——但全库只用 `is not None`（`archived` property，
+`contract.py:60-62`）与 `_report` 的 `（归档）` 标注，**值本身读不到**。所以那句注释描述的取舍**不可观测**。
+
+> ⚠️ 顺带一条**校准**（供下游别误读）：`docs/reviews/m1-acid-test.md:14` 与 `reviews/building-review.md`（R1 正文）
+> 里引用的旧 `_require_change` 文案**已与今天的实现不同**——两处都是**带日期的历史记录**（后者是 R1 自身的原始输出），
+> 按「不改历史」的原则**保持原样**是对的，不必同步。
+
+### 结论（R2）
+
+**PASS**。8 条全部收敛：I1/I2/I3/I4 有**可复跑的钉子**（我逐条变异确认抓住），I5/I7 的文档订正与实测**逐字一致**，
+**I6 的顺序漂移真的是 bug、真的修好了**（改前 0 项/3 项随顺序翻转，改后四种组合全绿），
+且**没有开出绕过口**（新接受的名字只能是真被搬进该目录的源；`change_id` 是攻击者自写字段、非授权闸、
+全库无下游消费）；**I8 确认纯诊断**（findings 逐条不变、`0 个 change 目录` 子串保留、判定面一条未动）。
+作者的两处关键说法（`13 failed / 10 passed`、`519 passed`）**逐字复现**。
+新增 4 条非阻塞（R2-1/R2-2 是**两条行为变更没有测试钉子**，最值得在收尾前补上；R2-3/R2-4 是 nit）。
+
+### 简报（R2，≤300 字）
+
+**Verdict：PASS**（无阻塞，8 条全收敛）。**I6 实测**：改前同一逻辑 diff 会按顺序在 0 项/3 项间**翻转**
+（我端到端跑到两个方向：`change_id='z'`+z 先 ⇒ 绿、改成 foo-z 先 ⇒ 红 3 项），改后**四种组合全绿**、
+`accepted = 两种顺序的并`——**漂移真修好**；**未开绕过口**（配方 K：写无关的 `other` 仍红 3 项；配方 J 未授予；
+且 `change_id` 是攻击者自写字段、全库无消费 ⇒ 非授权闸）。**I8 纯诊断**：findings 逐条不变（10=10），
+`0 个 change 目录` 子串保留，判定面未动。I1 文案真改了、I2 招牌场景我复跑（base `EXIT=0` 空转绿 / HEAD
+**恰好 1 项**点名硬门槛，三种变异都抓住）、I3/I4 钉子真实（M9 ⇒ 只它一条红）、I5/I7 与实测一致。
+**`13 failed / 10 passed` 逐字复现**；全量 **519 passed**；回归面 85 passed；安全面 A–L 全 fail-closed。
+**新阻塞项：无**；新非阻塞 4 条（R2-1/R2-2：I6 并集与 I8 计数**两条行为变更无测试钉子**；R2-3/R2-4 nit）。
