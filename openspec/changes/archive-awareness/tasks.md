@@ -1,6 +1,6 @@
 # Tasks: archive-awareness
 
-> 依据 `design.md`（草稿——grill 与对抗轮都已回写；**停轮项 Q1/Q2 确认前不得写实现代码**）。
+> 依据 `design.md`（grill + 对抗轮已回写；**用户 2026-10-15 已停轮裁定：Q1 = uniform、Q2 = 不收紧** ⇒ 可进入实现）。
 > 原则：**测试先行（TDD）**；判定面小（两个纯函数 + 三处接线），用例密集在**对称性**与**否定用例**上。
 > ⚠️ change 目录必须**全程完整**（本文件 + `specs/archive-awareness/spec.md`）。
 > ⚠️ **动手前先读 `design.md §1.5 / §1.6 / D8**（三条连锁 + 正确顺序 + 别名）：
@@ -133,19 +133,26 @@
 
 - [ ] H1 实现期**实测**接入方的归档命令在真仓上的 `git diff --name-status` 输出是 **R100**
       （R3 的前提；若不是 R100，停下来回报，别硬上）
-- [ ] H2 停轮拿到 **Q1**（+ **Q2**，若用户要它进机械门）的答复 → 逐条写进 `reviews/grill-design.md` 的
-      `## User Confirmation`（⚠️ **格式口径按本仓 checker**：`- **Q1**: 用户答复：…`，占位文本不算；
-      本仓解析的是**报告**不是 `design.md`；**Q2 还要同时进报告的 `## Open Questions` 才会被机械判据覆盖**——
-      报告由审阅者维护，我只读）→ `manifest build --stage grill` 放行 `src/**` → 内容提交后**必须重跑**（否则 stale）
+- [ ] H2 ✅ **已做（2026-10-15 用户停轮裁定）**：Q1 = **uniform**、Q2 = **不收紧**，逐条写进
+      `reviews/grill-design.md`（**追加** `## Open Questions`（Q1+Q2）+ `## User Confirmation`；
+      **审阅者原正文一字未改**，`git diff` 只有新增行）。
+      ⚠️ **实现期踩坑记录（重要）**：本仓 checker 按**逐字标题**取小节
+      （`evidence.OPEN_QUESTIONS_TITLE = "Open Questions"`）⇒ 审阅者原标题带括号时那条规则**空真**
+      ⇒ 追加的小节标题必须逐字。直调结果 `grill_evidence_findings ⇒ 0 条`；反证（拿掉 Q2 的确认）
+      ⇒ 报 `Open Question Q2 未经用户确认`（规则确实在跑）。
+      实现期在内容提交后跑 `manifest build --stage grill` 放行 `src/**` → **必须重跑**（否则 stale）
 - [ ] H3 （收尾，在 build 证据**之后**）两段提交 + `manifest build`（grill / grill-adversarial / building）+ `check` 绿
 - [ ] H4 独立 `review-loop`（PASS 或 3 轮封顶）
 - [ ] H5 （收尾）PR（branch protection）→ 合入 → 关 issue **#21**
 - [ ] H6 ⚠️ 本 change 的实现 PR **不要顺带归档别的 change**（R5：那会让被归档的 change 按今天的规则被校验），
       也**不要在同一个 diff 里既归档又改写被归档 change 里的任何文件**（R12：幽灵 active id）
+- [ ] H7 **后续（不阻塞本 change，也不由本 change 开 issue）**：「归档命名要不要统一成 `archive/<id>`」
+      ——§8 的 Q2 已裁定**不收紧**；若日后要统一，**另立 change/issue**（迁移成本见 §8 Q2：80 个目录 ≈ 240 条事件）。
+      本 change 只负责在 `docs/gate.md §5.1` 写明「授予判据接受 `-<源id>` 后缀」这条**现有约定**。
 
 ## 明确不做（本 change）
 
-asterwynd 式归档完成度门禁 · 日期前缀解析 · **收紧归档命名为 `archive/<id>`**（= §8 Q2 的政策题）·
+asterwynd 式归档完成度门禁 · 日期前缀解析 · **收紧归档命名为 `archive/<id>`**（§8 Q2 **已裁定不收紧**；「归档命名要不要统一」**另立 change/issue**，本 change 不开）·
 change ↔ 代码路径归属 · `guard` 的归档支持（已知缺口）· events 去重/索引 · 签名/防伪造 · 改 `check` 退出码语义。
 
 ## 实测记录（立项期，基线 `ae99256`）

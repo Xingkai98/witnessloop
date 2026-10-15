@@ -32,6 +32,18 @@
   实测为 **3 条**「审阅的是旧 revision」（既有的「先内容、后证据」，`docs/gate.md §3.1`）——那是**既有**规则，
   与本 change 无关，**不得**当成「归档 ⇒ 自动绿」的验收断言
 
+### Scenario: **纯归档 PR 也按同一套规则校验**（uniform —— 用户 2026-10-15 裁定的生效口径）
+- **Given** 一个**历史 change** `legacy-x`（三份 manifest 是**归档前**用源 id 产的），
+  其 `reviews/grill-review.md` 的 `## Confirmed Decisions` **只有 2 条**（不合规）
+- **And** 本 PR **只做归档**：`git mv openspec/changes/legacy-x openspec/changes/archive/2026-10-15-legacy-x`，
+  **一行代码都不改**（无 `code_hits`）
+- **When** 运行 `check`
+- **Then** 退出码非 0，且恰好 **1 项**：`openspec/changes/archive/2026-10-15-legacy-x/reviews/grill-review.md：
+  `## Confirmed Decisions` 只有 2 条，少于硬门槛 3 条`（本仓实测；别名已吸收 `change_id` 那一类）
+- **And** 修复路径是**两跳**：① 在**归档之前**的 diff 里补齐报告 + 重建那份 manifest（各写一条
+  `protected_path_write` 事件）；② 归档 move 本身纯改名、放最后
+- ⚠️ **不引入**「归档专用」的第二套判据、也**不**给纯归档 PR 开后门（`code-gated` / `contract-only` 已否决，见 `design.md §8`）
+
 ### Scenario: 归档 + 同 PR 改代码、但归档 change 零证据 ⇒ 四条缺件全点名（**防绕过**）
 - **Given** 本 PR 把 change `<id>` 搬进 `archive/2026-10-14-<id>/`（目录里件齐、**零 manifest**），并同时改动 `src/**`
 - **When** 运行 `check`
@@ -48,6 +60,11 @@
 2. **目标目录名认得源 id**：`<name> == <源id>` 或 `<name>.endswith("-" + <源id>)`
    （`<源id>` = 旧路径里 `changes_root/` 之后的首段；**只做等值 / 后缀比对，不解析日期**）。
    不满足 ⇒ **不授予**（该 move 的两端仍按既有规则排除 ⇒ 集合为空 ⇒ 回落到今天的行为，fail-closed）。
+
+⚠️ **两种命名都授予**（用户 2026-10-15 裁定 **不收紧**，`design.md §8` Q2）：`archive/<id>` **与**
+`archive/<date>-<id>` 都算；本 change **SHALL NOT** 要求归档目录必须命名为 `archive/<id>`
+（那会让接入方现有 `<date>-<id>` 目录与 OpenSpec `openspec archive` 自身的约定拿不到授予）。
+⇒ 规格里**没有**「必须 `archive/<id>`」这类硬要求；「归档命名要不要统一」是**另立 change/issue** 的事。
 
 `check` SHALL NOT 因下列动作而认为任何 change 出现在本次 diff：
 

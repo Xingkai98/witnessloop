@@ -106,3 +106,26 @@
 - **M6〔低·`tasks.md:76-81`（G1–G5）〕**：`docs/gate.md` 与 `README.md` 都被 `tests/test_docs.py` 钉着，G1–G5 改写时必须不破：`IDEMPOTENCY_DOCS`（`tests/test_docs.py:104-127`）要求 gate.md 里**每个**「幂等」（现于 `:9`、`:52`、`:497`）要么讲 `init`、要么 ±2 行内带「固定 base 与 revision」；`Q3_DOCS` 禁「挡「忘了另开 run」」；`RUN_ID_DOCS` 要求「确定性」在场。**G3 要改写 `manifest build` 那一节（`docs/gate.md §3.2`），正是「幂等」密集处**——建议在 tasks 里点名这条守卫。
 
 > 说明：本文件按任务要求落在 `reviews/grill-design.md`。⚠️ 它与本仓其余 change 的 `reviews/grill-review.md` **是同一件产物**（`templates/grill.md:91` 明写「`reviews/grill-review.md`（即 `grill-design.md`）」）。无论用哪个名字，**必须由 `stage=grill` 的 manifest 以 `report_path` 绑定**，否则 `check` 的孤儿规则（`contract.py:203`，`reviews/**/*.md` 逐个必须被某份 manifest 引用）会在本 change 自己身上判红。
+
+## Open Questions
+
+> ⚠️ **本节由主流程按用户停轮答复追加**（2026-10-15），**审阅者上面写的正文一个字未改**。
+> **为什么还要一个小节**：本仓 checker（`evidence.grill_evidence_findings`）按**逐字标题**取小节
+> （`OPEN_QUESTIONS_TITLE = "Open Questions"`），而审阅者那个小节的标题带括号 → **机械判据不认**，
+> 「每个 `Q<n>` 都要有用户确认」这条规则就变成**空真**。⇒ 这里放一份标题**逐字**的
+> `## Open Questions`，供人读也供机械判；**Q1 与上面那条是同一个问题**（上面是审阅者的分析原文）。
+
+- **Q1**: 归档 change 的校验深度（归档 change 进集合后校验到哪一层）——见上方审阅者原 Q1 的完整分析与推荐；
+  **待用户裁定的分叉点** = 接不接受「纯归档 PR 也会红」这条新红类。
+- **Q2**: 归档目录的命名要不要**收紧成 `archive/<id>`**（去掉 `<date>-` 前缀）——名字不变就能整类消掉
+  「归档目录名 ≠ 源 id」的差异（`design.md` D1 的备选段：实测同一 fixture 红数 6 → 3）。代价有两条：
+  ① 接入方现有 **80 份** `<date>-<id>` 归档目录 + OpenSpec `openspec archive` 自身的日期约定
+  ⇒ 收紧后它们的归档 move **一概不授予**（症状 ① 原样回来）；② 把 80 个目录改名约要 **240 条**解释事件。
+
+## User Confirmation
+
+> ⚠️ **本节由主流程按用户停轮答复追加**（2026-10-15）。记录格式与 `templates/grill.md` 第 6 步一致：
+> 确认了什么 + 实质内容 + 时间。
+
+- **Q1**: 用户答复：**uniform**——归档 change 走与 active **同一套**规则（不引入「归档专用」的第二套判据），并**接受**「纯归档 PR 也会红」这条新红类；补救两跳已写进文档：① 证据不合规的**历史 change** 要在**归档之前**的 diff 里修（补齐报告 + 重建那份 manifest，各写一条 `protected_path_write` 事件）；② 归档 move 必须**纯改名、放最后**（同一 diff 里改写被 move 的文件 ⇒ `R<100` ⇒ 幽灵 active id，补事件也消不掉）。本仓实测：纯归档一个 grill 报告只有 2 条决策的 change ⇒ 红 **1 项**；确认时间: 2026-10-15
+- **Q2**: 用户答复：**不收紧**——归档目录保持 `archive/<date>-<id>` 形态，**不要求**接入方改名（`archive/<id>` 被否决：会让现有 80 份目录与 OpenSpec 的日期约定拿不到授予，症状 ① 回来）；**D8 别名继续保留**（归档态 target 的 `change_id` 同时接受「归档目录名」与「源 id」）；「归档命名要不要统一」**不阻塞本 change**，如需统一另立 change/issue；确认时间: 2026-10-15

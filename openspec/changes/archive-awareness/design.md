@@ -1,6 +1,6 @@
 # Design: archive-awareness
 
-> 状态：**草稿**（待 grill → 设计对抗验证 → 停轮）。
+> 状态：**草稿**（grill → 设计对抗验证 **已回写** → **用户 2026-10-15 已停轮裁定**，见 §8；实现待任务单）。
 > 依据 `proposal.md`；流程出处 `templates/grill.md`。
 > 本文所有「实测」均为**本仓当前树**（基线 `ae99256`）上的复核：命令与输出见 §1，草稿期**未**改动任何 `src/`。
 
@@ -342,7 +342,7 @@ issue 问的是「① 只豁免它自己这一次 diff；② 还是同时豁免�
 > grill 判定这三条**能由代码/证据定案**（`templates/grill.md` §3：能由代码或规格直接判定的进
 > `## Code-Resolved Questions`，**不停轮**）。下面是结论 + **本仓复核**的依据。
 > ⇒ 本文档对它们的**编号引用一律改成 CQ1/CQ2/CQ3**（不再写 Q2/Q3/Q4），
-> 免得与 `reviews/grill-design.md` 里那条**停轮项 Q1** 混淆。
+> 免得与停轮项 Q1/Q2（**已裁定**，见 §8）混淆——那两条才是要用户拍板的，本节三条不是。
 
 - **CQ1（原 Q2）归档态 change id 只能是「归档目录名」**（作为**身份**；归档前产出的 manifest 另走 D8 的别名）。
   依据：**`contract.py:250` 的交叉校验比的是 label 末段**（= change 目录的名字），而 `check` 与
@@ -551,7 +551,7 @@ issue 问的是「① 只豁免它自己这一次 diff；② 还是同时豁免�
 
 **grill 与对抗轮都已回写**（`reviews/grill-design.md` = run `grill-reviewer-archive-awareness-ae992565ee21`；
 `reviews/grill-adversarial.md` = run `grill-adversarial-reviewer-archive-awareness-4bd6ad0e2143`，R1 判
-**CHANGES_REQUESTED**、**不推翻方案方向**）。**停轮尚未进行**。
+**CHANGES_REQUESTED**、**不推翻方案方向**）。**用户已于 2026-10-15 停轮裁定**（§8：Q1 = uniform、Q2 = 不收紧）。
 
 ### 7.1 对抗轮（R1）确认的（它自己重跑过；本稿据此**不推翻**）
 
@@ -607,54 +607,47 @@ issue 问的是「① 只豁免它自己这一次 diff；② 还是同时豁免�
 
 **Code-Resolved（grill 判定可由代码定案）**：原 Q2/Q3/Q4 ⇒ 见 §2.6，**不进停轮队列**。
 
-**停轮队列**：**Q1 + Q2**（§8）——Q2 是对抗轮之后新开的政策题。
+**停轮**：**2026-10-15 用户已逐条裁定**（Q1 + Q2，§8）——**无待定项**。
 
-## 8. Open Questions（停轮项：**Q1 + Q2**）
+## 8. 停轮裁定（Q1..Q2 —— 用户 **2026-10-15 已逐条确认**；答复原文见 `reviews/grill-design.md` 的 `## User Confirmation`）
 
-> 原 Q2 / Q3 / Q4 已由 grill 判定为**可由代码定案**，移入 §2.6（CQ1 / CQ2 / CQ3）——
-> 它们**不进停轮队列**。**Q2 是抗对轮之后新开的**（政策题，见下）；Q1 是原有的。
-> ⚠️ **本仓 checker 的实际口径**（`evidence.grill_evidence_findings`，我逐行读过）：
+> 名称与格式沿用本仓先例（`grill-adversarial-gate` / `adopter-test-gate` 的 `## 停轮裁定`）。
+> 原 Q2/Q3/Q4（**编号**）已由 grill 判定为可由代码定案，移入 §2.6（CQ1/CQ2/CQ3），**不进停轮**——
+> 注意本节的 **Q2 是另一条**（对抗轮之后新开的政策题，与 §2.6 的 CQ2 不是一回事）。
+> ⚠️ **本仓 checker 的实际口径**（`evidence.grill_evidence_findings`，我逐行读过并直调验证）：
 > 它解析的是 **grill 报告**（`reviews/grill-design.md`，由 `stage=grill` 的 manifest 以 `report_path` 绑定），
-> **不是** `design.md`。要求：`## Confirmed Decisions` ≥3 条且每条带 `来源:`、**`## User Confirmation` 小节存在**、
-> 且 `## Open Questions` 里的**每个 `Q<n>`** 都要在该小节里有 `- **Qn**: 用户答复：…`（占位文本不算）。
-> `## Code-Resolved Questions` 是**独立小节**，不进这条判据。
-> ⇒ 停轮时要在 `reviews/grill-design.md` 里补 **Q1** 的确认记录（**我不能代写**——那是用户答复）；
-> **Q2 若要进机械门**，需把用户答复**同时**记进那份报告的 `## Open Questions` / `## User Confirmation`
-> （报告由审阅者维护，我只读）。
+> **不是** `design.md`；且它按**逐字标题**取小节（`OPEN_QUESTIONS_TITLE = "Open Questions"`）。
+> 要求：`## Confirmed Decisions` ≥3 条且每条带 `来源:`、`## User Confirmation` 小节存在、
+> 且 `## Open Questions` 里的**每个 `Q<n>`** 都要在该小节里有 `- **Qn**: 用户答复：…；确认时间: <date>`。
+> ⇒ 本期已在报告里**追加**了标题逐字的 `## Open Questions`（Q1+Q2）与 `## User Confirmation`（两条实质答复），
+> **审阅者原正文一字未改**（`git diff` 只有新增行）。直调结果：`grill_evidence_findings ⇒ 0 条`；
+> 反证（拿掉 Q2 的确认）⇒ 报 `Open Question Q2 未经用户确认` ⇒ **规则确实在跑，不是空真**。
 
-- **Q1〔归档 change 的校验深度〕**：归档 change 进集合后，校验到哪一层——
-  即**接不接受「纯归档 PR 也会红」这条新红类**（R2）？
-  **例子（分叉只在「纯归档 PR」上看得出来）**：PR **只做归档**——
+- **Q1〔归档 change 的校验深度〕＝ 裁定 `uniform`（生效口径）**：归档 change 进集合后，
+  走与 active **同一套**规则（不引入「归档专用」的第二套判据）；
+  **接受**「纯归档 PR 也会红」这条新红类。
+  **可判定的例子**（对抗轮选定的分叉场景，本仓实测）：PR **只做归档**——
   `git mv openspec/changes/legacy-x openspec/changes/archive/2026-10-15-legacy-x`，**一行代码都不改**，
-  而 `legacy-x/reviews/grill-review.md` 是早期写的、`## Confirmed Decisions` 只有 2 条（它的三份 manifest
-  是归档前用源 id 产的）。
+  而 `legacy-x/reviews/grill-review.md` 是早期写的、`## Confirmed Decisions` 只有 2 条
+  （它的三份 manifest 是归档前用源 id 产的）。
   - **今天**：`check` **绿**（集合为空，这份 change 压根不被校验）——同款实测见 §1.2 的 C2（`EXIT=0`）。
-  - **uniform（推荐）**：**红 1 项**——`openspec/changes/archive/2026-10-15-legacy-x/reviews/grill-review.md：
-    `## Confirmed Decisions` 只有 2 条，少于硬门槛 3 条`。
-    ⚠️ **按 D8 重算过**：不是对抗报告测的 4 项（那 3 项 `change_id='legacy-x' 与目录不符`已被**别名**吸收）。
-    **补救要两跳**：① 补齐报告**必须在归档之前的 diff**（在同一 diff 里改被 move 的文件 ⇒ `R<100` ⇒
-    幽灵 active id，§1.5 第 2 条——**这个限制今天就已经存在**，对抗轮 A8 实测今天 5 项红，不是本 change 新增）；
-    ② 报告一改，它的 `report_hash` 就变 ⇒ 那份 manifest 要在**不含 move 的 diff** 里重建（`M` ⇒ 一条事件，§1.5 第 3 条）。
-  - **code-gated**（只在本 PR 落了代码时全量校验）：**绿**（本 PR 无 `code_hits`）。
-  - **contract-only**（归档只查「必需件齐备」）：**绿**，但**留绕过口**——
-    归档 + 改代码的 PR 就不再要求 stage 证据了（§1.2 的 C3 形态，实测 **0 项红 = 放行**）⇒ ❌ **不可选**。
-  - ⚠️ **接入方那种「实现 + 归档」的 PR 区分不出这两个选项**：它的 `code_hits` 非空
-    ⇒ uniform 与 code-gated **结果完全相同**（都跑三条 stage 门）。别拿它当例子。
-  - ➡️ **推荐 uniform**：与 active **同一套规则**（没有第二套「归档专用」判据 = 没有第二条漂移面）。
-    ⚠️ 理由**不是**「它是绕过口的唯一闭合方式」——`code-gated` **同样**闭合 C3（实测 4 项红里三条 stage 门
-    就是它的 `code_hits` 拉起来的）。真正的决策点就是「**愿不愿意让纯归档 PR 也吃这条新红类**」；
-    不接受时的备选是「纯归档 PR 与实现 PR 拆开」（注意：拆开后纯归档 PR **仍**会吃 manifest 与 grill 正文那两条）。
-- **Q2〔要不要把归档命名收紧成 `archive/<id>`〕**（抗对轮点名的第三路；**不影响本 change 的既有实现**）：
-  **例子**：把 `git mv openspec/changes/gwa openspec/changes/archive/2026-10-14-gwa` 改成
-  `git mv openspec/changes/gwa openspec/changes/archive/gwa`（= 本仓既有测试 `test_archive.py` 的写法）。
-  - **收益（实测）**：名字不变 ⇒ `change_id` 那一类红**整类消失**（对抗轮同一 fixture：**6 → 3** 项），
-    D8 的别名成为**死代码**，接入方文档也少一条「两个名字」的解释。
-  - **代价 ①（会挡住接入方用这一路）**：接入方现有 **80 份**归档目录就是 `<date>-<id>` 形态，
-    而这是 **OpenSpec `openspec archive` 自己的约定**；若把**授予判据收紧成「必须等值」**，
-    他们的归档 move 一概**不授予** ⇒ **症状 ① 原样回来**（「本次 diff 里没有任何 change 目录」）。
-  - **代价 ②（迁移一次性的）**：把 80 个目录改名 ⇒ 每个目录里的 manifest 都会被 `_protected_writes`
-    判「旧路径删除」（rename 的另一半）⇒ 约 **240 条**解释事件（3 份 manifest × 80）。
-  - ➡️ **本 change 的推荐：不收紧**（D8 已让两种命名都能用；收紧只增加迁移成本，收益是一条死代码分支）。
-    若用户希望**把 `archive/<id>` 定为硬要求**（例如为了长期口径统一），那就是本 OQ 的**另一个答案**：
-    实现上只需把 D2 第 2 条的判据从「等值 **或** `-<源id>` 后缀」改成「**必须等值**」，并同步改
-    `docs/gate.md §5.1` / `README` 的接入指引；**不影响**其余决策（D8 保留为兼容别名）。
+  - **本 change（uniform）**：**红 1 项**——`openspec/changes/archive/2026-10-15-legacy-x/reviews/grill-review.md：
+    `## Confirmed Decisions` 只有 2 条，少于硬门槛 3 条`（本仓实测：`alias=True` ⇒ 1 项；`alias=False` ⇒ 4 项，
+    多出的 3 项是 `change_id` 与目录不符——**已由 D8 别名吸收**）。
+  - **补救两跳（写进 `docs/gate.md` / `README` 的接入指引）**：
+    ① 证据不合规的**历史 change** 要在**归档之前的 diff** 里修（补齐报告 + 重建那份 manifest + 各写一条
+    `protected_path_write` 事件）——同一 diff 里改被 move 的文件 ⇒ `R<100` ⇒ 幽灵 active id（§1.5 第 2 条，
+    **这个限制今天就已存在**，对抗轮 A8 实测今天 5 项红）；
+    ② 归档 move 本身必须**纯改名、放最后**（§1.6 的三步顺序）。
+  - **否决的备选（各一句）**：`code-gated`（只在落了代码时全量校验）——也能闭合 §1.2 的绕过口，
+    但会给同一件事留两种判据；`contract-only`（归档只查必需件）——**留绕过口**（归档 + 改代码 ⇒ 0 项红 = 放行）；
+    「纯归档 PR 与实现 PR 拆开」——不是备选而是**用户可选的缓解**（拆开后纯归档 PR 仍吃 manifest 与 grill 正文两条）。
+- **Q2〔归档目录命名要不要收紧成 `archive/<id>`〕＝ 裁定 `不收紧`（生效口径）**：
+  保持 `archive/<date>-<id>`；**D8 的别名继续保留**（归档态 target 的 `change_id` 同时接受「归档目录名」与「源 id」，
+  两种命名都能用）；**不要求**接入方给 80 份既有目录改名。
+  - **否决 `archive/<id>` 的理由（实测）**：收紧授予判据（「必须等值」）会让接入方现有 **80 份**
+    `<date>-<id>` 归档目录 + **OpenSpec `openspec archive` 自身**的日期约定**一概拿不到授予**
+    ⇒ **症状 ① 原样回来**；而改名迁移本身约要 **240 条**解释事件（80 个目录 × 3 份 manifest 的「旧路径删除」）。
+    它的收益（`change_id` 那一类红整类消失，对抗轮同一 fixture 6 → 3 项）**已被 D8 别名覆盖**。
+  - **后续（不阻塞本 change）**：「归档命名要不要统一」**另立 change/issue**——本 change 不自己开 issue，
+    只在 `tasks.md` 的「明确不做」里登记，并在 `docs/gate.md §5.1` 写明「授予判据接受 `-<源id>` 后缀」这条约定。
