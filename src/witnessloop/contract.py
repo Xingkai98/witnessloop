@@ -215,10 +215,9 @@ def _content_provenance_ok(
             continue
         if entry.type == "tree":
             # 目录（可能是链接过来的）：其下文件**保留逻辑前缀**入队 —— H3 的修复点。
-            prefix = seen if seen == src else seen
             for row in view.walk(rev, final):
                 rel = row.path[len(final) + 1:]
-                queue.append((f"{prefix}/{rel}", row.path))
+                queue.append((f"{seen}/{rel}", row.path))
             continue
         if seen not in compared:
             compared.add(seen)

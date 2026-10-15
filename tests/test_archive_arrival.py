@@ -338,15 +338,19 @@ def test_a_wide_arrival_with_more_than_a_thousand_files_is_still_an_arrival():
     assert [a.name for a in _arrivals([], {}, head)] == ["2026-10-15-wide"]
 
 
-def test_a_pathologically_deep_link_chain_is_rejected():
-    """**深度**才是病：逻辑路径深到病态 ⇒ fail-closed（self-ref 目录链接的纯函数等价形态）。"""
+def test_a_pathologically_deep_evidence_path_is_rejected():
+    """**深度**才是病：逻辑路径深到病态 ⇒ fail-closed。
+
+    （构造的是**真实深路径**而不是符号链接链；self-ref 链接的端到端形态见
+    `tests/test_archive_awareness.py::test_F18_self_referential_directory_link_terminates`。）
+    """
     head: dict = {}
     _dir(head, f"{ARCHIVE}/2026-10-15-deep", files={
         "proposal.md": "p", "design.md": "d", "tasks.md": "t",
         "specs/s.md": "s", "reviews/r.md": "r",
     })
     deep = f"{ARCHIVE}/2026-10-15-deep/specs"
-    for i in range(40):                       # 40 层「目录链接指向父目录」的等价形态
+    for i in range(40):                       # 40 层真实嵌套（远超任何正常证据树）
         deep = f"{deep}/l"
         head[f"{deep}/s.md"] = ("100644", "blob", "s")
     assert _arrivals([], {}, head) == []

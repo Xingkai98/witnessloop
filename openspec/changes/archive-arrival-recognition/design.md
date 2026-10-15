@@ -635,6 +635,13 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | **M2**（低，规格明文 `SHALL`） | `<A>` 下**非证据位置**的 gitlink 未 fail-closed | 比对前先扫 `<A>` 全域：任何 gitlink ⇒ 不授予；用例 `test_F10_gitlink_anywhere_under_the_arrival_is_rejected` |
 | **M3**（低） | 三条用例未落（基准同源 / fail-closed / 符号链接端到端）+ 死代码 `_targets()` | 新增 `test_F11_arrival_judgment_uses_merge_base_not_the_base_ref` 等；删死代码 |
 | **M4**（低） | `docs/gate.md` 缺「树不可读 ⇒ fail-closed」登记 | 已补进 §5.1.1 |
+| **H2**（高，Round 2） | manifest **自身是符号链接**时按真身路径匹配 glob ⇒ 其 `report_path` 目标永不入比对集 | 改按「**门禁看见的路径**」判 glob、按**内容源**读正文；用例 `test_F12` |
+| **H3/H4**（高/中，Round 3） | 目录链接展开时**丢掉逻辑路径**；`A` **之外**的目录目标只比 tree sha | 队列改 `(seen, src)` 二元组 + `follow()` 跟随链接链；目录展开**保留逻辑前缀**；`A` 外目录逐文件比对；用例 `test_F15/F16` |
+| **H5**（高，Round 4） | (b) 只看落点**路径** ⇒ 「相似文件改名 + 覆盖成借来的字节」洗白 | (b) 收紧为「**内容未变的搬移**」（`(new_path, 源侧 blob)` 二元组）；规格正文同步；用例 `test_F17` |
+| **H6**（中，Round 4） | 自引用目录链接（`ln -s .. A/specs/l`）⇒ 展开**不终止**（CI 挂死） | 加终止性护栏；**Round 5 订正**：封顶对象从「队列项总数」改为「**逻辑路径深度**」（`dir 深度 + 32`），总量只作安全网 —— 前者会误伤上千文件的**合法宽目录**；用例 `test_F18` + 两条纯函数用例（宽 1100 文件判到达 / 40 层深链判拒） |
+
+**Round 6 复验判定：`Verdict = PASS`**（无必须修改项；仅剩 4 条非阻塞建议，已一并落库：
+超限文案在 `docs/gate.md §7` 登记、用例改名、去掉冗余表达式、本节同步）。
 
 它同时用**真实现**复跑了 R1–R8 的全部构造 + 3 条自造新攻击（共 20 个 case）：
 
