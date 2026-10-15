@@ -216,8 +216,11 @@ def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contrac
         contract.Finding(
             hits[0],
             f"{shown} 属于必须挂 change 的路径（policy.require_change_for），"
-            f"但本次 diff 里没有任何 change 目录（{pol.changes_root}/<id>/）。"
-            "补一个 change 目录，或把该路径从 policy.require_change_for 里移除。",
+            f"但本次 diff 里没有任何 change 目录（{pol.changes_root}/<id>/），"
+            f"也没有一次把它归档进来的 `git mv {pol.changes_root}/<id>/… {pol.archive_root}/…`"
+            "（**归档 move 也算「挂了 change」**——那个 change 会按归档路径走同一套证据门禁）。"
+            "补一个 change 目录（或补上那条归档 move），"
+            "或把该路径从 policy.require_change_for 里移除。",
         )
     ]
 
@@ -287,11 +290,12 @@ def _report(base, head, changes, targets, findings) -> None:
     # flush：不 flush 的话 stdout 缓冲会让摘要排在 stderr 的失败明细后面。
     #
     # ⚠️ `N 个 change 目录` 这个**子串**被 `tests/test_check_contract.py` 钉着（`0 个 change 目录`），
-    # 别改措辞；计数按**去重后的 id** 算（归档 id 也计入）。
-    change_ids = sorted({target.change_id for target in targets})
+    # 别改措辞。计数按 **target 数**（= 目录数）算、**不是**去重后的 id 数：同一个单段 id 可以
+    # 同时来自 active 与归档（`change_targets` 的 tie-break），那种情形下 dirs=2/ids=1——
+    # 报「1 个 change 目录」会把两个目录说成一个（labels 那行仍逐条列出，能找到它）。
     print(
         f"check：基线 {base}...{head}，{len(changes)} 个变更文件，"
-        f"{len(change_ids)} 个 change 目录",
+        f"{len(targets)} 个 change 目录",
         flush=True,
     )
     if targets:

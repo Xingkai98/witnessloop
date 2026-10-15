@@ -164,21 +164,26 @@ def change_targets(root: Path, policy: Policy, changes) -> list[ChangeTarget]:
         )
         for change_id in changed_change_ids(changes, policy.changes_root)
     ]
-    grants: dict[str, str] = {}
+    # name → **所有**认得它的源 id。⚠️ 收集成集合、不是单个源：同一个归档目录可以被多条 move
+    # 指向（两个源的名字互为后缀，如 `z` 与 `foo-z` 都满足 `-<源id>`），只留一个会让别名随
+    # **diff 顺序**而变（谁先出现谁生效）——那是不可复现的口径，也与「不许静默丢一份」相悖。
+    grants: dict[str, set[str]] = {}
     for change in changes:
         grant = archive_grant(change, policy.changes_root)
         if grant is not None:
-            grants.setdefault(grant[1], grant[0])
+            source, name = grant
+            grants.setdefault(name, set()).add(source)
     for name in sorted(grants):
-        source = grants[name]
+        sources = grants[name]
         targets.append(
             ChangeTarget(
                 change_id=name,
                 directory=archived_change_dir(root, policy, name),
                 label=f"{policy.archive_root}/{name}",
                 # D8 别名：归档**前**产出的 manifest 带的是源 id，归档**后**产出的是目录名。
-                accepted_change_ids=frozenset({name, source}),
-                source_change_id=source,
+                accepted_change_ids=frozenset({name}) | sources,
+                # 诊断用：取**最短**的源（= 该归档目录「本来」是哪个 change）。
+                source_change_id=min(sorted(sources), key=len),
             )
         )
     return targets

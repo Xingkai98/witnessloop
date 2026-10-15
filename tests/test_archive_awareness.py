@@ -29,6 +29,16 @@ from helpers import (
 
 CHANGES = C.DEFAULT_CHANGES_ROOT
 ARCHIVE_REL = f"{CHANGES}/{C.ARCHIVE_DIR_NAME}"
+#: 一份**不合规**的 grill 决策记录（只有 2 条 Confirmed Decisions）——uniform 招牌场景要用它。
+SHORT_GRILL = (
+    "# Grill: add-retry 设计追问\n\n## Reviewer\n- run id: `grill-reviewer-1`\n\n"
+    "## Confirmed Decisions\n\n"
+    "- **决策（D1）**：甲。\n  理由：因为甲；来源: `grill-reviewer-1`\n\n"
+    "- **决策（D2）**：乙。\n  理由：因为乙；来源: `grill-reviewer-1`\n\n"
+    "## Open Questions\n\n- **Q1** 选甲还是乙？\n\n"
+    "## User Confirmation\n\n- **Q1**: 用户答复：甲；确认时间: 2026-01-01\n"
+)
+
 CHANGE = "add-retry"
 DAY = "2026-10-14"
 ARCHIVED_NAME = f"{DAY}-{CHANGE}"
@@ -385,6 +395,76 @@ def test_deeper_events_file_is_not_read(repo: Path, cli):
     assert "openspec/specs/deep.md" in err and "没有结构化解释事件" in err
 
 
+# ----------------------------------------------------------------- I. 审阅补钉（building-review 的 I2/I3/I4）
+
+def test_uniform_validates_a_pure_archive_pr_like_active(repo: Path, cli):
+    """**Q1 裁定的招牌场景**（`spec.md` §12 的 Scenario 2）：纯归档 PR 也按同一套规则校验。
+
+    只做 `git mv`、一行代码都不改；被归档 change 的证据是归档**前**用**源 id** 产的，
+    且它的 grill 报告 `## Confirmed Decisions` 只有 2 条 ⇒ uniform 下**红恰好 1 项**
+    （别名那 3 项 `change_id` 已被 D8 吸收——这正是对抗轮对 Q1 例子「4 项 → 1 项」的校准）。
+    """
+    init_wired(repo, cli)
+    commit_content(repo, CHANGE)
+    commit_evidence(repo, CHANGE, report_body=SHORT_GRILL)  # 证据齐、但 grill 报告不合规
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    name = _archive_it(repo)
+    commit_all(repo, "只做归档（一行代码都不改）")
+
+    code, _, err = check(repo, cli)
+
+    findings = [
+        line for line in err.splitlines()
+        if line.strip()[:2] in tuple(f"{i}." for i in range(1, 10))
+    ]
+    assert code == C.EXIT_FAIL
+    assert len(findings) == 1, err  # ⚠️ 数数断言：uniform 只点出 grill 正文那一条
+    assert "少于硬门槛 3 条" in err
+    assert f"{ARCHIVE_REL}/{name}/reviews/grill-review.md" in err
+
+
+def test_alias_does_not_loosen_the_change_id_check(repo: Path, cli):
+    """`spec.md` §116 的 Scenario 3：别名只接受 `{归档目录名, 源 id}`——**别的** id 仍被拒。"""
+    init_wired(repo, cli)
+    commit_content(repo, CHANGE)
+    commit_evidence(repo, CHANGE, doc_overrides={"change_id": "other"})  # 归档前产出的名字是别人的
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    _archive_it(repo)
+    commit_all(repo, "纯归档")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "manifest.change_id='other' 与目录不符" in err, err
+
+
+def test_manifest_build_prefers_the_active_directory_when_both_exist(repo: Path, cli):
+    """D4 的解析顺序（**回归护栏**，改前也绿）：同名 active 与 archive 并存 ⇒ 解析到 **active**。
+
+    ⚠️ 这条**不是**「先红」用例（改前 `resolve_change_dir` 不存在，行为恰好相同）——
+    它守的是「别把顺序改成 archive 优先」（那样会静默写到另一个目录）。
+    """
+    init_wired(repo, cli)
+    commit_content(repo, "dup")                       # active 的 dup（件齐）
+    (change_dir(repo, "dup") / "reviews" / "building-review.md").write_text("PASS\n", encoding="utf-8")
+    commit_all(repo, "active dup")
+    archived = repo / ARCHIVE_REL / "dup"             # 同名的一个**归档**目录（件齐，手工造）
+    (archived / "reviews").mkdir(parents=True)
+    for artifact in ("proposal.md", "design.md", "tasks.md"):
+        (archived / artifact).write_text("f\n", encoding="utf-8")
+    (archived / "specs").mkdir()
+    commit_all(repo, "同名 archive/dup")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    code, _, err = _build(repo, cli, "dup", "reviews/building-review.md", "building")
+
+    assert code == C.EXIT_PASS, err
+    assert (repo / CHANGES / "dup/reviews/building.manifest.json").is_file()
+    assert not (archived / "reviews/building.manifest.json").exists()
+
+
 # --------------------------------------------------------------------------- E. 否定面
 
 def test_N1_code_only_without_any_change_dir_is_still_rejected(repo: Path, cli):
@@ -398,6 +478,8 @@ def test_N1_code_only_without_any_change_dir_is_still_rejected(repo: Path, cli):
 
     assert code == C.EXIT_FAIL
     assert "src/app.py" in err and "require_change_for" in err
+    # I1：文案要**真的**提到归档 move（`[x]` 的那半不能落空）
+    assert "归档 move" in err and "git mv" in err
 
 
 def test_N2_a_forged_archive_grants_nothing(repo: Path, cli):
