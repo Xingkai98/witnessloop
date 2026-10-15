@@ -14,8 +14,14 @@
 
 `check` SHALL 把 `archive/<name>/` 认作「本次 diff 里到达的 change」，当且仅当**同时**满足：
 
-1. 该目录在 **base** revision 的树里**不存在**（`<changes_root>/archive/<name>/` 前缀下没有任何 tree entry）；
-2. 该目录在 **head** revision 的树里**存在**。
+1. 该目录在**基准树**里**不存在**（`<changes_root>/archive/<name>/` 前缀下没有任何 tree entry）。
+   **基准树 SHALL 是 `git merge-base(base, head)` 的树**——与 `gitutil.changed_files`（`src/witnessloop/gitutil.py:105`）
+   判定 diff 成员所用的 `base...head` **同源**；SHALL NOT 用 `base` ref 自身的树；
+2. 该目录在 **head** revision 的树里**存在**（至少一条 tree entry）；
+3. **不是从另一个归档目录改名而来**：到达组里**没有**任何记录的 `old_path` 落在
+   `<changes_root>/archive/**` 下（否则「把旧归档目录改个名」就能白捡一份现成证据）；
+4. **有源时须名识别**：若到达组里存在 `old_path` 落在 `<changes_root>/<src>/` 下（即**有源** `src`），
+   则 SHALL 要求 `name == src` 或 `name.endswith("-" + src)`；**无源**（出生即归档）时本条无从施加。
 
 `check` SHALL NOT 依据 `git diff --find-renames` 给出的**逐文件状态**（`A` / `R<分数>`）或**相似度分数**
 来判定到达资格。特别是：SHALL NOT 要求 `status == "R100"`，SHALL NOT 因为「某个被移动文件在同一 diff range 内
@@ -84,6 +90,20 @@
 - **When** 运行 `check`
 - **Then** 退出码非 0（`y` 不被授予；`z` 也不得因此绕过）
 
+### Scenario: 把已存在的归档目录**改名**不授予资格（防「白捡现成证据」）
+- **Given** 基准树里已存在 `openspec/changes/archive/2026-09-30-foo/`（证据齐全）
+- **And** 本 PR 只做 `git mv openspec/changes/archive/2026-09-30-foo openspec/changes/archive/2026-10-15-foo`，
+  并改动 `src/**`，**没有**产出任何新证据
+- **When** 运行 `check`
+- **Then** 退出码非 0（新名虽然「在基准树里不存在」，但到达组里有 `old_path` 落在 `archive/**` ⇒ 判据 3 不成立）
+- ⚠️ 没有判据 3 时，这份**三个月前的现成证据**会被复用 ⇒ 一个零新证据、只改了 `src/**` 的 PR 变绿
+
+### Scenario: 基准 revision 与 diff 成员同源
+- **Given** PR 的 base 分支在**分叉点之后**又前进过（`base` ref 的树 ≠ `merge-base` 的树）
+- **When** 运行 `check`
+- **Then** 到达判定的基准 SHALL 是 `merge-base(base, head)` 的树，与 `changed_files`（`base...head`）**同源**
+- **And** 一个「在 `merge-base` 树里不存在、在 `base` ref 树里存在」的归档目录，SHALL 被判为**到达**（与 diff 口径一致）
+
 ## Requirement: 到达集合的用途 —— 归属、幽灵 id 与保护写豁免 SHALL 共用同一份判定
 
 `check` SHALL 用**同一份**到达集合驱动三件事，SHALL NOT 各自实现一套：
@@ -113,8 +133,16 @@
 
 ## Requirement: 到达方式 SHALL NOT 改变证据门槛（对称性不变量）
 
-同一个 change 的同一份内容，`check` SHALL 给出**相同**的判绿判红结论——不论它放在
-`<changes_root>/<id>/` 下还是放在 `<changes_root>/archive/<name>/` 下。
+同一个 change 的同一份内容，`check` SHALL 在**证据门槛**维度给出**相同**的判绿判红结论——
+不论它放在 `<changes_root>/<id>/` 下还是放在 `<changes_root>/archive/<name>/` 下。
+「证据门槛」SHALL 指：必需件、review manifest 的 hash / revision 绑定、`reviewer ≠ author`、
+grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
+
+⚠️ 本不变量 **SHALL NOT** 被读成「两种位置的结论在**任何**维度的都相同」：
+`policy.stale_exempt_paths` 对 `<changes_root>/archive/**` **整块**豁免，
+而对 active change 的 `proposal.md` / `design.md` / `tasks.md` **不**豁免
+（同一份 `proposal.md`：active ⇒ 不豁免、archive ⇒ 豁免）。该**非对称是既有口径**，
+本 change **不改变**它、也**不宣称**在该维度上对称。
 
 `check` SHALL NOT 为归档 target 引入任何第二套判据、豁免或更松的 stage 集合
 （例如「归档态不要求 `grill-adversarial`」这类特判）。

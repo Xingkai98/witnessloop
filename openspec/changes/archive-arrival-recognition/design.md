@@ -14,9 +14,10 @@
   **逐文件**、且**要求恰好 100%**。
 - `contract.changed_change_ids`（`:85`）用它算 `archived_sources`（`:97`）⇒ 只有 `R100` 记录的 `old_path` 才被排除。
 - `contract.archive_grant`（`:119`）以它为前提 ⇒ 只有 `R100` 才授予 target。
-- `checkcmd._check_protected_writes`（`src/witnessloop/checkcmd.py` 的 `is_archive_move` 分支）以它为准 ⇒ 只有 `R100` 才免解释事件。
-- `gitutil.diff_name_status`（`src/witnessloop/gitutil.py:105`）用 `--find-renames`，且是 `base...head` 的**两树**比较
-  ⇒ 「相似度」是**整个 diff range** 的产物，**无法**区分「move 那一刻顺带改了」与「更早的提交里改过」。
+- `checkcmd._protected_writes`（`src/witnessloop/checkcmd.py:228`，`is_archive_move` 分支在 `:255`）以它为准 ⇒ 只有 `R100` 才免解释事件。
+- `gitutil.changed_files`（`src/witnessloop/gitutil.py:99`，`--find-renames` 在 `:105`）用的是 **`base...head`（三点 / merge-base）**，
+  且是**两树**比较 ⇒ 「相似度」是**整个 diff range** 的产物，**无法**区分「move 那一刻顺带改了」与「更早的提交里改过」。
+  ⚠️ 三点这件事是 **D1 的基准修订必须对齐**的理由（见 D1 第 3 条）。
 
 ### 1.2 复现命令（与 `gate.yml` 逐字一致）
 
@@ -62,12 +63,24 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
 
 ### D1 「到达」的判据 = 目录级事实，不看改名分
 
-`archive/<name>/` 是**本次到达的 change**，当且仅当：
+`archive/<name>/` 是**本次到达的 change**，当且仅当**四条同时成立**：
 
-1. 它在 **base** 的树里**不存在**（该前缀下没有任何 tree entry）；**且**
-2. 它在 **head** 的树里**存在**（至少一条 tree entry）。
+1. **基准树里不存在**：在 **`M = git merge-base(base, head)`** 的树里，`<changes_root>/archive/<name>/` 前缀下**没有任何 tree entry**；
+2. **head 树里存在**：该前缀下至少有一条 tree entry；
+3. **不是从另一个归档目录改名而来**：到达组里**没有**任何记录的 `old_path` 落在
+   `<changes_root>/archive/**` 下（否则就是「把旧归档目录改个名 ⇒ 白捡一份现成证据」，见 §5.3 N8）；
+4. **有源时须名识别**：若到达组里存在 `old_path` 落在 `<changes_root>/<src>/` 下（即**有源** `src`），
+   则要求 `name == src` 或 `name.endswith("-" + src)`。
 
 ⇒ 与 `change.status` 是 `A` 还是 `R<分数>` **完全无关**。两只症状（出生即归档 / move 带内容改动）同一刀切掉。
+⇒ **「出生即归档」没有源**（条件 4 无从施加）——这正是本 change 要接受的**反转**；
+而「内容整体搬进一个新建目录、源 change 仍在 active」**有源** ⇒ 条件 4 生效（`archive/misc/` 不认得 `z` ⇒ 不授予）。
+
+**⚠️ 基准 revision 必须与 `changed_files` 同源（本项由 grill 逼出，初稿只写「base」）**：
+`gitutil.changed_files`（`:105`）用的是 **`base...head`**，即 diff 成员是按 **merge-base** 算的。
+基树查询若改用 `base` ref 的**原树**，则当 base 分支在分叉点之后又前进时，
+「到达判定」与「diff 成员」会**对不上**（同一目录可能被 diff 认为新增、却被基树认为已存在，或反之）。
+⇒ 本 change 把基准钉死为 **`merge-base(base, head)`**，并加一条用例（§5.1 第 7 条）。
 
 **为什么不用 diff 推断「是否新增」**：diff 里「`A`」只说明这条路径是新增的，
 说明不了**那个目录**是不是新的——「预存归档目录被塞进一个新文件」也是 `A`，
@@ -79,8 +92,14 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
 manifest 的 hash / revision 绑定、grill 报告正文判据、`code_hits` 触发的 `building` / `grill-adversarial` 硬门。
 **SHALL NOT** 为归档 target 引入任何第二套判据或豁免。
 
-> **对称性不变量**（本 change 的核心）：同一个 change 的同一份内容，
-> 放在 `changes/<id>/` 下与放在 `changes/archive/<name>/` 下，**判绿判红的结论必须相同**。
+> **对称性不变量**（本 change 的核心，**限定到「证据门槛」维度**）：
+> 同一个 change 的同一份内容，放在 `changes/<id>/` 下与放在 `changes/archive/<name>/` 下，
+> 在**证据门槛**上 SHALL 给出相同结论——必需件、manifest 的 hash / revision 绑定、
+> `reviewer ≠ author`、grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
+> ⚠️ **显式排除 `stale` 维度**（grill 实测纠正）：`policy.stale_exempt_paths` 对 `archive/**` **整块**豁免，
+> 对 active 的 `proposal/design/tasks` **不**豁免（同一份 `proposal.md`：active ⇒ 不豁免、archive ⇒ 豁免，实测 `False vs True`）。
+> ⇒ 「同一内容两种位置结论完全相同」按字面**不可满足**；这个非对称是**既有口径**，与本 change 正交，
+> 属 §8 Q3 的暗房议题，**本 change 不宣称**在该维度上对称。
 
 **为什么这条足以防绕过**：一份「伪造的归档目录」要绿，仍必须凑齐与 active change 等价的全部证据
 （提案/设计/任务/specs/reviews、三份 stage manifest、`reviewer ≠ author`、grill ≥3 条决策、
@@ -132,7 +151,12 @@ building review …）。**到达方式不降低任何一条门槛**——这也
 
 - 新增 `gitutil` 帮助函数（如 `path_exists_at(root, rev, path)` / `tree_has_prefix(...)`），
   语义**fail-closed**：基树读不出来 ⇒ 报 finding、**不授予**（与 merge-base 求不出的既有处置同向）。
-- `contract.change_targets(...)` 增加 `base` 参数；`checkcmd` 与 `manifestcmd` 共用同一实现（**单一来源**）。
+- `contract.change_targets(...)` 增加基准参数（**merge-base**，见 D1）；到达判定只留**一份**实现。
+  ⚠️ **订正（grill 实测）**：初稿写「`checkcmd` 与 `manifestcmd` 共用 `change_targets`」是**错的**——
+  `manifestcmd` **不调用** `change_targets`（`grep -n change_targets src/witnessloop/manifestcmd.py` 为空），
+  它自己解析「active 优先、否则 `archive/<name>`」的目录（`manifestcmd.py:33-48`）。
+  两者真正共用的是 `validate_change_dir` 与报告路径解析。⇒ 本 change **不**声称在 `change_targets` 上共用；
+  若实现时发现 `manifest build` 也需要感知「到达」，须**另写清要共享什么**，不得含糊带过。
 - 新增纯函数 `archive_arrivals(changes, changes_root, base_exists: Callable[[str], bool])`——
   把「基树查询」作为**注入的谓词**，判定本身保持可单测（不需要真 git 仓）。
 - 保护写检查（`checkcmd`）接收同一份到达集合。
@@ -151,7 +175,8 @@ building review …）。**到达方式不降低任何一条门槛**——这也
 1. `src/witnessloop/gitutil.py`：新增基树查询帮助函数（fail-closed）。
 2. `src/witnessloop/contract.py`：新增到达判定（注入式基树谓词）；改 `changed_change_ids` 与 `change_targets`。
 3. `src/witnessloop/checkcmd.py`：把到达集合传给受保护写入检查；替换 `is_archive_move` 的用法。
-4. `src/witnessloop/manifestcmd.py`：与 `check` 共用同一份 target 解析（避免第二套实现）。
+4. `src/witnessloop/manifestcmd.py`：**订正后本 change 不改它**（它不调 `change_targets`，见 D7 的订正）。
+   实现时若确认 `manifest build` 无需感知「到达」，此处留空并写明理由；若需要，则单独列出要共享的函数。
 5. `docs/gate.md`：§5.1.1（归档语义）/ §4 / §3.2 的措辞与判据同步；§6 的已知边界更新。
 6. `README.md`：接入指引里「归档时序」一段按新判据改写。
 
@@ -181,6 +206,10 @@ building review …）。**到达方式不降低任何一条门槛**——这也
 4. **对称性**：同一份 change 内容，`changes/<id>/` 与 `archive/<name>/` 两种位置判绿判红一致（D2 不变量）。
 5. **别名**：单纯 move（不重建 manifest）后归档前产出的 manifest 仍通过（既有用例保持绿）。
 6. **fail-closed**：基树不可读 ⇒ 报 finding、不授予。
+7. **基准 revision 对齐**：`base` ref 在分叉点之后前进过（原树 ≠ merge-base 树）⇒
+   到达判定与 `changed_files` 的成员口径一致；反例构造：一个目录在 `base` 原树里**存在**、
+   但在 `merge-base` 树里**不存在**（分叉后才加），此时它**是**到达（与 diff 口径一致）。
+8. **名识别对「有源」的到达生效**：`archive/misc/`（新建、内容整体来自 active `z`）⇒ 不授予。
 
 ### 5.2 回归面（**必须保持绿**）
 
@@ -202,6 +231,8 @@ building review …）。**到达方式不降低任何一条门槛**——这也
 | N5 | 删掉 change 目录（非 rename） | 红（「change 目录不存在」） |
 | N6 | 到达的归档 change **零证据**（件齐、零 manifest）+ 改 `src/**` | 红，且逐条点名三份 stage manifest（**防 R1**） |
 | N7 | 伪造体：新建 `archive/<name>/` 但缺必需件（如无 `specs/`）+ 改 `src/**` | 红（契约门） |
+| N8 | **把 `base` 里已存在的归档目录 `archive/2026-09-30-foo/` 改名成 `archive/2026-10-15-foo/`**（新名在基准树里不存在 ⇒ 单看 D1 的 1/2 条会判「到达」），且其内容携带**完整现成证据** + 本 PR 只改 `src/**` | 红：D1 第 3 条（到达组里有 `old_path` 落在 `archive/**`）⇒ 不授予 |
+| — | **同上但少了第 3 条**（= 初稿的判据）：新名是「到达」⇒ 那份现成证据被复用 ⇒ **一个只改了 `src/**`、零新证据的 PR 变绿** | ⚠️ 这是 grill 挖出的洞，D1 第 3 条正是为它而加 |
 
 ## 6. 文档影响
 
@@ -212,43 +243,65 @@ building review …）。**到达方式不降低任何一条门槛**——这也
 
 ## 7. Pre-Implementation Review
 
-（待 grill 与对抗轮填写；本节在实现前必须有内容。）
+### 7.1 设计追问轮（独立零记忆审阅者，报告见 `reviews/grill-design.md`）
+
+审阅者独立读了源码与 `archive-awareness` 的前身文档，复核了本稿的事实断言。**它确认了 3 条、推翻了 1 条设计缺陷、纠正了 4 处事实错误。** 本稿据此修订：
+
+| # | 审阅者发现 | 本稿处置 |
+|---|---|---|
+| M1 | **规格自相矛盾**：Requirement 1 说「新建即到达」，同一 Requirement 的 Scenario 说「新建的 `archive/misc/` 不授予」，而正文**没有**名识别规则 | D1 补齐为**四条**条件：把「有源时须名识别」写进正文并定义「有源」 |
+| M2 | **对称性不变量按字面不可满足**：`stale_exempt_paths` 对 `archive/**` 整块豁免、对 active 的 `proposal/design/tasks` 不豁免 | D2 与 spec 都把不变量**限定到证据门槛维度**，并显式排除 stale 维度 |
+| M3 | **基准未钉死**：`changed_files` 用 `base...head`（merge-base），基树查询若用 `base` 原树会与 diff 成员**对不上** | D1 第 1 条钉死为 **`merge-base(base, head)` 的树**，并加用例 |
+| M4 | **事实错误**：`manifestcmd` **不调用** `change_targets`，本稿「共用同一实现」是假的 | D7 与 §3.4 订正；不再声称该处共用 |
+| M5 | **符号名错**：`gitutil.diff_name_status` / `checkcmd._check_protected_writes` 都不存在 | §1.1 改为 `changed_files`（`gitutil.py:99/105`）与 `_protected_writes`（`checkcmd.py:228/255`） |
+| M6 | **既有测试必失败**：`tests/test_archive_awareness.py:541` 的 `test_N2_a_forged_archive_grants_nothing` 断言的字符串在 D1 下不再成立 | `tasks.md` 2.6b 逐条点名要改写它，并写明语义反转 |
+| M7 | **停轮队列可瘦身**：初稿 Q1/Q4 能由代码定案 | §8 移出，附依据；停轮从 4 条降到 3 条 |
+| **新洞** | **改名一个已存在的归档目录 ⇒ 新名「在基准树里不存在」⇒ 白捡一份现成证据 ⇒ 零新证据的纯代码 PR 变绿** | D1 新增**第 3 条**（到达组里若有 `old_path` 落在 `archive/**` ⇒ 不授予）；§5.3 新增 **N8** 钉住 |
+
+**未复核项（审阅者明确标注）**：`proposal.md` 表里的具体相似度分数（`R068/R069/R070/R090`）在本工作区**不可复算**——
+本仓从未归档过 change。⇒ 实现期 4.2 必须用**接入方的真实提交**复算，不得直接引用本稿的数字。
+
+### 7.2 对抗轮（R1）
+
+（待跑；产物进 `reviews/grill-adversarial.md`。）
 
 ## 8. 停轮问题（Open Questions —— 逐条附本 change 真实场景的具体例子）
 
 > 每条都给出**具体到参数/输入输出的前后对比**，便于快速判断。
+> ⚠️ **初稿有 4 条，grill 后只剩 3 条**——两条能由代码定案的已移出（见下方「已定案」）。
 
-**Q1 到达判定用「显式查基树」，还是仍只用 diff 推断？**
-- (a) **显式查基树**（推荐）：`archive/<name>/` 在 base 的树里没有 entry ⇒ 算到达。
-- (b) 只用 diff：所有记录都是 `A` 或 `rename` ⇒ 算到达。
-- **具体例子**：某仓已有 `openspec/changes/archive/2026-09-30-foo/`（3 个月前归档的老 change）。
-  今天有人 `git mv openspec/changes/z/notes.md openspec/changes/archive/2026-09-30-foo/notes.md`，并顺手改了 `agent/x.py`。
-  - (a)：基树里 `2026-09-30-foo/` **存在** ⇒ 不授予 ⇒ `agent/x.py` 仍然报「没有任何 change 目录」⇒ **红**（正确：`z` 不能靠塞一个文件进别人家目录逃避校验）。
-  - (b)：这条记录是 rename、路径前缀也像 ⇒ **授予** `2026-09-30-foo` ⇒ 该 PR **变绿**（`z` 静默逃检）。
-- **(b) 是今天 `archive-awareness` 的残留边界**（规格自己写明「仍会授予」）。(a) 顺手把它关掉。
-- 代价：(a) 要新增基树查询、`change_targets` 多一个参数；基树不可读时 fail-closed。
+### 已由代码/实测**定案**、移出停轮队列（不占用户时间）
 
-**Q2 「归档目录名必须认得源 id」这条守卫，对**有源**的到达是否保留？**
-- (a) **保留**（推荐）：`name == src` 或 `name.endswith("-" + src)` 才授予。
-- (b) 删掉：既然有了 Q1 的基树判定，名字不再需要核对。
-- **具体例子**：`git mv openspec/changes/foo-x/… openspec/changes/archive/2026-10-15-foo-x/…`（名认得 ⇒ 两者都授予）。
-  反例：把 active change `z` 的内容整体搬进一个**新建**的、名字叫 `archive/misc/` 的目录。
-  - (a)：`misc` 不认得 `z` ⇒ 不授予 ⇒ 该 PR 红（要求你按约定命名归档目录）。
-  - (b)：授予 ⇒ 绿。
-- 注意：**出生即归档**这一路没有源可核对，守卫在它上面**无从生效**（这是 Q1/裁定已接受的反转）。
+| 初稿问题 | 定案 | 依据 |
+|---|---|---|
+| 到达判定用「显式查基树」还是「只用 diff 推断」？ | **显式查基树**（无选择余地） | 只用 diff 会被 §5.3 **N3** 直接证伪：往**已存在**的归档目录加文件状态也是 `A`，diff-only 会授予 |
+| 归档 target 的 stage 集合是否与 active 完全一致？ | **完全一致、零特判** | `checkcmd.py:105-119` 的 stage 硬门由 `code_hits` 触发；选「更松」即违反 D2，属自相矛盾 |
 
-**Q3 `archive/**` 的 stale 豁免（「暗房」）本次一并收窄，还是另立？**
-- (a) **另立 issue，本次不动**（推荐）：与本 change 正交；且它**今天就已存在**，不是本 change 造成的。
-- (b) 本次一并收窄：范围会膨胀到「审阅后允许出现哪些归档路径」，需要独立的证据推导。
-- **具体例子**：已归档 change 的 `proposal.md` 在 manifest 记的 `head_sha` **之后**被改一个字。
-  - 今天 / (a)：不判 stale（路径在 `archive/**` 里）。
-  - (b)：应当判 stale。但这与「到达识别」是两件事——修 (b) 需要先回答「归档后哪些改动该被允许」。
+### Q1「归档目录名必须认得源 id」这条守卫，对**有源**的到达是否保留？
 
-**Q4 归档 target 是否要求 stage 集合与 active **完全一致**（要不要给归档加任何特判）？**
-- (a) **完全一致、零特判**（推荐）。
-- (b) 松一点（例如归档态不要求 `grill-adversarial`）。
-- **具体例子**：一份「出生即归档」的 change，`reviews/` 里只有 `grill` 与 `building` 两份 manifest，
-  但本次 diff 改了 `agent/x.py`（命中 `require_change_for`）。
-  - (a)：报「无 `stage=grill-adversarial` 的 manifest」⇒ 红。
-  - (b)：绿。
-- (a) 是 D2 的对称性不变量的直接推论；选 (b) 等于给归档开一个比 active 更松的口子。
+- (a) **保留**（本稿推荐）：`name == src` 或 `name.endswith("-" + src)` 才授予。
+- (b) 删掉（**grill 建议**）：已经有了「基准树里不存在」这条更强的判据，名字不必再核。
+- **具体例子**：把 active change `z` 的内容整体搬进一个**新建**的、名字叫 `archive/misc/` 的目录，并顺手改 `agent/x.py`。
+  - (a)：`misc` 不认得 `z` ⇒ 不授予 ⇒ 该 PR **红**，要求你按约定命名归档目录（`archive/<id>` 或 `archive/<date>-<id>`）。
+  - (b)：该目录在基准树里不存在 ⇒ 授予 `misc` ⇒ 该 PR **绿**。
+- 说明：这条守卫**只对「有源」的到达**生效；「出生即归档」没有源可核对，两种选法在那里**一样**（都授予）。
+
+### Q2 `archive/**` 的 stale 豁免（「暗房」）本次一并收窄，还是另立？
+
+- (a) **另立 issue，本次不动**（本稿推荐）：与本 change 正交；且它**今天就已存在**，不是本 change 造成的。
+- (b) 本次一并收窄：范围膨胀到「审阅后允许出现哪些归档路径」，需要独立的证据推导。
+- **具体例子**：已归档 change 的 `proposal.md`，在它那份 manifest 记的 `head_sha` **之后**被改一个字。
+  - 今天 / (a)：**不判 stale**（路径在 `archive/**` 里，整块豁免）。
+  - (b)：应当判 stale。但这与「到达识别」是两件事——修 (b) 得先回答「归档后哪些改动该被允许」。
+
+### Q3 把**已存在**的归档目录**改名**（`archive/2026-09-30-foo/` → `archive/2026-10-15-foo/`），该不该授予资格？
+
+- (a) **不授予**（本稿推荐，= D1 第 3 条）：改名后的新名在基准树里不存在，若只看「是否新增」会判成到达，
+  于是**一个只改了 `src/**`、零新证据的 PR 会因为白捡那份现成证据而变绿**。
+- (b) 授予：允许 adopter 自由重命名归档目录（把归档改名当簿记动作）。
+- **具体例子**：某仓 3 个月前归档了 `archive/2026-09-30-foo/`（证据齐全）。今天有人
+  `git mv openspec/changes/archive/2026-09-30-foo openspec/changes/archive/2026-10-15-foo`，
+  并顺手改了 `agent/x.py`，**没有**产出任何新证据。
+  - (a)：不授予 ⇒ `agent/x.py` 报「属于必须挂 change 的路径…」⇒ **红**。
+  - (b)：授予 `2026-10-15-foo` ⇒ 那份 3 个月前的证据被复用 ⇒ **绿**。
+- ⚠️ (b) 的代价是本 change 的核心安全属性；但 (a) 会让「归档目录改名」变成一次必须解释的动作。
