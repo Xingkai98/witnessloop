@@ -23,7 +23,8 @@
       `git mv changes/z/notes.md → changes/archive/y/notes.md`（`y` 既不等于也不以 `-z` 结尾）**拒绝**
       （本仓实测：该 diff 是 `R100`、`is_archive_move=True`、今天 `changed_change_ids=[]`）
 - [x] A6 单测：拒绝的形态要**回落到今天的行为**（不授予 ⇒ 集合为空 ⇒ `_require_change` 照样命中），不是静默放行
-- [x] A7 实现 + 单测（**先红·D8 别名**）：归档 target 的 `change_id` **接受两个名字** `{归档目录名, 源 id}`
+- [x] A7 实现 + 单测（**D8 别名**；⚠️ 用例 ②③ 实现前红、① 是回归护栏——与 C7 同一条，见 I5 订正）：
+      归档 target 的 `change_id` **接受两个名字** `{归档目录名, 源 id}`
       （`contract.py:250` 的比对改成「∈ 接受集合」——**只改这一处、只加这一个参数**）。
       用例：① 用源 id build 的 manifest（`change_id="gwa"`）在 `archive/2026-10-14-gwa/` 下 **通过**；
       ② 用归档目录名 build 的也通过；③ **别的** change id（如 `"other"`）仍被判「与目录不符」（别名不是放开）
@@ -37,7 +38,10 @@
       三处 `contract.change_dir(...)`（`:86`/`:98`/`:105`）改用**解析后的目录**；
       `validate_change_dir` / `validate_review_manifests` 收 `directory` + `label` + **`accepted_change_ids`**（D8）
 - [x] B2 实现：`_require_change`（`:188-208`）**不加**「有归档 move 就放行」的分支（D3）——它由 B1 自动修好；
-      仅改文案（提一句「本次 diff 里也没有归档 move」）
+      **文案也改了**（审阅 I1 指第一版只做了前半、`[x]` 不实 ⇒ 已补齐）：
+      finding 现在写明「…也没有一次把它归档进来的 `git mv …`（**归档 move 也算「挂了 change」**——
+      它会按归档路径走同一套证据门禁）。补一个 change 目录（或补上那条归档 move）…」，
+      由 `test_N1_...` 里的 `assert "归档 move" in err and "git mv" in err` 钉住（该断言在**实现前**红）
 - [x] B3 单测（**先红·症状 ①，fixture 必须写全**）：**能绿的形态** = base 里 change 已是 active（提案态）、
       本 PR「① 改代码 → ② **在 active 态** build 证据（绑 ①）→ ③ 归档 move 放最后、纯 R100」
       ⇒ 修后 **`EXIT=0` / 0 项红**（本仓实测）。
@@ -65,10 +69,12 @@
       含 `/` / 绝对路径 / `..` 三种写法仍被拒（单段 + containment 两道守卫各管一类，别合并成一道）
 - [x] C6 决策落地：`tasks_hash` **照算不跳过**（D5）——⚠️ 若实现时发现归档态算不出（如 `tasks.md` 被归档器删了），
       **不要**加特例：那是「非 R100 归档 ⇒ 归档感知不适用」的自洽结果，在 design 里回写一笔即可
-- [x] C7 单测（**先红·别名钉子 D8 / R9**）：证据齐备的 change、用 `--change <源id>` build（`change_id="<源id>"`）
+- [x] C7 单测（**回归护栏**（⚠️ 审阅 I5 订正：实现前**也绿**——那时归档 change 压根不进集合、空转通过；
+      它的价值在变异验证：去掉 D8 ⇒ 4 failed））：证据齐备的 change、用 `--change <源id>` build（`change_id="<源id>"`）
       ⇒ 提交 ⇒ `git mv` 成 `archive/<date>-<id>/`（**纯 R100、不重建**）⇒ `check` **绿**。
       ⚠️ 本仓既有测试用的归档名**与源 id 同名**（`test_archive.py`），**抓不到**这条 ⇒ 它必须显式存在
-- [x] C8 单测（**先红·R12 的后果**）：同一 diff 里 ① 归档 → ② 在归档态重建三份 manifest ⇒ 红，
+- [x] C8 单测（**回归护栏**（⚠️ 审阅 I5 订正：实现前**也绿**——`R<100` ⇒ 不授予 ⇒ 源以 active id 回集合 ⇒ 同样报幽灵；
+      变异证据：去掉「必须 R100」⇒ 3 failed））：同一 diff 里 ① 归档 → ② 在归档态重建三份 manifest ⇒ 红，
       且 stderr 含「`openspec/changes/<源id>：change 目录不存在`」（幽灵 active id）。
       实测（修后模拟）：**9 项**（3 幽灵 + 6 受保护写入）；补 3 条事件 ⇒ 6 项；再补旧路径侧 3 条 ⇒ **仍 3 项**
       （幽灵 id **补事件消不掉**）⇒ 这条用例钉的是「别把这个形态当推荐流程」
@@ -82,7 +88,8 @@
       （同 PR 写 `openspec/specs/**`）⇒ `check` **不再**报「受保护路径被写入，但没有结构化解释事件」（今天红）
 - [x] D2 实现：`events.load_all`（`:80-85`）改**两条显式 glob**（active 一层 + `policy.archive_root` 一层）。
       ⚠️ **不要**用 `rglob` / `**`（会吃**再深一层**的同名文件 ⇒ 多出授权面）
-- [x] D3 单测（否定 N5·**方向已订正**）：`<changes_root>/archive/<name>/<sub>/workflow-events.jsonl`
+- [x] D3 单测（**回归护栏**（⚠️ 审阅 I5：实现前也绿；变异证据：改成 `rglob` ⇒ 1 failed）·否定 N5·**方向已订正**）：
+      `<changes_root>/archive/<name>/<sub>/workflow-events.jsonl`
       （**再深一层**）**不**被读。⚠️ **不要**拿 `changes/archive/workflow-events.jsonl` 或
       `changes/archive/notes/workflow-events.jsonl` 当否定面——本仓实测**两者都会被读**（`design.md` D6/R11）
 - [x] D4 单测（回归）：`test_events.py` 全绿（`covers` 语义未动）+ 合法 events 既有行为不变
@@ -204,10 +211,17 @@ grill（独立零记忆审阅者）在隔离副本里重跑了全部对照；**�
 
 ## 实测记录（实现期，2026-10-15）
 
-- **测试先行**：`tests/test_archive_awareness.py` 共 **20 条**（A 契约层 4 / B check 3 / C manifest build 6 /
-  D events 3 / E 否定面 4——N1/N2/N3/N4/N6，另 N5 与 N7 并入 D3/C8）。
-  用**改前的实现**跑同一份测试：**10 红 / 10 绿**（绿的是否定面与回归护栏）；
-  改后 **20 绿**。红的那 10 条 = 本 change 的新行为（契约层 4 条 + 「归档 + 改码」的 4 条 + 归档态 build 2 条）。
+- **测试先行**：`tests/test_archive_awareness.py` 共 **23 条**——
+  A 契约层 **4** / B check **3** / C manifest build **5** / D events **3** / E 否定面 **5**（N1/N2/N3/N4/N6）
+  + I 审阅补钉 **3**（⚠️ 审阅 I5 订正了早先写错的「C 6 / E 4」分节计数）。
+  用**实现前**的代码（`dfd9d97` 的 `src/`）跑同一份测试：**13 红 / 10 绿**，逐条为：
+  契约层 4（`change_targets` / `archive_is_never_a_change_id` / `grant_requires` / `tie_break`）、
+  check 2（`archived_change_is_validated_at_the_archived_path` / `implement_then_archive_in_one_pr_passes`）、
+  build 3（`into_the_archive_and_back` / `unknown_and_archive_root_and_candidate_hint` / `already_archived_manifest_needs_one_event_each`）、
+  events 1（`events_in_the_archive_cover_protected_writes`）、
+  审阅补钉 3（`uniform_validates_a_pure_archive_pr_like_active` / `alias_does_not_loosen_the_change_id_check` /
+  `N1_...` 的文案断言）。
+  绿的那 10 条 = **否定面与回归护栏**（实现前后都绿；其中 3 条的「先红」标注已被审阅 I5 订正为回归护栏）。
 - **F 节回归面全绿**：`test_archive.py` + `test_require_change.py` + `test_check_contract.py` +
   `test_manifest_build.py` + `test_events.py` + `test_events_readpoint.py` + `test_check_protected.py` = **85 passed**。
 - **全量**：`uv run pytest -q` = **516 passed**（基线 496 + 新增 20；**既有用例 0 条变红**）。
@@ -219,3 +233,27 @@ grill（独立零记忆审阅者）在隔离副本里重跑了全部对照；**�
   本仓的等价覆盖：测试里的归档 move 全部由真 `git mv` 产生、`git diff` 报 **R100**（`is_archive_move` 为真）。
 - ⚠️ **H2–H7 未做**（收尾/证据步骤，由主 session 统筹）：本 PR **未**建 `reviews/*.manifest.json`。
   `witnessloop check --root .` 因此报 **4 项**（缺 review manifest + 三条 stage 门——本 PR 落了代码）。
+
+## 实测记录（building-review 回写期，2026-10-15）
+
+独立审阅判 **PASS**（`reviews/building-review.md`），留 8 条非阻塞项；本轮处理：
+
+- **I2（必修）**：新增 `test_uniform_validates_a_pure_archive_pr_like_active`——Q1 招牌场景（纯归档 PR、
+  被归档 change 的证据是归档前用源 id 产的、grill 报告只有 2 条）⇒ **红恰好 1 项**（`少于硬门槛 3 条`）。
+  **实现前红**（那时归档 change 不进集合 ⇒ 空转绿）⇒ 是真正的钉子。fixture 靠新增的 `SHORT_GRILL`。
+- **I1（必修）**：`_require_change` 的文案**真的改了**（写明「也没有一次把它归档进来的 `git mv …`」+
+  「归档 move 也算挂了 change」），由 `test_N1_...` 的 `assert "归档 move" in err and "git mv" in err` 钉住（实现前红）。
+- **I5（必修）**：C7 / C8 / D3 三处「先红」按实测改成**回归护栏**（附变异证据）；A7 的标注拆准；
+  分节计数按实测改成 A 4 / B 3 / C 5 / D 3 / E 5（+ I 3 = 23），红基线明细按实跑逐条列出。
+- **I6（改了行为，已在回报里明说）**：`change_targets` 的 `grants` 由 `dict[name]→单个源` 改成
+  **`dict[name]→源集合`**，别名取**并集**——此前「同一归档目录被两条 move 指向」时，
+  别名取 diff 里**先出现**的那个源（结果随 diff 顺序而变、不可复现）。只影响别名集合（更全、更可复现），
+  fail-closed 方向不变（`accepted_change_ids` 仍只含「认得该目录名」的源）。
+- **I3/I4（已补测试）**：`test_alias_does_not_loosen_the_change_id_check`（实现前红）+
+  `test_manifest_build_prefers_the_active_directory_when_both_exist`（**回归护栏**，改前也绿；
+  它守 M9 那条变异）。⚠️ `test_case` 用 `doc_overrides={"change_id": "other"}`。
+- **I8（已改行为，极小）**：`_report` 的「N 个 change 目录」改成按 **target（目录）数**算
+  （此前按去重 id ⇒ 同 id 撞车时 2 个目录报成 1）。子串 `0 个 change 目录` 仍保留（既有测试依赖它）。
+- **I7（文档面已补齐）**：`docs/gate.md §4` 补上「落点从 1 个（`archive/` 根）扩成一族
+  （`archive/<任意名>/`），且同款手法改前就能用」这条校准。
+- 本轮新增 **3 条**测试（总数 20 → **23**）；实现前的红基线 10 → **13**（新增的 3 条里有 2 条先红 + N1 的文案断言）。

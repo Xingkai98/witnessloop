@@ -264,8 +264,11 @@ manifest、grill 正文…都照旧）。**它仍然是红，不是绿**，所�
 
 真正**不被读**的是**再深一层**的（如 `<changes_root>/archive/<name>/sub/workflow-events.jsonl`）——
 两条 glob 各自只覆盖一个层级，**不用** `rglob`/`**`（那会多出「谁都能放一份授权文件」的面）。
-⚠️ 授权面因此**变大**（归档 change 的事件与其它事件同等权威）；这是既有边界的延续
-（事件是全局解释、`change_id` 不被消费，见 §7），不是新开口子。
+⚠️ 授权面因此**变大**：事件池的**落点**从「`archive/` 根**一个**路径」扩成「`archive/<任意名>/` **一族**」
+（任意名都算，包括永远不会被任何 change 校验的目录）。它**不是新类**——同款手法改前就能用
+（`openspec/changes/archive/workflow-events.jsonl` 今天就会被 `changes/*/` 那条 glob 读到；
+更一般地，往任意**已存在**的 active change 目录丢一份新 events 文件今天也管用），
+而事件本就是**全局解释**、`change_id` 不被消费（见 §7）⇒ 本 change 不改语义，只如实写明放大面。
 
 ## 5. 受保护写入的两档规则
 
