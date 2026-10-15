@@ -109,10 +109,15 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
       但自定义 glob 本就不可用：`manifest build` 硬编码把报告与 manifest 写在 `<label>/reviews/` 下（`manifestcmd.py:136-142,201`）。
    `proposal.md` / `design.md` **不在**集内：它们不被哈希绑定，且「共用 stub ⇒ 逐字节撞车」是现实误伤源
    （实测 E11：两个 change 共用同一份 design stub ⇒ 不触发）。
-   ⚠️ **`Ev(A)` 里的每一项 SHALL 是普通文件（git mode `100644` / `100755`）；出现符号链接（`120000`）
-   或 gitlink（`160000`）⇒ 不授予（fail-closed）**（R5 的 M1 实测）：git 把符号链接存成「链接文本」的 blob，
-   于是把 `tasks.md` / `specs` 做成**指向基准树里现成 change 的符号链接**时，链接自身的 blob 是**新**的（(a) 成立），
-   而证据门读的是**解析后的内容**（逐字节等于受害者的）⇒ 不加这条，判据 5 对符号链接整体失明。
+   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对；解析后逃出 `A`（或悬空、或 gitlink `160000`）⇒ 不授予（fail-closed）**。
+   依据（R5 的 M1 实测）：git 把符号链接存成「链接文本」的 blob——只看链接自身时，把 `tasks.md` / `specs` 做成
+   **指向基准树里现成 change 的符号链接**，链接 blob 是**新**的（(a) 成立），而证据门读的是**解析后的内容**
+   （逐字节等于受害者的）⇒ 不处理符号链接，判据 5 **整体失明**。
+   ⚠️ **但 SHALL NOT 一刀切「不许符号链接」**（R6 的 M1 实测：那是**合法绿色样态**被误伤）：
+   `reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**）是**本仓既有钉绿布局**
+   （`tests/test_orphan_reports.py:273` `test_symlinked_report_is_not_an_orphan`），真 CLI 今天判绿；
+   ⇒ 指向 `A` **之内**的链接：**按目标文件的 blob** 参与 (a)/(b) 比对，并把**目标路径**并入 `Ev(A)`
+   （递归到不动点，配 visited 集防环）；指向 `A` **之外**的链接：fail-closed。
 
 ⇒ 与 `change.status` 是 `A` 还是 `R<分数>` **完全无关**。两只症状（出生即归档 / move 带内容改动）同一刀切掉。
 
@@ -184,7 +189,8 @@ change 目录的 `E(D)` 做 `⊆` 比对。R2 实测：**打断 `⊆` 的成本�
 失败是 **fail-closed**，finding **同时点名两侧路径**，修法是「写自己的内容」或「把那处复制改成 `git mv`」。
 
 **已知边界（明写，逐条登记进 `docs/gate.md §6`）**：
-- **完全旁路（R3 的 M6）**：判据 5 的效力**完全依赖**「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提。
+- **完全旁路（R3 的 M6）**：判据 5 的效力**依赖**「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提
+  （另有**逐字节天花板**这一条独立绕过，见下一条）。
   现成证据的字节若在基准树里**另有副本**（`docs/shipped/**` 这类发布副本、仓内镜像、`changes_root` 迁移遗留的旧路径），
   把那份副本搬进来就**逐字节复用**了整份证词：那些字节**落在 `<changes_root>` 之外 ⇒ 分句 (a) 单独即豁免**，
   **与是 `git mv` 还是普通 `cp` 无关、也不需要任何 rename 记录**（实测：`a4b` 的 10 份文件 blob **0/10** 落在 base 的 `changes_root/**` 里；
@@ -196,6 +202,8 @@ change 目录的 `E(D)` 做 `⊆` 比对。R2 实测：**打断 `⊆` 的成本�
   ⇒ 它**不再是**判据 5 的旁路（R3 的 A1 已关掉）。仍登记进 `docs/gate.md §6`。
 - **模板骨架**：仓内模板若放在 `<changes_root>` **之内**（如 `changes/_template/**`），其 `tasks.md` / `specs/**`
   与新建 change 逐字节相同时会触发误伤 ⇒ **模板 SHALL 放在 `<changes_root>` 之外**（登记进 `docs/gate.md §6`）。
+- **`workflow-events.jsonl` 不在 `Ev(A)` 里**（它是自由文本、不是被绑定的证据本体）——**本 change 不改变**这条既有面。
+- **候选只取 tree**：`archive/` 的直接子项若本身是 blob（如 `archive/notes.md`）⇒ 不是到达候选（不会授予、也不会报缺件）。
 - **`changes_root` 被 policy 覆写**：到达判定与 diff 成员共用**同一份**（工作树 / head 侧）policy，与今天一致。
 - **判据 2 的近失文案（R3 的 E-2）**：件不齐的到达目录**不是** target ⇒ 报的是「没有任何 change 目录」，
   而**不**点名缺的那一件（如「缺 `reviews`」）。实现时在 `_require_change` 的文案里补一句
@@ -345,6 +353,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 4. `src/witnessloop/manifestcmd.py`：**本 change 不改它**（见 D7 的订正）。
 5. `docs/gate.md`：§5.1.1（归档语义）/ §4 / §3.2 的措辞与判据同步；§6 的已知边界更新
    （删「R100 要求」，补：树不可读 ⇒ fail-closed；**整份 / 部分搬运现成证据 ⇒ 不授予**；
+   **模板骨架 SHALL 放在 `<changes_root>` 之外**（放里面会被判据 5 误伤）；
    扫描面是 `<changes_root>/**`，放别处的历史副本不可见；报告可放在 `reviews/` 之外这条**既有**宽松面）。
 6. `README.md`：接入指引里「归档时序」一段按新判据改写。
 
@@ -481,10 +490,10 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | N18 | **base 同路径是 blob**：base 有 `archive/foo`（文件）、head 是 `archive/foo/{…}` + 改 `src/**` | 红（第 1 条判「有 entry」⇒ 不授予） |
 | N19 | **复制 + 报告挪出 `reviews/`**（放 change 目录根）+ 手写 manifest 指过去（R3 的 A1，真 CLI 曾绿） | 红：第 5 条（`Ev(A)` 含**每份 manifest 的 `report_path` 目标**） |
 | N20 | **复制 + `specs` 换成同名普通文件**、或 **`tasks.md` 做成目录**并把借用内容塞进去（R3 的 A3） | 红：第 5 条（`Ev(A)` 取 artifact 路径**整体**） |
-| N22 | **符号链接搬运**（R5 的 M1）：把 `tasks.md` / `specs` / 报告做成**指向基准树里现成 change 的符号链接**（mode `120000`） | 红：第 5 条 + 普通文件要求（fail-closed）；⚠️ 不加这条会**整体失明**（链接 blob 是链接文本 ⇒ 看起来是「新内容」） |
 | N21 | **复制 + 给 `Ev(A)` 里每一个文件各加一个字节** + 官方 `manifest build`（R3 的 A2，真 CLI 绿） | ⚠️ **不红 —— 能力天花板**（§D1 第 5 条明写；用例只钉「已知行为」，见 §8 Q4）。**若用户选「再加一档强度」，本行改判红** |
+| N22 | **符号链接**（R5 的 M1 + R6 的 M1）：① 把 `tasks.md` / `specs` / 报告做成**指向基准树里现成 change 的符号链接**；② 同类的**悬空链接** / **gitlink**（`160000`） | ① 红（按解析后的内容比对 ⇒ 指向 `changes_root` 里现成 change ⇒ 既非新 blob、也非本次改名落点；**逃出 `A` 的链接直接 fail-closed**）；② 红（fail-closed）。**对照（必须绿）**：`reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**、且目标是本次改名落点）⇒ 第 5 条不命中（本仓既有钉绿布局 `tests/test_orphan_reports.py:273`） |
 | — | **把受保护文件搬进到达目录**（`git mv openspec/specs/x.md → archive/<到达名>/x.md`） | 红（仍要解释事件，M-D5 钉住） |
-| — | 归档时**顺带改 change id**（`git mv changes/old-id archive/2026-10-15-new-id`） | **当前设计下红**（第 4 条）；**明写**的拒绝面，取舍见 §8 Q1（选 (b) 则变绿） |
+| — | 归档时**顺带改 change id**（`git mv changes/old-id archive/2026-10-15-new-id`） | 红（第 4 条）——⚠️ **今天亦红**（`archive_grant` 的名识别同样不满足）⇒ 这是**明写的拒绝面**、**不是本 change 新引入的**；取舍见 §8 Q1（选 (b) 则变绿） |
 
 ## 6. 文档影响
 

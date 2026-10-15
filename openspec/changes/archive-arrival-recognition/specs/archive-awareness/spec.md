@@ -35,6 +35,9 @@
 2. **head 树里该路径是 tree，且含全部 `policy.required_artifacts`**
    （判定语义 SHALL 与契约门**完全一致**：`<dir>/<artifact>` **路径存在**——即「`specs` 是同名普通文件」
    这类形态与 `contract.validate_change_dir` 同结论）。
+   ⚠️ **一处明写的偏离**：本判据 SHALL **忽略空串 / `.`** 这类退化 artifact 名（契约门的
+   `(dir/"").exists()` 恒真 ⇒ 会让本判据退化成「任何目录」）；`required_artifacts` 写成 `[""]` / `["."]`
+   时入口条件被中和，但只会**多报红**（证据门照旧），不构成绕过。
    ⇒ 组织型 / 工具型子目录（`archive/2026/`、`archive/notes/`、`archive/templates/`）SHALL NOT 被当作到达的 change；
 3. **不是从另一个归档目录改名而来**：到达组里**没有**任何记录的 `old_path` 落在
    `<changes_root>/archive/**` 下；
@@ -56,10 +59,14 @@
       解析出的那个文件**（SHALL 用与哈希校验同一解析器 `contract.resolve_report_path`）；
    3. `<A>/reviews/**` 下的全部文件。
 
-   ⚠️ **`Ev(A)` 的每一项 SHALL 是普通文件**（git mode `100644` / `100755`）：出现**符号链接**（`120000`）
-   或 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）——git 把符号链接存成「链接文本」的 blob，
-   把 `tasks.md` / `specs` 做成指向基准树里现成 change 的符号链接时，链接自身是「新 blob」而证据门读的是
-   **解析后的内容**（逐字节复用）⇒ 不加这条，本判据对符号链接整体失明。
+   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对**：git 把符号链接存成「链接文本」的 blob，
+   只看链接自身时，把 `tasks.md` / `specs` 做成**指向基准树里现成 change 的符号链接**，链接 blob 是「新」的
+   而证据门读的是**解析后的内容**（逐字节复用）⇒ 不处理符号链接，本判据整体失明。
+   ⇒ 链接**解析后逃出 `A`**、**悬空**、或该条目是 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）；
+   链接**解析后仍在 `A` 之内** ⇒ SHALL 按**目标文件**的 blob 参与 (a)/(b) 比对，且**目标路径 SHALL 并入 `Ev(A)`**
+   （递归到不动点，配 visited 集防环）。
+   ⚠️ SHALL NOT 一刀切禁止符号链接：`reviews/alias.md → reviews/grill-review.md`（指向 `A` 之内）
+   是本仓既有钉绿布局（`tests/test_orphan_reports.py:273`），今天真 CLI 判绿。
 
    ⚠️ `proposal.md` / `design.md` SHALL NOT 被纳入 `Ev(A)`：它们**不被 manifest 哈希绑定**，
    且「共用 stub ⇒ 逐字节撞车」是现实误伤源；排除它们**不削弱**本判据——搬运者仍会被上面三类文件抓住。
