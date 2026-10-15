@@ -1,6 +1,6 @@
 # archive-awareness — 归档 change 的到达判定改为「目录级」
 
-> 本 change 修改 `archive-awareness` 的四条 Requirement：
+> 本 change 对 `archive-awareness` 的下列 Requirement 做**修改 / 新增**（不写计数——见下每条）：
 > 把「本次 diff 里到达了一个归档 change」的判据，从**逐文件 `R100` 改名**换成**目录级事实**——
 > `archive/<name>/` 在基准树里**没有 entry**、在 head 树里是一个**含全部必需件的 change 目录**、
 > 且其内容**不是现成证据的机械搬运**。

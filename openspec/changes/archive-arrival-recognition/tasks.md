@@ -35,7 +35,8 @@
 - [ ] 1.5 新增「内容来源」判据（第 5 条）的正文、**能力边界**与 Scenario：
   整份复制 / 复制后改路径 / 加一个字节 / 删一个文件 / 混源 / 搬无关文件洗白 / 嵌套源。
 - [ ] 1.6 新增「组织型子目录不是到达的 change」的两个 Scenario（`archive/2026/…` 与「只含 `reviews/` 子目录」）。
-- [ ] 1.7 同步 current spec 到 `openspec/specs/archive-awareness/spec.md`，并按本仓政策追加解释事件（受保护路径）。
+- [ ] 1.7 归档时按 OpenSpec 流程把本 delta 并入 `openspec/specs/archive-awareness/spec.md`
+  （⚠️ 本仓**从未归档过任何 change**，该目录尚不存在 ⇒ 由 archive 步骤创建），并按本仓政策追加解释事件（受保护路径）。
 
 ## 2. 测试（先行，先写后实现）
 
