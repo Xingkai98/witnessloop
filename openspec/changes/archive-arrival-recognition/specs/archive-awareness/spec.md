@@ -37,14 +37,23 @@
 4. **有源时须名识别**：若到达组里存在 `old_path` 落在 `<changes_root>/<src>/` 下（即**有源** `src`），
    则对**每一个**这样的源 SHALL 要求 `name == src` 或 `name.endswith("-" + src)`；
    **无源**（出生即归档）时本条无从施加；
-5. **内容来源（防「搬运现成证据」）**：到达目录 A 下的**证据文件**——`tasks.md`、`specs/**`、
-   `reviews/**` 下的**全部文件**——**每一个**（按 head 树；**内容为空**者除外）SHALL 满足下列**之一**：
+5. **内容来源（防「搬运现成证据」）**：到达目录 A 的**证据文件集 `Ev(A)`** 里**每一个文件**
+   （按 head 树；**内容为空**者除外）SHALL 满足下列**之一**：
    - (a) 其 blob 在基准树的 `<changes_root>/**` 里**不出现**（= 本次新写的内容）；
    - (b) 它是**本次 diff 里某条改名记录的落点**（记录的 `new_path`，即本次搬过来的）。
    违反 ⇒ `A` SHALL NOT 被授予资格。
-   ⚠️ `proposal.md` / `design.md` SHALL NOT 被纳入本判据的证据集：它们**不被 manifest 哈希绑定**，
-   且「共用 stub ⇒ 逐字节撞车」是现实误伤源；排除它们**不削弱**本判据——一次**搬运**必然连
-   `tasks.md` / `specs` / `reviews` 一起搬（否则必需件与哈希绑定立刻红）。
+
+   ⚠️ **`Ev(A)` SHALL 由数据推导，SHALL NOT 按路径前缀硬编码**（实测：按「`tasks.md` / `specs/**` / `reviews/**`」
+   三段前缀硬编码时，**把报告挪出 `reviews/`**、**把 `specs` 换成同名普通文件**这两条零成本改法都能让证词整体出圈，
+   且真 CLI 判绿）。`Ev(A)` SHALL 由下列三部分构成：
+   1. `constants.HASHED_ARTIFACTS` 覆盖的 artifact 路径**整体**（`tasks.md`；`specs`——
+      **是目录 ⇒ 其下全部文件；是普通文件 ⇒ 它自己**）；
+   2. `policy.review_manifest_glob` 命中的**每一份 manifest**，**以及每份 manifest 的 `report_path`
+      解析出的那个文件**（SHALL 用与哈希校验同一解析器 `contract.resolve_report_path`）；
+   3. `<A>/reviews/**` 下的全部文件。
+
+   ⚠️ `proposal.md` / `design.md` SHALL NOT 被纳入 `Ev(A)`：它们**不被 manifest 哈希绑定**，
+   且「共用 stub ⇒ 逐字节撞车」是现实误伤源；排除它们**不削弱**本判据——搬运者仍会被上面三类文件抓住。
 
 `check` SHALL NOT 依据 `git diff --find-renames` 给出的**逐文件状态**（`A` / `R<分数>`）或**相似度分数**
 来判定到达资格。特别是：SHALL NOT 要求 `status == "R100"`，SHALL NOT 因为「某个被移动文件在同一 diff range 内
@@ -58,9 +67,18 @@
   属本工具既有的能力边界（`src/witnessloop/contract.py:9`：hash 绑定证「证据之间没漂移」，**不防伪造**）；
 - **扫描面**是 `<changes_root>/**`（不是「扁平 change 目录」，也不是全仓）：放在 `changes_root`
   之外的现成证据副本**不可见**；
+- **能力天花板（SHALL 明写，不得被读成「拦住了全部复用」）**：本判据是**逐字节**判据。
+  把 `Ev(A)` 里**每一个**文件都动一个字节（例如各追加一个换行）、再用 `manifest build` 重算哈希 ⇒ **绕过**本判据
+  （真 CLI 实测判绿），而证据的**语义内容未变**。⇒ 本判据挡的是**零改动 / 只动一处**的机械搬运；
+  **不挡**「跑一个脚本给每份证据各加一个字节」这一档。封堵那一档需要**真实性**（签名 / 可验证来源），
+  属本 change 的**非目标**（既有边界：hash 绑定证「证据之间没漂移」，**不防伪造**）。
+- **完全旁路**：本判据的效力**依赖「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提**。
+  现成证据的字节若在基准树里**另有副本**（发布副本 `docs/shipped/**`、仓内镜像、`changes_root` 迁移遗留的旧路径），
+  把该副本 **`git mv` 进来** ⇒ (a) 与 (b) **同时**豁免同一份内容 ⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §6`。
 - **误伤面**：A 里某个**非空证据文件**与 base 的 `<changes_root>/**` 下某文件**逐字节相同**、且它不是本次搬来的
   ⇒ **fail-closed 拒绝**（finding SHALL **同时点名两侧路径**）。现实来源：从兄弟 change 原样复制来的
-  `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板。
+  `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板、
+  仓内**模板骨架**（`changes/_template/**`——模板 SHALL 放在 `changes_root` 之外）。
   **空文件**（0 字节，如 `reviews/.gitkeep`）SHALL 被豁免；`proposal.md` / `design.md` 的逐字节撞车 SHALL NOT 触发。
 
 该 change 的 **id SHALL 是归档目录名**（不解析日期前缀）；其契约与证据校验 SHALL 与 active change 同一套
@@ -133,7 +151,9 @@
   源 change `z` 不得因此**静默逃检**；
 - **删除** change 目录（非 rename）；
 - 把非 change 目录（如受保护 spec）搬进 `archive/`；
-- **整份复制**一个仍在的 change 目录，或复制后**改路径 / 改一两个字节 / 删一个文件 / 混多个源**（判据 5）；
+- **整份复制**一个仍在的 change 目录，或复制后**改路径 / 只动一处（改一个字节 / 删一个文件）/ 混多个源**（判据 5）；
+- 把复制的**报告挪出 `reviews/`**（放 change 目录根）再用 manifest 的 `report_path` 指过去（判据 5；
+  `Ev(A)` 按 `report_path` 取证据），或把 `specs` / `tasks.md` **换成另一种路径形态**后把借用内容塞进去（判据 5）；
 - 把**已存在**的归档目录**改名**（判据 3；判据 5 通常同时命中）。
 
 ### Scenario: 触碰已存在的归档目录不授予资格（`M` / `A` 两种造法）
@@ -172,7 +192,9 @@
   ③ 给某个证据文件**加一个字节**，随后用 `manifest build` **重算** manifest 哈希；
   ④ **删**掉 `specs/` 里的一个文件，随后重算哈希；
   ⑤ 报告取自 base 的 change `a`、`tasks.md` + `specs` 取自 change `b`；
-  ⑥ 同时 `git mv` 一个**非证据文件**（如 `notes.md`）进新目录，其余整份 `cp`
+  ⑥ 同时 `git mv` 一个**非证据文件**（如 `notes.md`）进新目录，其余整份 `cp`；
+  ⑦ 把三份报告**挪出 `reviews/`**（放 change 目录根），再用 manifest 的 `report_path` 指过去；
+  ⑧ 把 `specs` 换成**同名普通文件**、或把 `tasks.md` 做成**目录**，把借用内容塞进去
 - **When** 运行 `check`
 - **Then** 退出码非 0（判据 5 逐文件成立性都被破坏：总有一个文件既不新、也不是本次搬来的）
 - ⚠️ 判据 5 SHALL NOT 依赖「路径」或「哈希是否被重算」——`manifest build` 会从磁盘重算哈希
@@ -204,9 +226,13 @@
 
 1. **归属**：到达的归档目录进 change 集合（按归档路径校验）；
 2. **幽灵 id 的排除**：属于到达组、**且其源 change 目录在 head 树里已不存在**的记录，
-   其 `old_path` SHALL 从「active change id」的取值里排除——判据是**目录级**的，SHALL NOT 退回逐文件 `R100`。
+   其 **`R`/`C` 记录的 `old_path` 与 `D` 侧记录的 `path`** SHALL 从「active change id」的取值里排除
+   ——判据是**目录级**的，SHALL NOT 退回逐文件 `R100`。
+   ⚠️ **`D` 侧记录必须一并覆盖**：`gitutil._parse_name_status` 对 `D` 记录把被删路径放在 `path`、`old_path` 留空，
+   于是「move 之后把被搬文件**整体重写**」（git 报 `D`+`A`、不配对成改名）会让幽灵 id 回来。
    ⚠️ SHALL NOT 无条件排除到达组里所有 `old_path`：源目录**仍在 head 树里**（= 只搬走了部分文件）
    ⇒ 那个 change SHALL 照旧按 active 契约被校验（不得静默消失）；
+   同理，**`D` 记录的 `path` 落在仍在 head 的源目录下时 SHALL NOT 排除**；
 3. **保护写豁免**：「该记录属于某个到达组，**且其 `old_path` 落在 `<changes_root>/<active-id>/` 下**（源在
    **active** change 目录里）」⇒ 对受保护文件（`policy.protected_paths` 命中或不变集）的写入
    SHALL 免于「没有结构化解释事件」；SHALL NOT 要求记录状态为 `R100`。
