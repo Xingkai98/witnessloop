@@ -1,166 +1,359 @@
-# Grill-ADVERSARIAL: archive-arrival-recognition 对抗验证（独立零记忆审阅者）
+# 对抗轮 R8（独立零记忆验证者）—— `archive-arrival-recognition`
 
-> 任务：**证伪** `design.md` 的 D1（四条到达判据）与 D2–D7。证伪成功写构造，证伪失败写「试过什么」。
-> 硬约束：不向用户提问、只写本文件、不改 `src/`/`tests/`/其他文档。
-
-## Reviewer
-
-**独立零记忆**：本对话不携带该 change 任何历史；设计稿里的「实测」「文件:行号」「今天成立」一律当**待验证断言**，可复算的一律复算。
-
-**读了**：本 change 的 `proposal.md` / `design.md` / `tasks.md` / `specs/archive-awareness/spec.md` / `reviews/grill-design.md`；前身 `openspec/changes/archive-awareness/`（proposal / design / spec delta）；源码 `src/witnessloop/{contract,checkcmd,gitutil,policy,paths,manifestcmd,constants}.py`；测试 `tests/test_archive_awareness.py` / `tests/helpers.py` / `tests/conftest.py`。
-
-**跑了**（命令 + 结论，逐条可复算）：
-
-1. `uv run pytest tests/test_archive_awareness.py -q` → **25 passed**（当前基线绿）。
-2. 干净 scratch 仓（`/tmp/arr2..arr9`，全部 `git init` 过）复算 `git diff --name-status -M <base> <head>` 在五种构造下的记录状态：归档目录**纯改名**（全 `R100`，`old_path` 落在 `archive/**`）；**改名 + 重度改写一个非哈希文件**（该文件变 `D`+`A`，其余仍 `R100`，`old_path` 仍在 `archive/**`）；**改名 + 重度改写 `tasks.md`**（`tasks.md` 变 `D`+`A`，其余仍 `R100`）；**move 出 active + 重建 manifest**（`R<100`，`old_path` 落在 `changes/<id>/**`）；**把既有归档目录的整份内容 `cp` 到新名**（全 `A`，**没有任何 rename 记录**）。
-3. 复算 `gitutil.changed_files` 的三点语义（直接读 `src/witnessloop/gitutil.py:104-106`）+ `checkcmd.py:47-70` 的 base 解析调用链。
-4. 写了一个**一次性** D1 四条件模拟器（`/tmp/sim_d1.py`，只 import 现成的 `gitutil`/`paths`，**未碰 `src/`、未碰仓内任何文件**），对 8 个构造算 `arrived=`（含 `c1..c4` 逐条）。
-5. 端到端 proxy：用真 CLI（`uv run python -m witnessloop init/manifest build/check`）在 `/tmp/e2e` 造「完整证据的 active change」，再 `cp -r` 到新名 + 只改 manifest 的 `change_id`/`head_sha`/`base_sha` 三个字段，跑 `check`。
-6. 直调 `contract.is_archive_move` / `contract.changed_change_ids` 复算保护写豁免面与幽灵 id 面。
-7. `grep` 核对 tasks / design / spec 三份文档间的口径。
+> **结论摘要：已收敛，附带 8 条措辞项。**
+> R7 报的两条必须项（M1 逃出 `A` 的拒绝面未登记 + Scenario 全称断言；M2 gitlink 枚举口径不自洽）**都已落库**，
+> 且我**独立复算**确认新口径同时满足两侧：
+> - **攻击仍红**：R5 的攻击构造（`symlink_ev` / `symlink_gate` / `symlink_gate2` / `symlink_archive_move`）、
+>   偷字节（`inA_link_to_stolen`）、悬空（`dangling_inA` / `dangling_out`）、gitlink、以及我自建的
+>   「链接指向 `changes_root` 内现成归档 change」（`p2`）全部不授予；
+> - **合法仍绿**：R6 的两个钉绿构造 + `dir_link` + 我在本轮**新建**的正向半边构造
+>   `p1`（链接指向 `<changes_root>` 之外**被跟踪**文件）与 `p4`（两跳后指向同一目标）**确实判绿**
+>   ——R7 的 4 个「逃出 `A`」构造其实**全是悬空链接**（见 §R7 复核 ②），**正向半边在 R7 那一轮从未被真正测过**，
+>   本轮补上了。
+> - **gitlink / 悬空 / 未跟踪** 三类 fail-closed 在实现上可达成：`git ls-tree -r` 确实列 `160000 commit` 行（原始输出见下），
+>   「未跟踪 / 悬空」在实现上收敛为「解析后的目标路径在 head 树里**没有 entry** ⇒ fail-closed」，可判、可测。
+> **无新的必须修改项。**本轮报出的全部是措辞 / 登记 / 口径钉死类问题（**不影响任何用例的判红判绿**），
+> 其中 3 条值得下一轮顺手改掉（`design.md:500` 的陈旧陈述、`(b)` 的判定对象、`spec.md:63` 与 `design.md:120` 的 gitlink 作用域）。
 
 ---
 
-## 对抗结论
+## Reviewer
 
-### A. 证伪「找绕过」——**成功 1 条（F1），失败 4 条**
+**零记忆声明**：本对话不携带该 change 的任何历史。R1–R7（`reviews/grill-adversarial*.md` / `grill-design.md`）的结论
+**只当待复核的声明**；三份文档里的「实测」「`文件:行号`」一律当**待验证断言**。
+判据模拟器 `/tmp/r8sim.py` 由我**从零写成**（只按 `design.md §2 D1` + `spec.md` **当前正文**转写，只读 git 树，
+**未**沿用 `/tmp/r3sim.py`…`/tmp/r7sim.py`，也没读它们的判据逻辑；唯一读过的是各 case 仓里的**数据**）。
+本轮只写 `reviews/` 下这一个文件；未改 `src/` / `tests/` / 任何 change 文档；未 commit、未 push。
 
-#### ✅ F1（**证伪成功，高危**）：**COPY 变体绕过 D1 条件 3** —— 该变红的 PR 变绿
+**HEAD**：`9db4c53b9a0f4023da841a98cc40d2ac01f31c7c`（`…按对抗轮 R7 回写…`）。工作树干净。
 
-- **构造**（`/tmp/arr7` 实测）：
-  - base 树：`openspec/changes/archive/2026-09-30-old/{proposal,design,tasks}.md + specs/ + reviews/{grill-review.md, grill.manifest.json}`（一份**证据齐全**的旧归档 change）。
-  - head 树：**`cp -r` 整份到 `archive/2026-10-15-new/`（旧的 `archive/2026-09-30-old/` 原封不动保留）**，只 `sed` 改 `grill.manifest.json` 里的 `change_id`，并改 `src/app.py`。
-- **期望**：应红（这是「白捡现成证据」，与 D1 第 3 条要挡的 N8 同一威胁）。
-- **实测**：
-  - `git diff --name-status -M <base> HEAD`：`archive/2026-10-15-new/**` **全是 `A`**，`archive/2026-09-30-old/**` **完全不在 diff 里**（`-M` 只配对「删+增」，源文件还在 ⇒ 不配对成 rename）。
-  - D1 模拟器：`archive/2026-10-15-new/  arrived=True (c1=True c2=True c3=True c4=True)` ⇒ 条件 3 **看不见**（组内没有任何 `old_path` 落在 `archive/**`，因为记录全是 `A`、无 `old_path`）；条件 4 也不触发（无 `changes/<src>/` 源）。
-  - 端到端 proxy（`/tmp/e2e`，真 CLI）：把一份**逐字节相同**的任务/spec/报告复制到新名、**只改三个 JSON 字段**（`change_id`、`head_sha`、`base_sha`）后，`check` **通过 ✓**——`hash` 绑定（`tasks_hash`/`spec_hash`/`report_hash` 因字节未变而全部成立）、`reviewer≠author`、grill 正文判据、三条 stage 门**全部满足**。
-- **结论**：D1 第 3 条**只关了 rename，没关 copy**。而设计给第 3 条写的理由（`design.md:234-235` N8：「把旧归档目录改名 ⇒ 白捡一份现成证据」）**在 copy 变体下仍然成立**：一个只改 `src/**`、复用别人现成证据、仅手改两个 manifest 字段的 PR **变绿**。这是本设计「到达方式不设限」所依赖的那条安全守卫（「不得白捡既有证据」）的**真实缺口**。
-  - 附注：`-M`（现用）看不到；我实测连 `-M -C` 也没看出来（因为 `-C` 默认只从「被改/被删」的文件找副本，旧目录未被改），要 `--find-copies-harder` 才可能看到——所以**不建议**靠「加 `-C`」补，建议改成**语义判据**（见「必须修改项」）。
+**读过的**：`design.md`（711 行）/ `specs/archive-awareness/spec.md`（366 行）/ `tasks.md`（212 行）/ `proposal.md`；
+源码 `contract.py` / `checkcmd.py` / `gitutil.py` / `policy.py` / `constants.py` / `paths.py` / `hashing.py` / `manifestcmd.py`；
+`tests/test_orphan_reports.py`；R7 报告全文；`git show 9db4c53`（R7 回写的**完整 diff**，用来核对「作者声明改了哪些地方」）。
 
-#### ❌ 证伪失败 A2：**把既有归档目录 `git mv` 改名**（N8 原版）
-- 构造（`/tmp/arr2`、`/tmp/arr3` S1）：base 有 `archive/2026-09-30-old/`（证据齐），head 只做 `git mv archive/2026-09-30-old archive/2026-10-15-new` + 改 `src/**`。
-- 期望：不授予（红）。实测：`git diff -M` 全 `R100`、`old_path` 落在 `archive/**`；模拟器 `arrived=False (c3=False)`。**条件 3 生效。**
-- 加固测试：即使**重度改写其中一个非哈希文件**（`proposal.md`）把该文件变成 `D`+`A`，**其余 `R100` 文件仍带 `archive/**` 的 `old_path`** ⇒ 条件 3 仍命中（`/tmp/arr-exp` E2）。要把**全部**文件都变成非 rename，就必须改写 `tasks.md`/`specs/`（**它们被 manifest 哈希绑定**）⇒ 哈希崩 ⇒ 红。**⇒ 该路证伪失败。**
+**跑过的**：
+- `/tmp/r8sim.py` 在**全部既有构造**上复算：`/tmp/cases/*`(18) + `/tmp/r3cases/*`(7) + `/tmp/r3cases2/*`(15)
+  + `/tmp/r4cases/*`(10) + `/tmp/r5cases/*`(10) + `/tmp/r6cases/*`(7) + `/tmp/r7cases/*`(13) = **80 个**
+  （引用按各仓实际分支：r7cases 多数用 `probe`，`t577` 用 `touching`，`pmd_invalid` / `symlink_gate` 用 `feature2`，`n12` 用 `n12`）；
+- **自建 6 个新构造**（`/tmp/r8cases/*`，见 §R7 复核 ②）/ §独立证伪 A：`p1_link_out_tracked`、`p2_link_into_archived`、
+  `p3_link_untracked`、`p4_link_chain_out`、`q1_link_launder`、`q2_specs_dir_link`；
+- **今天的真 CLI**（`.venv/bin/python -m witnessloop check`，未改一行源码）在 7 个关键构造上取原始输出
+  （用来验证「今天绿 → 本 change 红」这条登记的**事实前提**）；
+- `pytest -q` 基线：**601 passed in 46.52s**（与 R7 报的基线一致）。
 
-#### ❌ 证伪失败 A3：**先「洗」到 active 再交（content laundering）**（推演，未实测）
-- 推演：若 base 里**同时**把这份证据放在一个**非 `archive/` 非 `changes/<id>/` 的路径**（如 `vendor/x/**`，与 `archive/old/**` 字节相同），`git` 的 rename 配对可能挑 `vendor/x` 作源 ⇒ `old_path` 不落 `archive/**`、条件 3/4 都不触发。
-- 但：这要求**攻击者能改 base 树**（把证据预先复制到 `vendor/`），远超「误用」的威胁模型，且删 `archive/old/**` 的 manifest 记录仍落在不变集保护面（需要事件）。**不构成现实绕过**，列此仅为穷尽。
+**方法学声明（沿用前几轮的口径，且必须写清楚）**：本 change **未实现**，所以「到达判定」那一半仍是
+**按现稿文本逐字转写的模拟器**，只有「证据门」那一半是真 CLI。我的一切红/绿结论都只针对**到达判定**这一半。
 
-#### ❌ 证伪失败 A4：**预存归档目录 + 新增文件（N3）**
-- 构造：base 有 `archive/2026-09-30-old/`，head 往其中**新增**一个文件 + 改 `src/**` ⇒ 模拟器 `c1=False ⇒ arrived=False`。**条件 1 生效。**
+---
 
-#### ❌ 证伪失败 A5：**只改 `src/**`、零 change 目录（N1）**
-- 无任何 `archive/<name>/` 候选 ⇒ 模拟器返回「无候选」⇒ 不授予。**红。**
+## R7 修复复核
 
-### B. 证伪「找假阴性」——**成功 2 条（F2 / F3）**，两条「必须绿」的形态**实测绿（证伪失败）**
+### 复核 ① 新口径是否让「R5/R7 的攻击构造仍红」「R6 的合法构造仍绿」
 
-#### ✅ B-good-1（**本 change 存在的理由之一，实测绿**）：**出生即归档（form i）**
-- 构造（`/tmp/arr2` E4）：base 无任何 change；head 全 `A` 新建 `archive/2026-10-15-foo/**` + 改 `src/app.py`。
-- 实测：`git diff` 全 `A`；模拟器 `archive/2026-10-15-foo/ arrived=True (c1..c4 全 True)`。**⇒ 这一路在 D1 下拿得到资格。**
+**成立。** 新口径（`design.md:112-120` / `spec.md:65-72`）= 链接**按解析后的内容**参与 (a)/(b)；
+`A` 之内 ⇒ 目标并入 `Ev(A)`；`A` 之外且**被跟踪** ⇒ 按目标路径在 head 树里的 blob 比对；
+**未跟踪 / 悬空 / gitlink ⇒ fail-closed**。
 
-#### ✅ B-good-2（**本 change 存在的理由之二，实测绿**）：**同一次 move 内带内容改动 / 重建 manifest（form ii）**
-- 构造（`/tmp/arr2` E6、`/tmp/arr3` S3）：base 有 active `changes/z/`（含 manifest）；head `git mv changes/z archive/2026-10-15-z` **且**重建 `grill.manifest.json`（该文件变 `D`+`A`，其余 `R100`）+ 改 `src/**`。
-- 实测：`old_path` 落在 `changes/z/**`（**不是** `archive/**`）⇒ 条件 3 不命中；条件 4：`src=z`，`2026-10-15-z` 满足 `endswith("-"+z)` ⇒ 命中。模拟器 `arrived=True`。**⇒ 这一路拿得到资格。**
+| 构造 | 我的复算（`/tmp/r8sim.py`） | 期望 | |
+|---|---|---|---|
+| `r5cases/symlink_ev`（链接指向 base 里现成 change） | `ARRIVED = []`；findings `(a)&(b) fail: …/reviews/link.txt -> …/archive/2026-09-30-old/reviews/grill-review.md blob=b251c876` | 红 | ✅ |
+| `r5cases/symlink_gate` / `symlink_gate2` | `ARRIVED = []`（`(a)&(b) fail` 命中目标 blob `d3f2dd55`） | 红 | ✅ |
+| `r6cases/symlink_archive_move` | `ARRIVED = []`（`symlink target untracked/dangling fail-closed`） | 红 | ✅ |
+| `r7cases/inA_link_to_stolen`（`A/tasks.md → design.md` 之外还塞 `reviews/notes.bin` = base 里现成 `tasks.md` 的副本） | `ARRIVED = []`；`(a)&(b) fail: …/reviews/notes.bin blob=51a2efdb` | 红 | ✅（「目标并入 `Ev(A)`」这条递归仍承重） |
+| **自建** `p2_link_into_archived`（`A/reviews/link.txt → ../2026-09-30-old/reviews/grill-review.md`，**被跟踪**的现成证据） | `ARRIVED = []`；`symlink (a)&(b) fail: … blob=b251c876` | 红 | ✅（**这是 R7 修复后新口径的正面攻击**：目标在 `changes_root` 之内且被跟踪 ⇒ 必须按 (a) 命中） |
+| `r6cases/symlink_report_move` / `symlink_move_legit`（钉绿布局 `alias.md → grill-review.md`） | `ARRIVED = ['2026-10-15-z']` | 绿 | ✅ |
+| `r7cases/dir_link`（`link.txt → ../specs`，指向 `A` 内目录） | `ARRIVED = ['2026-10-15-z']` | 绿 | ✅ |
+| **自建** `p1_link_out_tracked`（`A/reviews/link.txt → …/docs/notes.md`，**仓根、被跟踪、在 `changes_root` 之外**） | `ARRIVED = ['2026-10-15-z']` | 绿 | ✅ |
+| **自建** `p4_link_chain_out`（`link.txt → link2.txt → …/docs/notes.md`，两跳后仍是被跟踪的仓外文件） | `ARRIVED = ['2026-10-15-z']` | 绿 | ✅ |
 
-#### ✅ F2（**证伪成功，中危——引入新的假阴性类**）：**`archive/` 下的「非 change 直接子目录」被判为到达**
-- 构造（`/tmp/arr3` S4）：base 无 `archive/2026/`；head 新建 `openspec/changes/archive/2026/10-15-foo/{proposal.md,...}`（**按年份组织归档**）+ 只改文档。
-- 期望：不该把 `2026` 当成一个 change（今天不会：`changed_change_ids` 对 `archive/**` 一律排除、`archive_grant` 也不授予 ⇒ 无 target）。
-- 实测：模拟器 `archive/2026/  arrived=True (c1..c4 全 True)` ⇒ D1 会把 `2026` 认作「本次到达的 change」⇒ `validate_change_dir('2026')` 报「缺少必需件 proposal.md / design.md / tasks.md / specs / reviews」⇒ **红**。
-- **该形态在本仓既有测试里已存在**：`tests/test_archive_awareness.py:378` `test_deeper_events_file_is_not_read` 就造了 `openspec/changes/archive/notes/sub/workflow-events.jsonl`（其注释明说「把 `notes` 当成一个『归档 change 目录』」）。今天它不产生 target；**D1 之后 `archive/notes/` 会成为一个到达 target 并被判缺件**。同款：`archive/templates/`、`archive/.gitkeep` 所在的目录、任何组织型子目录。
-- **结论**：`grill-design.md` 的 **Q4** 正是这条，但**当前 design 既没回答、也没保留**（`design.md §8` 只剩 Q1–Q3，`§2.5` 也没有）。这是一条**被丢掉的真实假阴性**。
+### 复核 ② 一个必须说清楚的**方法学发现**：R7 那 4 个「逃出 `A`」构造**全是悬空链接**
 
-#### ✅ F3（**证伪成功，低-中危——未列明的拒绝面**）：**归档时顺带改 change id**
-- 构造（`/tmp/arr6`）：base 有 active `changes/old-id/`（含 files）；head 做 `git mv changes/old-id archive/2026-10-15-new-id`（全 `R100`）+ 改 `src/**`。
-- 实测：`git diff` 全 `R100`、`old_path` 落在 `changes/old-id/**`（不是 archive）⇒ 条件 3 不命中；条件 4：`src=old-id`，`2026-10-15-new-id` **既不等于 `old-id`、也不 `endswith("-old-id")`** ⇒ `c4=False` ⇒ `arrived=False` ⇒ **红**。
-- **结论**：D1 会拒掉「归档改名 + change id 改名同时发生」。是否合法可争，但这是 **design §5.3 否定面表里没列、规范 Scenario 里也没写**的一类拒绝。至少要写明口径。
+R7 的 M1 用的是 `/tmp/r7cases/escape_doc`，声称「同一份合法内容，active 位置今天真 CLI 绿 / 归档位置新口径红」，
+并声称反向对照是「`link.txt` 是普通文件」。**我把这 4 个构造的链接文本逐字读了出来**：
 
-### C. 证伪「条件 3 / 条件 4 的必要性与充分性」
+```bash
+$ for c in escape_doc chain_escape abs_link dangling_inA dangling_out; do
+>   for b in $(git -C /tmp/r7cases/$c ls-tree -r probe 2>/dev/null | awk '$1=="120000"{print $3}' | sort -u); do
+>     printf '%-16s %s => ' $c ${b:0:8}; git -C /tmp/r7cases/$c cat-file -p $b; echo; done; done
+escape_doc       a9d34b8b => notes.md                 # ← in-A 目标，未提交（悬空）
+dangling_inA     a9d34b8b => notes.md
+dangling_out     67dc2f10 => ../../../docs/notes.md
+chain_escape     67dc2f10 => ../../../docs/notes.md
+abs_link         503b84a2 => /tmp/r7cases/escape_doc/docs/notes.md
+```
 
-- **条件 3 必要性**：成立——去掉它，N8（rename 既有归档目录）确实变绿（`design.md:235` 的推理我复核成立，同一威胁在 F1 的 copy 变体下**已实际发生**）。
-- **条件 3 充分性**：**不成立**——见 F1（copy 绕过）。这是本报告的最高优先级结论。
-- **条件 4 误伤**：**会**——F3（归档时改 id）被误伤；另外 `endswith("-" + src)` 只在「归档目录名 = `<date>-<id>` 或 `<id>`」时成立，设计已声明「不改 `<date>-<id>` 约定」，所以**常规接入不受影响**（B-good-1/2 实测绿）；误伤面限于「id 本身在归档时被改」这类非典型流。
-- **条件 4 不承重**：**完全正确**——条件 4 原本要挡的「单文件 move 进**已存在**归档目录」（N6）已被**条件 1** 独立关掉（我实测 `git mv changes/z/notes.md archive/y/notes.md` 时目标目录在 base 存在 ⇒ 条件 1 不成立）。所以条件 4 现在**只剩命名约定作用**，这与 `grill-design.md` 的 Q2 判断一致。
+（`escape_doc` 的 `link.txt` 文本实为 `../../../../docs/notes.md`，链接位于 `A/reviews/` ⇒ 解析到
+`openspec/docs/notes.md`，而仓里被跟踪的是**仓根** `docs/notes.md` ⇒ **目标不存在** ⇒ 悬空。）
 
-### D. M3 技术前提（**成立**）
+⇒ **R7 的「逃出 `A` 但目标被跟踪」这一情形，四个构造一个都没覆盖**（全是悬空或仓外不存在路径）。
+所以「新口径是否让『指向 `changes_root` 之外被跟踪文件的链接』仍绿」在 R7 那一轮**根本没有被证伪或证实**。
+本轮我按 `spec.md:71` 的字面语义**新建**了 `p1` / `p4`（见上表），二者**判绿** ⇒ **R7 修复的正向半边成立**。
+这一点要写进下一轮的上下文，避免把「R7 已验证」当成对正向半边的验证。
 
-- `gitutil.changed_files` **确为三点**：`src/witnessloop/gitutil.py:104-106` 传的是 `f"{base}...{head}"`（`--name-status -z --find-renames`）。**⇒ 设计 §1.1 的断言成立。**
-- `check` 调用链上传入的 `base`：`checkcmd.py:47` `base = gitutil.resolve_base(root, args.base)` → `:54` `changed_files(root, base, head)`。`resolve_base`（`gitutil.py:54-71`）返回**显式参数 → `WITNESSLOOP_BASE_REF` → `origin/<GITHUB_BASE_REF>` → 主干**。所以「到达判定用 `merge-base(base, head)`」与 diff 成员**同源**，**结论在真实调用路径上成立**。
-- **有没有更简单/更正确的做法**：**没有更好的**——三点 diff 只说哪些**路径**变了，说不出「某个**目录前缀**在 base 里有没有 entry」（N3：预存目录里加文件也是 `A`），所以必须显式查基树；而查基树必须先给一个 revision 名，`git merge-base` 是唯一自然来源。**⇒ 设计正确。**
-- **一个边界**：`changed_files` 在 merge-base 求不出时（互不相关历史）**已经抛 `GitError`**（`gitutil.py:107-110`），`check` 在 `checkcmd.py:55-57` **已经 fail-closed 退出**。所以 D7 说的「基树读不出来 ⇒ 报 finding」的**独立**触发面很窄——只剩「merge-base 成功但对 base tree 对象 `ls-tree` 失败」（浅克隆 / partial clone / filtered）。**⇒ 设计的方向对，但覆盖面比它暗示的窄。**
+### 复核 ③ gitlink / 悬空 / 未跟踪 三类 fail-closed 的**可实现性**
 
-### E. 低危观察（不阻塞）
+**可达成，但文本对实现者的约束有三处没钉死（见 §措辞项 1/2/3）。**
 
-- **`archive/<name>` 在 base 是「文件」而非目录时，条件 1 是盲的**（`/tmp/arr8` 实测）：base 有 blob `openspec/changes/archive/foo`，head 变成目录 `archive/foo/…`。
-  - `git ls-tree -r <mb> -- openspec/changes/archive/foo/`（带尾斜杠）⇒ **空**（blob 在 `archive/foo`，不在 `archive/foo/` 下）⇒ 条件 1 判「不存在」⇒ `arrived=True`。
-  - 不构成绕过（该目录仍要凑齐证据），但条件 1 的措辞应明确为「该路径在 base **完全没有 entry（blob 或 tree）**」，别写成「前缀下没有 tree entry」——后者对同路径 blob 放行，也正是 `grill-design.md` R-C 担心的「第一段可能是文件」。
-- **前身 grill 的 R-B（D4 的 `archived_sources` 过宽）当前 design 未处置**，但我实测其危害有限：`/tmp/arr9` 的构造里那条记录的 `old_path` 本就匹配 `is_archive_move`（今天就已经在 `archived_sources` 里），D4 真正新增的只有 **`R<100`** 记录那条窄缝。**非必须改，建议在实现时按 grill 的建议收窄到「源 change 自己的目录」。**
+（1）`git ls-tree -r` **确实**列 gitlink 行——我自己复跑了一遍（这是 R7 的 M2 事实，本轮独立确认）：
 
-### F. spec delta ↔ design 一致性
+```bash
+$ cd /tmp/r7cases/gitlink && git ls-tree -r HEAD -- openspec/changes/archive/2026-10-15-z/reviews/
+100644 blob 61780798228d…  …/reviews/b.md
+100644 blob 5fa534db247a…  …/reviews/building.manifest.json
+100644 blob 31334094c7d1…  …/reviews/ga.md
+100644 blob 107804909820…  …/reviews/grill-adversarial.manifest.json
+100644 blob e86af71c35b1…  …/reviews/grill-review.md
+100644 blob e5bd4d30abae…  …/reviews/grill.manifest.json
+160000 commit 2f781bdcc1bf972c9994c2ddb72dd0cbb625e382  …/reviews/sub      # ← gitlink 行在
+```
+⇒ `spec.md:62-63` 的「枚举 SHALL 覆盖全部非 tree 行」是可实现的；`design.md:322` 的订正（「不含 tree 行，
+但**含** `160000 commit` 行」）与我实测一致。
 
-- **四条条件措辞**：`design.md:68-73` 与 `spec.md:15-24` **逐条一致**（含「有源」「`name == src` 或 `name.endswith("-" + src)`」）。✅
-- **对称性不变量的限定**：**两边都写了、且都显式排除 stale 维度**——`design.md:95-102`（D2）与 `spec.md:134-145`（Req4 + ⚠️ 段）。✅（grill 的 M2 已落。）
-- **⚠️ 不一致（见下「必须修改项」）**：`spec.md:71` 写「SHALL 满足上一条的**两条**判据」，但上一条（`spec.md:13-24`）是**四条**条件。
+（2）**三类 fail-closed 在实现上收敛为同一句判据**：把链接文本按
+`resolve_report_path` 同款解析（`Path.resolve()` + `pathutil.is_within`，`spec.md:69` / `design.md:116`），
+得到目标路径 `T`；再查 **head 树**里 `T` 有没有 entry：
+- **悬空**（`T` 在树里没有 entry）⇒ fail-closed；
+- **未跟踪**（`T` 只存在于工作树）⇒ 树里同样没有 entry ⇒ fail-closed（这正是 R7 §E-1 要求的方向）；
+- **gitlink**（条目 mode `160000`）⇒ fail-closed。
+
+⇒ 三类的**判定动作是可写的、可单测的**（注入式假树即可覆盖），且都落在我复算的 `ARRIVED=[]` 一侧：
+`r7cases/gitlink [probe] → []`（`gitlink fail-closed: …/reviews/sub`）、
+`r7cases/dangling_inA [probe] → []`（`in-A symlink target untracked/dangling fail-closed: …/reviews/notes.md`）、
+**自建** `p3_link_untracked`（`A/reviews/link.txt → secret.md`，`secret.md` 提交后从工作树塞入、未提交）`→ []`。
+⚠️ 但**实现者要同时用「工作树解析」拿路径、用「head 树」取字节**——两套世界的交接点在文本里只写了半句
+（`Path.resolve()` 是文件系统操作，而 `取…在 head 树里的 blob` 是树操作），见 §措辞项 2。
+
+（3）**「今天绿」的事实前提成立**（这是登记准确性的关键，我用真 CLI 逐条验了）：
+
+```bash
+$ cd /tmp/r7cases/escape_doc && … check --root . --base main --head feature   # check：通过 ✓
+$ cd /tmp/r7cases/dangling_inA && … check --root . --base main --head probe   # check：通过 ✓
+$ cd /tmp/r7cases/gitlink     && … check --root . --base main --head probe   # check：通过 ✓
+```
+⇒ `spec.md:105-106` / `spec.md:354-356` 写的「改动前判绿、本 change 判红」**事实成立**。
+
+### 复核 ④ 登记与限定是否**完整且互不矛盾**
+
+**四处登记位里三处已落、一处（`§5.2`）没落**，另有一处**陈旧陈述**（`design.md:500`）与一处**口径差**（gitlink 作用域）。
+
+| 登记位（R7 的 M1 要求 / 作者声明） | 现状 | |
+|---|---|---|
+| `spec.md` 误伤面 | ✅ `spec.md:105-106` | |
+| `spec.md` 有意的行为变化 3 | ✅ `spec.md:354-356`（并给了「反向仍须绿」） | |
+| `design.md §D1 已知边界` | ✅ `design.md:206-207` | |
+| **`design.md §5.2`（回归面）** | ❌ **没有**——`sed -n '432,474p' design.md \| grep -n '链接\|符号\|gitlink'` **零命中**。作者的 commit message 与 `tasks.md:39` 都声称登记进了「`design.md` 的『已知边界』**与 §5.2**」，**§5.2 那一半没做** | 措辞项 6 |
+| Scenario 限定 | ✅ `spec.md:320-326`（补了 `② 本 change 明写的内容来源边界`） | |
+| R7 的「7 条措辞项已落库」（`tasks.md:40`） | ⚠️ **不准**：R7 措辞 1（`design.md:384` 的「每一份…都**重写**」）与措辞 6 的 tasks 半边（`tasks.md:155` 仍写「`-r` = 其下**全部 blob**」）**没落** | 措辞项 4 / 5 |
+
+**一处新引入的自相矛盾（重要）**：`design.md:500`（§5.3 N22 行）**仍写着 R6 时代的旧口径**
+「**逃出 `A` 的链接直接 fail-closed**」。这与 `design.md:118-119` 和 `spec.md:71`（`A` 之外且被跟踪 ⇒ 按 blob 比对 ⇒ 可绿）
+**直接冲突**，而且**可被我的 `p1` 构造成品证伪**（`p1` 的链接逃出 `A`、目标被跟踪 ⇒ `ARRIVED=['2026-10-15-z']`）。
+它**不影响 N22① 的判红**（那里目标在 `changes_root` 内，两种读法都红），但它是「作者改了口径却漏改 §5.3 表」的**新残留**。
+
+**一处口径差**：`spec.md:63` 与 `tasks.md:127` 把 gitlink 的 fail-closed 写成「**`<A>` 下**（或 `Ev(A)` 里）出现 gitlink」，
+而 `design.md:120` / `design.md:206` 只写 **`Ev(A)` 里**。二者对「A 根下、非证据位置（如 `A/notes`）的 gitlink」给出**不同结论**
+（spec/tasks ⇒ 红，design ⇒ 绿）。§5.3/§2.9 明列的 gitlink 位置（`reviews/` 下、artifact 目录之下）都落在 `Ev(A)` 内，
+**没有必须用例翻转** ⇒ 记为措辞项 3。
+
+---
+
+## 独立证伪
+
+### A 绕过（尝试过、**未成功**的）
+
+| # | 构造（我自建） | 结果 |
+|---|---|---|
+| A1 | `p2_link_into_archived`：链接指向 `changes_root` **之内**的现成归档 change（被跟踪） | **拒** ✅（(a) 命中目标 blob） |
+| A2 | `q1_link_launder`：先把受害者的报告在**它自己的归档目录里改名**（使该路径成为本次 diff 的**改名落点**），再让 `A/tasks.md` 链接过去 | **拒** ✅（(a) 命中；`q1` 见 §措辞项 1 的读法分歧） |
+| A3 | `q2_specs_dir_link`：`A/specs` 做成指向**现成归档 change 的 `specs` 目录**的链接（**目录值**目标，正对 N22① 的 `specs` 字样） | **拒** ✅（`ARRIVED=[]`，命中 `…/2026-09-30-old/specs/cap/spec.md`） |
+| A4 | `p4_link_chain_out`：两跳链接（`link.txt → link2.txt → 仓外被跟踪文件`） | 绿 —— **这是修复的目标行为**（与 `cp` 同结论） |
+| A5 | `p3_link_untracked`：链接指向**只存在于工作树、未提交**的文件 | **拒** ✅（fail-closed） |
+| A6 | 目录值目标（`q2`）在「取 blob」的字面读法下**可能被跳过** ⇒ 可能翻绿 | 未能在**设计文本**上复现（文本经「与 `cp` 同结论」可定案为红）——记 §措辞项 3 |
+| A7 | 硬链接借内容 | **未构造**（git 里就是普通 blob ⇒ 与 R5 同结论）——沿用前轮「未验证」 |
+
+**结论：新口径**没有**被绕过。**R5 的攻击形状在「文件值目标」与「目录值目标」两种形态下都被关掉；
+R7 造成的误伤也修掉了（`escape_doc_regular` / `ctrl_regular` 仍绿、`p1` / `p4` 如期绿）。
+
+### B 假阴性 / 误伤（**新证伪：0 条**）
+
+- **必须绿的全部仍绿**（我的复算）：`r6cases/symlink_report_move`、`symlink_move_legit`、`r7cases/dir_link`、
+  `r7cases/escape_doc_regular`、`ctrl_regular`、`cases/r6_legit_move`、`r7_move_rebuild`、`r13_born_archived`、
+  `r4cases/empty13_gitkeep`、`r5cases/e11_proper`、`r4cases/i1b2_separation_clean`、`i3_dpath_alive_src`、
+  `i5_cp_from_outside_root`、`r3cases2/a4b_outside_root`、`r3cases/m1_move_heavy_rewrite`、
+  `r3cases2/m3_move_rewrite_tasks_only`、`r6cases/A_delall_unrelated` / `C_pmd_rest_moved` / `D_delall_recognizing_born`、
+  `r5cases/pmd_valid` / `partial_move_delete`、`r3cases2/t471c` / `t471d` —— **全绿**。
+- **明写误伤面仍红**（与文档一致）：`r4cases/e12_sibling_spec_copy`（只点名 `specs/limits.md`）、
+  `r3cases/m2_template_stub`、`r5cases/e12_copy`。
+- **新口径带来的误伤已登记且事实成立**（真 CLI 今天绿，见复核 ③(3)）⇒ 不构成新的**未登记**行为变化。
+
+### C 判据逐条（`§5.3` N1–N22 + `§5.1` 1–14 + 2b/2c）
+
+「新口径」= `/tmp/r8sim.py`（`evrows=all`，即 `spec.md:62` 要求的全非 tree 行枚举）。「今天」= 未改源码的真 CLI。
+
+| # | 构造（我的复算源） | 新口径 | 结论 |
+|---|---|---|---|
+| N1 | 只改 `src/**`（`r7cases/n1_src_only`） | 无候选 ⇒ 红 | ✅ |
+| N2 | 改已存在归档目录里的文件（`r4cases/t577`，`touching`） | `c1=False` ⇒ 红 | ✅ |
+| N3 | 往已存在归档目录新增文件（`cases/r10`） | `c1=False` ⇒ 红 | ✅ |
+| N4 | 单文件 move 进已存在归档目录（`r7cases/n4_into_existing`） | 红 | ✅ |
+| N5 | 删除 change 目录（`r7cases/n5_delete_change`） | 无候选 ⇒ 红 | ✅ |
+| N6 | 到达件齐但零 manifest（`r3cases2/n6_exact`） | 到达 ⇒ 证据门点名 | ✅ |
+| N7 | 新建 `archive/<name>/` 缺必需件（`r4cases/t541`） | `c2=False` ⇒ 不是到达 ⇒ 红 | ✅ |
+| N8 | 改名已存在的归档目录（`cases/r8_rename_archived`） | `c3=False` ⇒ 红 | ✅ |
+| N9 | 纯 `cp -r`（`cases/r1_copy`） | `c5=False` ⇒ 红 | ✅ |
+| N10 | 复制 + 改路径（`cases/r2_copy_specrename`、`r3_copy_reportext`） | `c5=False` ⇒ 红 | ✅ |
+| N11 | 复制 + 只改一处（`cases/r4_copy_onebyte`） | `c5=False` ⇒ 红 | ✅ |
+| N12 | 复制 + 删一个证据文件（`r5cases/n12_del_one`） | `c5=False` ⇒ 红 | ✅ |
+| N13 | `git mv` 无关文件 + 其余整份 `cp`（`cases/r16_copy_plus_add`） | `c5=False` ⇒ 红 | ✅ |
+| N14 | 源是嵌套归档目录（`cases/r21_nested_source`） | 红 | ✅ |
+| N15 | 混源（`cases/r5_mixed_sources`） | `c5=False` ⇒ 红 | ✅ |
+| N16 | 组织型子目录（`cases/r12_org_dir`） | 非候选 ⇒ 红 | ✅ |
+| N17 | `archive/notes/` 只含 `sub/`+`reviews/`（`cases/r15_org_dir_with_reviews`） | `c2=False` ⇒ 红 | ✅ |
+| N18 | base 同路径是 blob（`cases/r11_base_blob`） | `c1=False` ⇒ 红 | ✅ |
+| N19 | 报告挪出 `reviews/`（`r3cases/a1_report_repath`） | `c5=False` ⇒ 红 | ✅ |
+| N20 | `specs` 换同名普通文件 / `tasks.md` 做成目录（`r3cases2/a3b_specs_file_pristine`、`a5_tasks_as_dir`） | `c5=False` ⇒ 红 | ✅ |
+| N21 | **每份证据各加一个字节** + 重算 manifest（`r3cases/a2_all_one_byte`） | `ARRIVED=['2026-10-15-new']` ⇒ 绿 | ✅ **按设计不要求红**（明写天花板） |
+| N22① | 链接指向基准树里现成 change（`r5cases/symlink_ev` / `symlink_gate` / `symlink_gate2`） | `c5=False` ⇒ 红 | ✅ |
+| N22② | **悬空链接**（`r7cases/dangling_inA` / `dangling_out`） | `c5=False` ⇒ 红 | ✅ |
+| N22② | **gitlink**（`r7cases/gitlink`，`probe`） | `ARRIVED=[]`（`gitlink fail-closed`）⇒ 红 | ✅（**M2 已闭合**） |
+| N22② | **目标未跟踪**（自建 `p3_link_untracked`） | `ARRIVED=[]` ⇒ 红 | ✅ |
+| 对照 | `alias.md → grill-review.md`（`r6cases/symlink_report_move` / `symlink_move_legit`） | `arrived=True` | ✅ **必须绿成立** |
+| 对照 | 指向 `changes_root` **之外被跟踪**文件（自建 `p1` / `p4`） | `arrived=True` | ✅ **必须绿成立（本轮首次真正覆盖）** |
+| 对照 | 纯 move / move+重建 manifest / 出生即归档（`cases/r6`、`r7`、`r13`） | `arrived=True` | ✅ |
+| 对照 | 空文件豁免 / stub 误伤排除（`r4cases/empty13_gitkeep`、`r5cases/e11_proper`、`r3cases2/e11b`） | `arrived=True` | ✅ |
+| §5.1 2b | move + 被搬文件整体重写（`r3cases/m1_move_heavy_rewrite`、`r3cases2/m3_move_rewrite_tasks_only`） | `arrived=True` | ✅ |
+| §5.1 2c | 行为变化变绿侧（`r5cases/pmd_valid`、`r6cases/A_delall_unrelated` / `C_pmd_rest_moved` / `D_delall_recognizing_born`） | 绿 | ✅ |
+| §5.1 2c | fail-closed 对照（`r5cases/pmd_invalid`） | `ARRIVED=[]` ⇒ 红 | ✅ |
+| — | 受保护文件搬进到达目录 / 归档时改 change id（D5 / D4 侧） | — | **未实现 ⇒ 仅文本核对**（见「未验证项 2」） |
+
+`§5.1` 第 3/7/8/9/10/11/12/13 条走的是上表同族构造；第 6/7 条（树读不出 / 基准 revision 对齐）**未复算**
+（需要浅克隆与分叉后 base 前进的真仓，见「未验证项 3」）。
+
+### D 源码核对（设计里的 `文件:行号` 断言）
+
+**我核对到的逐条命中**（`sed -n` 打印比对）：
+
+| 设计里的引用 | 实测 |
+|---|---|
+| `contract.is_archive_move` 只认 `R100` + 源在 active | ✅ `contract.py:72` `if change.status != "R100" or not change.old_path:` |
+| `contract.changed_change_ids` / `archive_grant` / `change_targets` | ✅ `contract.py:85` / `:119` / `:150` |
+| `contract.resolve_report_path`（`Path.resolve()` + `is_within`） | ✅ `contract.py:282`，内部 `:296-300` |
+| `pathutil.is_within` | ✅ `paths.py:60`（`resolve().relative_to(...)`） |
+| `hashing.sha256_tree` **跟随符号链接**（R5/R6 攻击前提） | ✅ `hashing.py:22-37`：`p.is_file()` + `entry.read_bytes()` ⇒ 链接文件按**目标字节**哈希 |
+| `gitutil.changed_files` = `base...head`（三点）+ `--find-renames` | ✅ `gitutil.py:99-111` |
+| `gitutil._parse_name_status` 对 `D` 把被删路径放 `path`、`old_path` 留空 | ✅ `gitutil.py:124-129` |
+| `manifestcmd.resolve_change_dir` 按磁盘存在性、active 优先 | ✅ `manifestcmd.py:33-48`（`active.is_dir()` 优先，再 `pol.archive_root`） |
+| `manifestcmd` **不调用** `change_targets`（design D7 / tasks 3.6 的关键事实） | ✅ `grep -n change_targets src/witnessloop/manifestcmd.py` **零命中** |
+| `checkcmd._protected_writes` 用 `is_archive_move`（将被替换） | ✅ `checkcmd.py:228` / `:255` |
+| `constants.HASHED_ARTIFACTS` = `tasks.md` + `specs`；`required_artifacts` 五项 | ✅ `constants.py:87-90` / `:55` |
+| `tests/test_orphan_reports.py:273` 的钉绿布局 | ✅ `test_symlinked_report_is_not_an_orphan` 在 `:273`，`:283` 建 `alias.md → grill-review.md` |
+
+**一处事实（本轮新确认，支撑 `design.md:322`）**：`git ls-tree -r` 的语义是「**不含 tree 行、含 `160000 commit` 行**」，
+`design.md:322` 的订正准确（原始输出见 §复核 ③）。
+
+### E 低危
+
+1. **`Path.resolve()`（工作树）与 head 树混用**（R7 §E-1 的建议**未采纳**）：`spec.md:69` / `design.md:116` 明确把解析器钉成
+   `Path.resolve()`（**文件系统**操作），而 (a)/(b) 的字节比对按 **head 树**。CI 里两者相等 ⇒ 无实害；
+   但本地 `check` 在有未提交文件时会分叉：`p3` 这类「链接目标未提交」的构造，工作树解析**成功**、树查**失败** ⇒
+   只有按树查才能得到 fail-closed。**建议 `spec.md` 钉死「内容与存在性一律按 **head 树**，`Path.resolve()` 只用于
+   把链接文本规范化成仓根相对路径」**。（措辞项 2）
+2. **目标解析到仓根之外**（如绝对路径 `/tmp/...`）：`spec.md:72` 的三类里没有这一类。
+   实现若用 `Path(...).relative_to(root)` 会抛 `ValueError`（`check` 崩溃 ⇒ 退 1 ⇒ fail-closed，行为安全但非「受控 finding」）。
+   建议补一句「目标落在仓根之外 ⇒ fail-closed」。（措辞项 3 的一部分）
+3. **目录值目标**（`q2`）：`取目标文件的 blob` 对目录不适用。文本经「与 `cp` 进来同结论」可定案为**折叠子树**（= 红），
+   但字面读法允许「无 blob ⇒ 跳过」（= 绿）。与 N22① 的 `specs` 字样直接相关 ⇒ 值得钉死。（措辞项 3）
+4. `--evrows=blob`（只枚举 blob 行）在我全部构造上与 `evrows=all` **只差 gitlink 一行**：
+   `r7cases/gitlink` 在 blob 枚举下 `arrived=True`（绿）——这**复现了 R7 的 M2 形状**，说明该订正确实承重。
 
 ---
 
 ## 未验证项
 
-1. **接入方 asterwynd 的具体数字**（「33 文件全 `A`」「R068/R069/R070/R090」「收尾 16 文件 11 项」「120 个归档目录」）——另一个仓的提交，本工作区**无法复算**。我用合成仓验证了**方向**（`git mv` + 重建 manifest ⇒ `R<100`；copy ⇒ 全 `A`），但**没有**复现其分数与计数。`tasks 4.2` 必须在接入方仓里真跑。
-2. **F1 的端到端是「proxy」**：我用**新建 active 目录**（`changes/newid`）跑通证据门禁，因为当前代码还没实现 D1、无法让 `check` 直接认一个「到达的归档目录」。D2 声称归档 target 与 active 走**同一套**门禁——我正在验证的正是这套门禁，所以 proxy 有效；但严格说「到达的**归档**目录」这一跳是**推演**，不是实测。
-3. **浅克隆 / partial clone 下 `merge-base` 与 `ls-tree` 的确切失败模式**：我本地 `git clone --depth 1 file://...` 的实验没能干净复现（`origin/main` 未建立），**未取得可靠证据**。`gate.yml` 已 `fetch-depth: 0`，但 D7 的 fail-closed **具体断言**（哪句 finding 文案、退出码、`ls-tree` 失败 vs `merge-base` 失败如何区分）**未验证**。
-4. **`git worktree` / merge commit 形态**：只做了逻辑推演（`checkcmd` 用 `rev_parse(head)` 且 `SpanScope` 已处理 merge commit），**未实测** merge commit 下 `merge-base(base, head)` 与原树分叉时的到达判定。
-5. **`manifest build` 是否真的不需要感知「到达」**（D7 / `design.md:178` 的订正）：我只复核了「`manifestcmd` 不调用 `change_targets`」（`grep` 为空）这一**事实**，**没有**验证「本 change 之后 `manifest build` 仍无需感知到达」这一**结论**。
+1. **到达判定那一半仍是「按文本逐字转写」的模拟器**（本 change 未实现）。最敏感的三处分歧已写进 §复核 ③/§E：
+   ① 解析器用 `Path.resolve()` 还是纯词法 `normpath`；② 目录值目标怎么处理；③ `(b)` 的判定对象。
+   除这三点外，各读法在我全部 86 个构造上同结论。
+2. **D4 排除键 / D5 保护写豁免**：今天的 CLI 是旧实现（`archive_grant` + `is_archive_move`），
+   **无法**用真 CLI 验证新口径 ⇒ 本轮对 `§5.1` 2b/2c、`§5.2` 的 5 条改写测试、`§5.3` 末两行只做**文本核对**。
+3. 浅克隆失败面、merge commit 形态、自定义 `review_manifest_glob`、多段 `required_artifacts` 的端到端：无新证据（沿用前轮）。
+4. **硬链接借内容**、gitlink 的**子模块内容**攻击：未构造（后者需 `gate.yml` 开 `submodules: true`；
+   本仓 `gate.yml` 只有 `actions/checkout@v4`、无该键 ⇒ 子模块内容不会物化）。
+5. 接入方真实提交（`R068/R069/R070/R090`）**不可复算**（本仓从未归档过 change）。
+6. Windows 反斜杠 / `core.symlinks=false` 检出的链接：只走代码路径，**未单独构造**（与 R7 同）。
 
 ---
 
 ## 必须修改项
 
-- **M-F1（高危，必须修）：D1 第 3 条不足以关掉它自己的威胁（copy 变体）。**
-  - 现状：条件 3 只看「到达组里有没有记录的 `old_path` 落在 `archive/**`」⇒ 只关 rename。
-  - 缺口：把既有归档目录的整份内容 **`cp` 到新名**（源不动）⇒ 全 `A`、无 `old_path` ⇒ 条件 3 失明；配合手改 manifest 的 `change_id`/`head_sha` 两个字段 ⇒ 证据门全过（`/tmp/e2e` 实测 `check：通过 ✓`）。
-  - 建议（任选，需写进 design + spec + 用例）：① **把「到达」再加一条「到达目录的文件 blob 集合不得与 base 里任何现存归档目录的 blob 集合相同/为其子集」**（直接判「不是复制来的」）；② 或对到达目录做**内容指纹比对**（`sha256` 目录级）；③ 若坚持靠 diff，**必须**把 `changed_files` 的 `-M` 换成能看见副本的模式并**在规范里写死**（但 `-M -C` 我实测**看不见**，需 `--find-copies-harder`，且仍是启发式 ⇒ 不建议）。**同时把 N8 的 Scenario 扩成 rename + copy 两格。**
-- **M-Q4（中危，必须补）：把被丢掉的「`archive/` 非 change 子目录」假阴性补回停轮队列或写成判据。**
-  - `design.md §8` 只剩 Q1–Q3、`§2.5` 也没有；但 F2 实测「`archive/2026/10-15-foo` ⇒ `2026` 被判为到达 ⇒ 红」，且本仓既有测试 `tests/test_archive_awareness.py:378` 就含这种目录。至少要**明确选**：`archive/` 下第一段必须是 change 目录（硬约定），还是「只把含必需件之一的目录当 target」。
-- **M-D5（中危，必须修）：D5 / 规范 Req3 的保护写豁免定义过宽。**
-  - 现状措辞「该记录**属于某个到达组**」（`design.md:129-140`、`spec.md:107-121`）未定义「属于」；其自然实现（`new_path` 落在到达目录下）会把「把 `openspec/specs/x.md` 等受保护文件**移入**到达目录」的记录也豁免。
-  - 实测：今天 `contract.is_archive_move(Change("R100","archive/2026-10-15-new/secret.md","openspec/specs/secret.md"))` ⇒ **`False`**（今天的豁免**要求 `old_path` 落在 active change 目录**）⇒ 该记录**今天要事件**。D5 的宽口径会**放开**它。
-  - 建议：把豁免严格限定为「**`old_path` 落在某个 active change 目录** 且 `new_path` 落在到达目录」（即保留 `is_archive_move` 的**旧侧条件**，只把「R100」放宽成「到达组」）。这样既达成 D5 的目的（重建 manifest 的 `R<100` 记录免事件），又不放开「把保护物搬出保护区」。
-- **M-DOC1（必须修）：`tasks.md:42`(3.5) 与 `design.md:178`(§3 第 4 条) 直接冲突。** tasks 写「`manifestcmd.py`：与 `check` 共用同一份 target 解析（单一实现）」，design 写「订正后本 change **不改它**」。二者只能留一个——grill M4 已实测 `manifestcmd` 不调用 `change_targets`，**应采纳 design 的订正、改写 tasks 3.5**。
-- **M-DOC2（必须修，spec 自矛盾）：`spec.md:71` 「SHALL 满足上一条的**两条**判据」应为「**四条**判据**（且四条的措辞与 `design.md:68-73` 对齐）**。**
-- **M-DOC3（必须修）：`tasks.md:10` 写「停轮问题的 **Q1–Q4**」，但 `design.md §8` 现在是 **Q1–Q3**。** 命令文件与产物不一致，会误导执行者。
-- **M-DOC4（建议修）：`spec.md:171` 「`manifest build --change <name>` 对归档目录的支持与 `check` SHALL **共用同一实现**」重复了 grill M4 判为**不实**的主张**（实际共用的是 `validate_change_dir` 与 `resolve_report_path`，不是「target 解析」）。要么删、要么改成准确的可共用项。
-- **M-C1（建议修）：条件 1 措辞。** 「该前缀下没有任何 tree entry」对「base 同路径是 blob」是盲的（F2/低危 E 实测）。改成「该路径在 base revision 的树里**完全不存在**（blob 或 tree 皆算存在）」，并把「到达目录必须是 tree」写死（呼应 grill R-C）。
+**无。**
+
+R7 的两条必须项都已落库且经我独立复算成立：
+- **M1**（逃出 `A` 的拒绝面未登记 + Scenario 全称断言）：登记进了 `spec.md:105-106`（误伤面）、
+  `spec.md:354-356`（有意的行为变化 3）、`design.md:206-207`（已知边界）、`design.md:386`（R7 行），
+  Scenario 限定补在 `spec.md:320-326`；且行为变化本身**事实成立**（真 CLI 今天绿，见 §复核 ③(3)）。
+  ⚠️ 只有 `§5.2` 那一半没落（见 §措辞项 6）。
+- **M2**（gitlink 与 `Ev(A)`「文件」枚举不自洽）：`spec.md:62-63` 明写「枚举 SHALL 覆盖全部非 tree 行」，
+  `design.md:322` / `tasks.md:153` 订正了命令描述；我的 `r7cases/gitlink` 复算 `ARRIVED=[]`（红）⇒ 必须红**可满足**。
 
 ---
 
-## Open Questions
+## 措辞项
 
-> 只放**真正需要用户拍板**的。能由代码/安全属性定案的我已尽量移出（见下）。
+（**均不影响任何用例的判红判绿**；1–3 建议下一轮顺手改掉。）
 
-**OQ-1（必须补问；本报告新增）：`archive/` 下的「非 change 直接子目录」怎么处置？**
-- 具体例子：某接入方想按年份归档，落 `openspec/changes/archive/2026/10-15-foo/{proposal.md,…}`。base 里没有 `archive/2026/`。
-  - 今天：无 target，`2026/` 不被校验。
-  - D1（现稿）：`archive/2026/` 是**新建**的 ⇒ 被当作「到达的 change `2026`」⇒ 报「缺少必需件 proposal.md/design.md/tasks.md/specs/reviews」⇒ **红**。同款：`archive/templates/`、`archive/README.md` 所在的 `archive/`（若 `archive/` 本身新建）等任何组织型/工具型子目录。
-- 需拍板：(a) 接受「`archive/` 下第一段必须是 change 目录」成为**硬约定**（组织型目录一律不许）；(b) 只把「**含任一必需件**（如 `proposal.md`）的子目录」当 target（把裸组织型目录放行）；(c) 其它。
-- （`grill-design.md` 的 Q4 就是这条，当前 design 丢了它；`tests/test_archive_awareness.py:378` 是本仓的真实样本。）
+1. **`(b)` 的判定对象没钉死**（措辞项里最有实质的一条）：`spec.md:65` 说符号链接「参与 **(a)/(b) 比对**」，
+   而 `spec.md:71` 只说「`A` 之外 ⇒ 按该目标路径在 head 树里的 blob 比对（与 `cp` 进来同结论）」——
+   `(b)`（「是本次改名记录的落点」）到底看**链接自身的路径**还是**解析目标路径**，字面两可。
+   我的自建 `q1_link_launder`（先把受害者的报告在它自己的归档目录内**原地改名**，再让 `A/tasks.md` 链接过去）
+   在两种读法下**结论相反**：按「(b) 看链接自身路径」= 红；按「(b) 看目标路径」= 绿。
+   `design.md:119` 的「字节落在 `<changes_root>/**` 就命中 (a)、**否则放行**」实际把 `A` 之外的情形定成了 **(a) 单独**（= 红），
+   所以**设计意图是安全的**，但这句话与 `spec.md:65` 的「(a)/(b) 比对」并列时容易被实现者读成「(b) 也适用且以目标为对象」。
+   **建议补一句**：「对 `A` 之外的链接，`(b)` 的判定对象是**链接自身所在路径**（等价于『把目标内容 `cp` 到该路径』）；
+   目标路径本身是否为改名落点 SHALL NOT 参与判定。」
+2. **`Path.resolve()` 与 head 树的口径**：`spec.md:69` / `design.md:116` 把解析器钉成 `Path.resolve()`（文件系统），
+   而比对按 head 树（见 §E-1）。建议钉死「存在性与字节一律按 **head 树**；`Path.resolve()` 只用于路径规范化」，
+   并补「目标解析到**仓根之外** ⇒ fail-closed」（现文三类 fail-closed 里没有这一类，见 §E-2）。
+3. **目录值目标 + gitlink 作用域**：① 「按目标**文件**的 blob 比对」对**目录**目标不适用
+   （N22① 明写 `specs`，而 `specs` 是目录）——建议改成「目标是目录 ⇒ 其下全部文件逐个比对（等价于把该目录 `cp` 进来）」；
+   ② gitlink 作用域在 `spec.md:63` / `tasks.md:127`（「**`<A>` 下**（或 `Ev(A)` 里）」）与 `design.md:120` / `:206`（只 `Ev(A)`）**不一致**，
+   建议统一（取宽的一侧，即「`<A>` 下任何 `160000` 条目 ⇒ 不授予」）。
+4. **`design.md:384`（R7 行）仍写「必须**每一份**被复制的证据文件都**重写**（或改成 `git mv`）」**——
+   与 `§D1 第 5 条` 的**能力天花板**（`design.md:171-177`：各加**一个字节**即可绕过）措辞冲突，
+   这正是 **R7 的措辞项 1**（要求改成「每份**至少动一个字节**」），本轮**未落库**。
+5. **`tasks.md:155`** 仍写「`-r` = 其下**全部 blob**」——即 **R7 的措辞项 6 的 tasks 半边**（未落库）。
+   同段的 `tasks.md:153` 已写对（「须同时覆盖 blob 行与 `160000 commit` 行」），但括注仍是旧描述。
+6. **`design.md §5.2` 未加登记行**（作者的 commit message 与 `tasks.md:39` 都声称「登记进 …『已知边界』**与 §5.2**」，
+   而 §5.2（`design.md:432-474`）**零命中** `链接/符号/gitlink`）。建议补一行：
+   「含未跟踪 / 悬空链接 / gitlink 的到达目录在改动前判绿、本 change 判红」。
+7. **`tasks.md:40` 的「7 条措辞项已落库」与 `tasks.md:39` 的「登记进…§5.2」两句计数/范围不准**：
+   实际未落的是 R7 措辞 1（→ 本表 4）与措辞 6 的 tasks 半边（→ 本表 5），§5.2 未改（→ 6）。
+8. **`design.md:500`（§5.3 N22 行）仍写「逃出 `A` 的链接直接 fail-closed」**——R6 旧口径的残留，
+   与 `design.md:118-119` / `spec.md:71` 冲突（可被我的 `p1` 构造证伪：逃出 `A` 且目标被跟踪 ⇒ 绿）。
+   建议改成「逃出 `A` 到**被跟踪**目标 ⇒ 按目标 blob 比对；仅在**未跟踪 / 悬空 / gitlink** 时 fail-closed」。
+9. **`spec.md:320-326` 的 Scenario 限定 ②** 只举了两类内容来源边界（符号链接 / gitlink / 悬空；`changes_root` 外另有副本），
+   而第 5 条**其它**命中（如原样复制兄弟 change 的 `specs/**`：active ⇒ 绿、archive ⇒ 红）同样造成位置差异。
+   建议把 ② 的主语明确成「**第 5 条整体**（以下为举例）」以免被读成穷举。
+10. **`spec.md:96-99` 的「完全旁路」段** 写「与是 `git mv` 还是普通 `cp` 进来**无关**」——
+   在新的符号链接口径下还应算上 `ln -s`（链接到 `changes_root` 之外被跟踪文件 ⇒ (a) 同样豁免）。建议补半句。
 
-**OQ-2（= design Q1，保留）：归档目录名「必须认得源 id」这条守卫，对**有源**的到达是否保留？**
-- 具体例子（沿用 grill 的、补全两侧）：同上内容，用 `git mv changes/foo-x archive/misc` 放进去 ⇒
-  - (a) 保留守卫：`misc` 不认得 `foo-x` ⇒ 不授予 ⇒ 红（要求你按 `archive/<date>-foo-x` 命名）；
-  - (b) 删守卫：授予 ⇒ 走完整证据门禁（件齐才绿）；
-  - **对照**：把同一内容**直接新建**（不做 move）到 `archive/misc/`（无源）⇒ **两种选法都授予**。
-- ⇒ 同一最终状态（内容都在 `archive/misc/`），判绿判红**取决于 base 里源目录在不在**——这与「到达方式不设限」相抵。**是真用户/口径决策**（是否强制命名约定），保留。
-- 附：条件 4 已**不承重安全**（原要挡的 N6 已被条件 1 独立关掉，实测），所以这条纯粹是命名约定取舍。
+---
 
-**OQ-3（= design Q2，保留）：`archive/**` 的 stale 豁免（暗房）本次收窄，还是另立？**
-- 具体例子：已归档 change 的 `proposal.md`，在其 manifest 记的 `head_sha` **之后**改一个字。
-  - 今天 / (a) 另立：**不判 stale**（`policy.stale_exempt_paths` 末项 `openspec/changes/archive/**`，`policy.py:77-92`）。
-  - (b) 本次收窄：应判 stale。但这需要先回答「归档后哪些改动该被允许」，与「到达识别」正交。
-- ⇒ 范围决策，保留。（注意：它决定对称性不变量**能不能**写成无条件——现稿已限定到证据门槛维度，所以 (a) 不再阻塞本 change。）
+## 收敛结论
 
-**OQ-4（= design Q3，**建议移出停轮队列**——见下方理由）：把**已存在**的归档目录**改名**，该不该授予资格？**
-- 具体例子：某仓 3 个月前归档了 `archive/2026-09-30-foo/`（证据齐全）。今天 `git mv archive/2026-09-30-foo archive/2026-10-15-foo` 并顺手改 `agent/x.py`，**零新证据**。
-  - (a) 不授予（= D1 第 3 条）：红。
-  - (b) 授予：那份 3 个月前的证据被复用 ⇒ 绿。
-- **建议移出**：`design.md:234-235` **自己已经证明** (b) 会让「只改 `src/**`、零新证据的 PR 变绿」——这是本工具存在的**核心安全属性**，不是口味问题；而本报告的 **F1** 进一步证明「白捡证据」在 copy 变体下**已经可达**。(b) 因此不是「另一个可接受的策略」，而是「接受一个已知绕过」。若一定要让用户拍板，应把它**改写成**「归档目录改名**要不要被显式拒绝/要写解释事件**」（即在 (a) 之上是否再加一条更友好的报错文案），而不是「要不要授予」。⇒ 我判定它是**可由安全属性定案**的一条，建议从停轮队列移出（改由代码定案为 (a)），或至少重新表述。
+**已收敛，附带 10 条措辞项（无必须修改项）。**
+
+判据 = 「本轮没有新的可证伪项 **且** 所有『必须修改项』都已落库」。两条都满足：
+
+- **R7 的两条必须项都已落库**，并经我独立复算成立（M1 的四处登记中三处已落 + 行为变化事实成立；
+  M2 的枚举口径订正到位，`r7cases/gitlink` 复算为红）。
+- **没有新的可证伪项**：我在 80 个既有构造 + 6 个自建构造（含**首次真正覆盖**的「逃出 `A` 但目标被跟踪」正向半边、
+  目录值目标、未跟踪目标、改名落点洗白）上复算，**没有找到能翻绿的绕过**，也没有出现必须绿被误伤。
+  本轮的全部发现都落在**措辞 / 登记 / 口径钉死**这一层：它们**不改变判据对任何用例的判红判绿**
+  （最接近语义的是措辞项 1 的 `(b)` 判定对象，但 `design.md:119` 的「否则放行」已把 `A` 之外的情形定成 (a) 单独 ⇒ 设计意图为红）。
+- **必须修复项：无**（措辞项 1/2/3 建议在实现前顺手改掉，因为它们决定实现者怎么写那一行判据；
+  6/7 影响「已落库」这一claim的准确性）。
+
+**这一轮值得记进下一轮上下文的结论**（避免误判）：
+① **R7 的修复在两侧都成立**，包括 R7 从未真正测过的正向半边（`p1` / `p4`）；
+② **R7 的 4 个「逃出 `A`」构造全是悬空链接**，R7 报告里「指向仓外被跟踪文件」的语义并未被那批构造覆盖；
+③ `git ls-tree -r` 含 `160000 commit` 行已由我独立复现，M2 的订正承重且正确。

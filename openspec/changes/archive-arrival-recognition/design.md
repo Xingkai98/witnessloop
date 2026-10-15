@@ -522,6 +522,8 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 
 ## 7. Pre-Implementation Review
 
+> **报告布局**：`reviews/` 只放**终版**三份（`grill-design.md` / `grill-adversarial.md`（= **R8 终版**）/ `building-review.md`）——本仓的孤儿规则要求 `reviews/**` 下每份 `.md` 都被一份 manifest 绑定，故**逐轮存档移到 `rounds/`**（R1–R7；它们是设计期证据，不参与 `check` 的证据面）。
+
 ### 7.1 设计追问轮（独立零记忆审阅者，报告见 `reviews/grill-design.md`）
 
 审阅者独立读了源码与 `archive-awareness` 的前身文档，复核了本稿的事实断言。**它确认了 3 条、推翻了 1 条设计缺陷、纠正了 4 处事实错误。** 本稿据此修订：
@@ -541,7 +543,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 （`R068/R069/R070/R090`）在本工作区**不可复算**——本仓从未归档过 change。
 ⇒ 实现期 4.2 必须用**接入方的真实提交**复算，不得直接引用本稿的数字。
 
-### 7.2 对抗轮（R1，报告见 `reviews/grill-adversarial.md`）
+### 7.2 对抗轮（R1，报告见 `rounds/grill-adversarial-r1.md`）
 
 独立零记忆对抗者，目标是**证伪** D1–D7。结论：**证伪成功 3 条**（F1 高危、F2 中危、F3 低-中危），
 证伪失败 7 条（含「必须绿」的出生即归档与 move+重建 manifest 两条**实测绿**）。
@@ -566,7 +568,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 ③ 浅克隆下 `ls-tree` 的确切失败模式未取得可靠证据（R2 补了探针：`--depth 1` 时 `merge-base` 无输出而 `ls-tree -r origin/main` 正常）；
 ④ merge commit 形态未实测（R2 的构造失误，仍未取得可判定结论）；⑤ 「`manifest build` 是否真的不需要感知到达」只复核了「不调 `change_targets`」这一**事实**。
 
-### 7.3 对抗轮（R2，报告见 `reviews/grill-adversarial-r2.md`）
+### 7.3 对抗轮（R2，报告见 `rounds/grill-adversarial-r2.md`）
 
 独立零记忆对抗者，针对**重写后**的 D1（五条判据，重点第 5 条）与 spec/tasks。
 结论：**证伪成功 3 条**（A1/A2 高危、A3 中危）+ 2 条假阴性/误伤（B1/B2），
@@ -591,7 +593,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 ③ 「`merge-base` 成功但 `ls-tree` 失败」这一独立面仍未复现；④ merge commit 形态未取得可判定结论；
 ⑤ `proposal.md` 表里的两列对照未复算；⑥ 「接入方是否存在复制式归档流程」无法从本仓判定。
 
-### 7.3b 对抗轮（R3，报告见 `reviews/grill-adversarial-r3.md`）
+### 7.3b 对抗轮（R3，报告见 `rounds/grill-adversarial-r3.md`）
 
 独立零记忆对抗者，针对 **R2 之后重做**的判据 2 / 判据 5。结论：**证伪成功 5 条**
 （A1/A2 高危、A3/A4 中危、B1/B2/B3 中低危）。它**按现稿文本独立重写了一份判据模拟器**，在 R2 的全部 18 个构造上
