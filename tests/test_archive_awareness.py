@@ -461,29 +461,6 @@ def _removed_alias_order_case():   # noqa: D401 - 占位：见下方注释
     """
 
 
-def _disabled_alias_order_case():
-    """I6 的钉子（审阅 R2-1）：同一归档目录被**两条** move 指向 ⇒ 别名取**两源的并集**、与 diff 顺序无关。
-
-    ⚠️ 改前是「取 diff 里**先出现**的那个源」⇒ **换个顺序就换一套别名**（审阅实测过 0 项/3 项翻转）。
-    本用例把**两种顺序各跑一次**并要求结果相同 ⇒ 「退回单个源」的变异必被杀死。
-    """
-    target = f"{ARCHIVE_REL}/2026-foo-z"
-    # z 与 foo-z 都满足「`-<源id>` 后缀」；unrelated 的名不认得 ⇒ 不该进别名集合
-    records = [
-        _move(f"{target}/notes.md", f"{CHANGES}/z/notes.md"),
-        _move(f"{target}/keep.md", f"{CHANGES}/foo-z/keep.md"),
-        _move(f"{target}/other.md", f"{CHANGES}/unrelated/other.md"),
-    ]
-    expected = frozenset({"2026-foo-z", "z", "foo-z"})
-
-    forward = _targets(Path("/repo"), records)
-    backward = _targets(Path("/repo"), list(reversed(records)))
-
-    assert len(forward) == 1 and len(backward) == 1
-    assert forward[0].accepted_change_ids == expected
-    assert backward[0].accepted_change_ids == expected  # ⚠️ 顺序无关（改前这里会漂）
-
-
 def test_the_summary_counts_directories_not_deduped_ids_on_a_tie(repo: Path, cli):
     """I8 的钉子（审阅 R2-2）：同名单段 id 撞两个目录时，摘要按 **target（目录）数**算 ⇒ **报 2**。
 
@@ -1005,6 +982,70 @@ def test_F14_dangling_symlink_is_fail_closed(repo: Path, cli):
     os.symlink("nowhere.md", repo / ARCHIVE_REL / "2026-10-15-dangling" / "specs" / "dangling")
     write_artifact(repo, "src/app.py", "x = 1\n")
     commit_all(repo, "到达目录里一个悬空链接")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F15_dir_link_keeps_the_logical_path_for_manifests(repo: Path, cli):
+    """判据 5（**实现审阅 Round 3 的 H3**）：`reviews` 是指向目录的符号链接、manifest 在目标里、
+    其 `report_path` 又指向 `reviews/` **之外** —— 借来的报告必须被抓（不能因为「展开目录链接时
+    把门禁看见的逻辑路径覆写成真身路径」而漏掉那三份文件）。"""
+    init_wired(repo, cli)
+    _seed_victim_in_base(repo)
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    target = repo / ARCHIVE_REL / "2026-10-15-dirlink"
+    (target / "specs" / "retry").mkdir(parents=True, exist_ok=True)
+    (target / "_r").mkdir()
+    (target / "stolen").mkdir()
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n新的。\n"),
+        ("design.md", "# design\n\n新的。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 新的\n"),
+        ("specs/retry/spec.md", "# spec: 新的\n"),
+    ):
+        (target / rel).write_text(body, encoding="utf-8")
+    shutil.copy(repo / ARCHIVE_REL / "2026-09-30-old" / "reviews" / "grill-review.md",
+                target / "stolen" / "grill-review.md")
+    manifest = {"schema": "witnessloop/review-manifest@v1", "change_id": "2026-10-15-dirlink",
+                "stage": "grill", "reviewer_run_id": "r", "author_run_id": "a",
+                "base_sha": "0" * 40, "head_sha": "0" * 40, "tasks_hash": "x",
+                "spec_hash": "x", "diff_hash": "x", "report_hash": "x",
+                "report_path": "stolen/grill-review.md"}
+    (target / "_r" / "grill.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    os.symlink("_r", target / "reviews")          # ← 目录链接：manifest 在目标里
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "reviews 目录链接 + 借来的报告")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F16_dir_link_target_outside_a_cannot_borrow_a_whole_tree(repo: Path, cli):
+    """判据 5（**实现审阅 Round 3 的 H4**）：`specs` 指向 **A 之外**的目录（现成 change 的 specs 树）
+    ⇒ 必须**逐个文件**比对（与 `cp` 进来同结论），不得只比 tree sha 就放行。"""
+    init_wired(repo, cli)
+    _seed_victim_in_base(repo)
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    target = repo / ARCHIVE_REL / "2026-10-15-ellink"
+    (target / "reviews").mkdir(parents=True, exist_ok=True)
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n新的。\n"),
+        ("design.md", "# design\n\n新的。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 新的\n"),
+        ("reviews/notes.md", "占位\n"),
+    ):
+        (target / rel).write_text(body, encoding="utf-8")
+    # specs 指向**受害者**（base 里现成 change）的 specs 目录
+    os.symlink("../../../archive/2026-09-30-old/specs", target / "specs")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "specs 链接到 A 之外的既有目录")
 
     code, _, err = check(repo, cli)
 

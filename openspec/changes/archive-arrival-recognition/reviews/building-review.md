@@ -26,14 +26,20 @@
 
 ## Verdict
 
-**CHANGES_REQUESTED（Round 2 复验后仍为此）**
+**CHANGES_REQUESTED（Round 3 复验后仍为此）**
 
-- **Round 1 的 H1 已修复**（原构造复跑：`0 个 change 目录`，拒绝）✓；**M2**（gitlink 全域 fail-closed）
-  与 **M4**（gate.md 登记）已修 ✓；battery **`与设计预期不符：0/20`**。
-- 但修复只覆盖了「从 `Ev(A)` 的**根**可达的目录」：`report_path` 目标仍只在
-  **manifest 的树路径匹配 glob** 时才解析（`contract.py:184`）。于是同一类绕过换个形状仍然成立——
-  **manifest 走符号链接（真身在别处）时，它的 `report_path` 指向 `reviews/` 之外** ⇒
-  借来的三份审阅报告**逐字节未改**、`check：通过 ✓`（H2，见「Round 2」）。
+- **Round 1 的 H1、Round 2 的 H2 均已修复** ✓（两条原构造复跑：均拒绝）；**M2 / M4** 已修；
+  battery **`与设计预期不符：0/20`**；Round 2 的 V1–V5 现在全红；`pytest` 629 passed。
+- 但同一个根因（`Ev(A)` 的归属**由路径推导**，而符号链接会把路径「改名」）还有两个未堵的形状，
+  两条都**端到端可复现**、借来的字节**一个都没改**、`check：通过 ✓`：
+  - **H3（高危）**：`reviews -> _r`（**目录**符号链接）时，`_r/*.manifest.json` 的**看见路径**变成
+    `_r/...` ⇒ 不再被认成 manifest ⇒ 它 `report_path` 指向的 `A/stolen/` 里那三份**逐字节借来**的
+    审阅报告**永不入比对集**（`contract.py:158-176, 204, 210`）。
+  - **H4（中危）**：符号链接的目标落在 **`A` 之外**且是**目录**时，只比那条目的 **tree sha**
+    （`contract.py:199`）——tree sha 恒不在 `base_blobs` 里 ⇒ **目录内容从不展开** ⇒
+    `A/specs -> ../<现成归档 change>/specs` 把整棵 specs 借来也判绿（`spec.md:74` 要求「与 `cp` 进来同结论」）。
+- 低危：Round 2 点名的死用例 `_disabled_alias_order_case` **仍在**（并仍调用已删除的 `_targets`），
+  与作者的「已删除」声明不符。
 
 ---
 
@@ -523,3 +529,229 @@ check：未通过 ✗（1 项）
    并补一句「本轮复验另发现 H2（见 `reviews/building-review.md` 的 Round 2）」。
 4. `contract.py:184` 那行值得加注释说明「manifest 的**真身路径**可能不匹配 glob」——这正是 H2 的成因，
    留给下一个读代码的人。
+
+---
+
+# Round 3（复验）
+
+**范围**：复核作者声明的 H2 修复 + 低危项，并对**新实现**再找缝。所有结论都重新实测；
+作者声明一律当**待验证断言**。
+
+**跑了**：
+
+1. `.venv/bin/pytest -q` → **629 passed**（28.3s；Round 2 是 626，多出的 3 条正是 `F12/F13/F14`）。
+2. `/tmp/rev26/battery.py`（Round 1 的 20 个 case，**一字未改**）→ 末行 `与设计预期不符：0/20`。
+3. `/tmp/rev26/variants2.py`（Round 2 的 V1–V5，**一字未改**）→ **5/5 全红**（V5 = Round 2 的 H2 构造，
+   现在 `FAIL(1)`）。
+4. **新造 3 条变体**（`/tmp/rev26/variants3.py`，全新仓）：V6 manifest 两跳符号链接 / V7 `reviews` 目录链接 +
+   manifest 在链接目标里 + `report_path` 在 `reviews` 之外 / V8 `specs` 指向 **A 之外**的目录。
+5. 三条新用例（`F12/F13/F14`）的**读码 + 回退变异分析**；`F11` 的强化核对。
+6. 对 Round 2 报告的一处**自我订正**（见 R3-⑤）。
+
+---
+
+## R3-① 作者声明的修复：逐条复核
+
+| # | 声明 | 复核 | 结论 |
+|---|---|---|---|
+| **H2** | `_content_provenance_ok` 改成按「**看见的路径**」认 glob（`is_manifest(seen)`）、按**内容源**读 manifest 正文取 `report_path`；队列改 `(seen, content_src)` 二元组 | 读 `contract.py:158-176`（`is_manifest(seen)` + `queue_report(seen, content_src)` 用 `view.read(rev, content_src)`）+ Round 2 的 V5 构造复跑 | ✅ **成立**：V5 现在 `FAIL(1)`（`0 个 change 目录`）；新用例 `F12` 正是该形状 |
+| **低危** | 删掉 `_disabled_alias_order_case`；新增 `F12/F13/F14`；`F11` 强化为 `assert code == C.EXIT_PASS` | `grep -n "_disabled_alias_order_case" tests/test_archive_awareness.py`；读三条新用例 | ⚠️ **部分成立**：三条新用例 ✅ 都在且真在验行为（见 R3-④）；`F11` 确已强化为 `assert code == C.EXIT_PASS` ✅；但 **`_disabled_alias_order_case` 仍在**（`tests/test_archive_awareness.py:464`），**并且仍然调用已不存在的 `_targets`**（`:475-476`）——与「删掉」的声明不符（它名字不以 `test_` 开头，pytest 不收集，所以**不影响任何测试结果**，但改名即成 `NameError`） |
+| — | （未声明）`design.md` 是否同步 | `grep -n "H2\|Round 2" design.md` | ❌ §7.5 的表**未更新**（仍写 Round 1 的「均已修复」，没有 H2/H3 的痕迹）——Round 2 的建议 3 未落（不阻塞，但表里那句现在**不准确**） |
+
+## R3-② 原构造复跑（原始输出要点）
+
+**A. `/tmp/rev26/battery.py`（20 case，未改）**
+
+```
+OK green 出生即归档 / 纯 move / move+重建 manifest / A 内 alias.md / 指向 changes_root 外被跟踪文件 /
+         空文件豁免                                                   （6/6 绿）
+OK red   R1-F1 / 对照(只复制字节) / R2-A2 / R2-A3 / R3-A1 / R3-A3 / N8 / N3 /
+         R5 symlink_ev / R7 gitlink(reviews)                          （10/10 红）
+OK 天花板 R3-A2（不要求红）                                           （绿，与文档一致）
+OK 新攻击 gitlink 非证据位置 / 符号链接→A 内目录 ×2                     （3/3 红）
+与设计预期不符：0/20
+```
+
+**B. `/tmp/rev26/variants2.py`（Round 2 的 V1–V5，未改）**
+
+```
+OK V1 符号链接链 → 借来的目录（specs）        FAIL(1)
+OK V2 specs 目录链接 + 混入新文件             FAIL(1)
+OK V3 reviews 链接到 A 之外的目录             FAIL(1)   ← ⚠️ 红因见 R3-⑤（不是判据 5）
+OK V4 gitlink 藏在深层子目录                  FAIL(1)
+OK V5 manifest 符号链接 + report_path 在 reviews 之外  FAIL(1)   ← Round 2 的 H2，已关闭
+```
+
+**C. `pytest -q`** → `629 passed`。
+
+## R3-③ 新造的 3 条变体（`/tmp/rev26/variants3.py`，真 CLI，全新仓）
+
+| # | 构造 | 期望 | 实测 |
+|---|---|---|---|
+| **V6** | `reviews/x.manifest.json -> ../_l1/x.manifest.json -> ../_l2/x.manifest.json`（真身），真身里 `report_path: "stolen/…"`，三份报告放在 `A/stolen/`（**逐字节借来**） | 红 | **`PASS(0)`** ❌ |
+| **V7** | `reviews -> _r`（**A 之内的目录**符号链接），三份 manifest 是 `_r/` 里的**普通文件**，`report_path: "stolen/grill-review.md"`，三份报告放在 `A/stolen/`（**逐字节借来**） | 红 | **`PASS(0)` —— `check：通过 ✓`** ❌ **H3（高危）** |
+| **V8** | `A/specs -> ../2026-09-30-old/specs`（**A 之外**的目录，现成 change 自己的 specs），其余文件全部唯一 | 红 | **`PASS(0)` —— `check：通过 ✓`** ❌ **H4（中危）** |
+
+**V7 详证**（成品仓 `/tmp/arr26/battery/v7_reviews_dir_link_manifest_report_outside`）
+
+```
+$ for f in grill-review.md grill-adversarial.md building-review.md; do
+    cmp openspec/changes/archive/2026-09-30-old/reviews/$f \
+        openspec/changes/archive/2026-10-15-new/stolen/$f && echo "$f 逐字节相同"; done
+grill-review.md 逐字节相同 / grill-adversarial.md 逐字节相同 / building-review.md 逐字节相同
+
+$ ls -l openspec/changes/archive/2026-10-15-new/        # reviews 是**目录**符号链接
+lrwxrwxrwx  reviews -> _r
+drwxr-xr-x  stolen/            specs/            _r/
+$ ls openspec/changes/archive/2026-10-15-new/_r/        # manifest 是**普通文件**
+building.manifest.json  grill-adversarial.manifest.json  grill.manifest.json
+$ python -c "import json;print(json.load(open('…/_r/grill.manifest.json'))['report_path'])"
+stolen/grill-review.md
+
+$ .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+check：基线 main...HEAD，12 个变更文件，1 个 change 目录
+  change：2026-10-15-new（归档）
+check：通过 ✓
+EXIT=0
+```
+
+**判据 5 实际比了哪些文件**（打桩 `contract._is_reused`）：
+
+```
+   compared: tasks.md                                      reused=False
+   compared: specs/retry/spec.md                           reused=False
+   compared: _r/grill.manifest.json                        reused=False
+   compared: _r/grill-adversarial.manifest.json            reused=False
+   compared: _r/building.manifest.json                     reused=False
+arrivals: [('2026-10-15-new', [])]
+```
+
+⇒ `A/stolen/*.md`（三份**逐字节借来**的审阅报告）**一次都没进比对**。
+
+**对照（证明门禁消费的正是那份借来的文件）**：把 `A/stolen/grill-review.md` 换成不合规的短 grill 报告
+（2 条决策）并同步 `report_hash` ⇒ `check：未通过 ✗ … stolen/grill-review.md：## Confirmed Decisions 只有 2 条，少于硬门槛 3 条`。
+
+**V8 详证**（成品仓 `/tmp/arr26/battery/v8_specs_link_to_dir_outside`）
+
+```
+$ ls -l openspec/changes/archive/2026-10-15-new/specs
+lrwxrwxrwx  openspec/changes/archive/2026-10-15-new/specs -> ../2026-09-30-old/specs
+$ cmp  .../2026-09-30-old/specs/retry/spec.md  .../2026-10-15-new/specs/retry/spec.md   # 经链接
+  （逐字节相同）
+$ .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+check：基线 main...HEAD，11 个变更文件，1 个 change 目录
+  change：2026-10-15-new（归档）
+check：通过 ✓
+```
+
+**根因（两条，同一族）**
+
+- **H3**：`is_manifest(seen)`（`contract.py:158-166`）用的是**队列项里的 `seen`**，而目录展开时
+  `queue.extend((row.path, row.path) …)`（`:204`）把 `seen` 换成了**链接解析之后的路径**
+  （`A/reviews/x` ⇒ `A/_r/x`）⇒ 逻辑路径 `reviews/x.manifest.json` **丢了** ⇒ glob 不再命中
+  ⇒ `queue_report`（`:210`）不触发 ⇒ `report_path` 目标不进集。V6 是同一处的另一个形状：
+  `queue_report` 只读**一跳**（`view.read(rev, content_src)`，`:167-176`），指向符号链接时
+  `git show` 返回的是**链接文本**（不是 JSON）⇒ `json.loads` 抛 `ValueError` ⇒ 静默 `return`。
+- **H4**：`:199`（`elif _is_reused(view.entry(rev, target).sha, seen, …)`）对**目标在 `A` 之外**的符号链接
+  只比**一条 entry 的 sha**。目标是**目录**时比的是 tree sha，而 `base_blobs` 来自
+  `view.walk`（`ls-tree -r`，**不含 tree 行**）⇒ **恒不命中** ⇒ 目录内容从不展开；
+  这与 `spec.md:74`「目标在 `A` 之外 ⇒ 按该目标路径在 head 树里的 blob 比对（**与 `cp` 进来同结论**）」
+  直接冲突。
+
+## R3-④ 三条新用例：真的在验行为吗？（回退变异分析）
+
+- **`F12_symlinked_manifest_still_pulls_in_its_report`**：Round 2 的 V5 形状，断言 `EXIT_FAIL` + `"没有任何 change 目录"`。
+  **变异**：把 `is_manifest` 换回「按真身路径匹配 glob」（即回退 H2 的修复）⇒ 报告不进集 ⇒ 到达被授予 ⇒
+  该构造的 manifest 里 `base_sha="0"*40` 解析不到提交 ⇒ 红的是**别的** finding（「不是本仓的提交」），
+  `"没有任何 change 目录"` **不出现** ⇒ 断言失守。✅ **能杀死回退变异**。
+- **`F13_unreadable_tree_is_fail_closed`**：`monkeypatch` 让 `GitTree.walk` 抛 `GitError`，断言 `EXIT_FAIL` + `"fail-closed" in err`。
+  **变异**：删掉 `checkcmd.py:86-96` 的 `except gitutil.GitError` ⇒ 异常冒到 `entry.py`，
+  退 **1**（`check` 不是 `guard`）⇒ **退出码断言杀不死它**，但 `entry.py` 的兜底文案是
+  `witnessloop：内部错误（…）`（**不含 `fail-closed`**）⇒ `"fail-closed" in err` **失守**。✅
+  ⚠️ 它靠**文案**区分「受控 fail-closed」与「崩溃」——这里是合理的（两者退出码同为 1，
+  不用文案就没有可观测量），但它是三条里最弱的一条，建议同时断言
+  `"无法读取" in err` 或直接断言 finding 的 `path` 前缀。
+- **`F14_dangling_symlink_is_fail_closed`**：`A/specs/dangling -> nowhere.md`，断言 `EXIT_FAIL` + `"没有任何 change 目录"`。
+  **变异**：删掉 `contract.py:191-192` 的 `target is None or view.entry(rev, target) is None ⇒ return False` ⇒
+  悬空链接静默通过（`entry is None ⇒ continue`）⇒ 到达被授予 ⇒ 该构造**没有 manifest** ⇒
+  报「缺少 review manifest」而不是「没有任何 change 目录」⇒ 断言失守。✅
+- **`F11` 强化核对** ✅：`assert code == C.EXIT_PASS, err` 已在（Round 2 的建议 1 已落）。
+- ❗ 三条新用例都**不覆盖** H3（目录链接 + manifest 在链接目标 + `report_path` 在外）与 H4（A 之外目录目标）。
+
+## R3-⑤ 对 Round 2 报告的一处**自我订正**
+
+Round 2 我把变体 **V3**（`reviews` 指向 `A` 之外目录）记成「✅ 外侧半边也修好了」。
+**那条结论不成立**：直调 `contract.archive_arrivals` 显示它**被授予**
+（`arrivals: [('2026-10-15-new', [])]`，trace 里 `compared: reviews reused=False`——比的是被链接目录的 **tree sha**）。
+V3 之所以仍然 `FAIL(1)`，红因是**证据门**：受害目录里那三份 manifest 的 `report_path` 是相对 **change 目录**
+写的（`reviews/x.md`），解析到 `A` 下就**逃逸**了（`report_path='reviews/building-review.md' 逃逸出 change 目录`）
++ 哈希不符 + 孤儿报告（共 21 项，其中没有「没有任何 change 目录」）。
+⇒ 我当时只看了退出码、没看红因，**把「恰好红」当成了「判据 5 修好了」**。
+**V8 才是这条路的干净版本**（把 `specs` 而不是 `reviews` 指向 A 之外的目录，其余全部唯一）⇒ 判绿。
+
+## Round 3：必须修改项
+
+**1）（高危，新）H3：符号链接的**逻辑路径**必须在整条遍历里保留 —— 现在目录链接一展开就丢了**
+
+- 位置：`src/witnessloop/contract.py:158-166`（`is_manifest(seen)` 用队列项的 `seen`）、
+  `:204`（`queue.extend((row.path, row.path) …)` 把 `seen` 覆写成链接解析后的路径）、
+  `:167-176`（`queue_report` 只读一跳，`git show` 遇到符号链接返回**链接文本**）。
+- 违反对应：`spec.md:59-60`（manifest 命中 glob ⇒ 其 `report_path` 目标 SHALL 进集）、
+  `spec.md:72-73`（「目标路径 SHALL 并入 `Ev(A)`，递归到不动点」）、`docs/gate.md:329-330`。
+- 复现：
+
+```
+$ /home/happy/wl-wt/archive-arrival-recognition/.venv/bin/python /tmp/rev26/variants3.py V7
+!! V7 reviews 目录链接 + manifest 在 _r + report_path 在 reviews 之外  期望=FAIL 实测=PASS(0)
+$ cd /tmp/arr26/battery/v7_reviews_dir_link_manifest_report_outside
+$ .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+check：通过 ✓        # A/stolen/ 里三份报告与 openspec/changes/archive/2026-09-30-old/reviews/ 逐字节相同
+```
+
+- 期望修法（建议）：把队列项从 `(seen, content_src)` 改成 **`(logical, content)`**，
+  其中 `logical` 是「**按符号链接语义看见的**仓根相对路径」：
+  - 目录展开：`queue.extend((f"{logical}/{name}", row.path) for row in view.walk(rev, content))`；
+  - 符号链接：`logical` 保持不变、`content` = 解析后目标（这样 `is_manifest`/`_is_reused` 的 (b) 都用 `logical`）；
+  - `queue_report` 沿链接**递归**解析（配 `visited` 防环），并在解析途中**任何一跳**是 manifest 时都读它。
+  ⚠️ 修完请补用例：`reviews -> _r` + manifest 在 `_r/` + `report_path` 在 `reviews/` 之外（= V7），
+  以及 manifest 两跳链接（= V6）。
+
+**2）（中危，新）H4：符号链接目标在 `A` 之外且是**目录**时必须展开其下文件**
+
+- 位置：`src/witnessloop/contract.py:199`（`elif _is_reused(view.entry(rev, target).sha, seen, …)`）。
+- 违反对应：`spec.md:74`（「与 `cp` 进来同结论」）、`design.md:123-124`。
+- 复现：
+
+```
+$ /home/happy/wl-wt/archive-arrival-recognition/.venv/bin/python /tmp/rev26/variants3.py V8
+!! V8 specs 指向 A 之外的目录（借来的 specs 字节）                期望=FAIL 实测=PASS(0)
+# A/specs -> ../2026-09-30-old/specs，specs/retry/spec.md 逐字节 = 现成 change 的；check：通过 ✓
+```
+
+- 期望修法：目标是 tree 时⇒ `queue` 其下每个文件（`(logical_child, child)`，`logical_child` 沿用**链接自身**
+  的路径作 (b) 的判定对象，见 `spec.md:76`），不要再拿 tree sha 去比 `base_blobs`。
+
+**3）（低）`_disabled_alias_order_case` 其实**没删**
+
+- `tests/test_archive_awareness.py:464`（函数仍在）、`:475-476`（仍在调用**已不存在**的 `_targets`）。
+  与作者「删掉…死用例」的声明不符；它现在还多了一层「调用不存在函数」的坏味道。
+  ⇒ 删掉它（与同文件 `:456 _removed_alias_order_case` 一起），或把「别名与顺序无关」搬进
+  `tests/test_archive_arrival.py`（那里已有等价覆盖）。
+
+## Round 3：未验证项
+
+1. H3/H4 的**修法**只给方向，未实现；修完需重跑 `battery.py` 全量 + `variants2.py` V1–V5 + `variants3.py` V6–V8。
+2. 我**没有**穷尽这条「路径推导被符号链接改名」的家族——本轮只覆盖了目录链接（V7）、链接链（V6）、
+   A 外目录目标（V8）三种；`report_path` 指向「指向 A 外目录的符号链接」等组合未逐一构造。
+3. Round 1/2 的未验证项（浅克隆独立失败面、merge commit 形态、自定义 `review_manifest_glob` 与多段
+   `required_artifacts` 的端到端、接入方真实数字）**仍未验证**（与 `design.md:620-625` 一致）。
+4. 本 change 自己的门禁仍红（缺三份 manifest + 相邻 change 的 stale）——流程状态，本轮未复测。
+
+## Round 3：建议（不阻塞）
+
+1. `F13` 建议除了 `"fail-closed"` 再断言一条结构性内容（如 `"无法读取" in err`），减少对文案的依赖。
+2. `design.md §7.5` 的表建议补 Round 2/3 的两行（H2 已修 / H3·H4 待修），别让「均已修复」留在库里。
+3. 这已经是**第三次**在同一处（`Ev(A)` 的路径推导 + 符号链接）被证伪。建议**改结构**而不是继续打补丁：
+   在遍历里**只**用「逻辑路径」做归属/glob/(b) 判定、用「内容路径」只做读取，两者**永不混用**；
+   并补一条**属性式**回归（对同一份 `A`，任意地在 `A` 内插入 `ln -s` 不应改变判定结果）——
+   否则下一轮还会在第四个形状上复现。

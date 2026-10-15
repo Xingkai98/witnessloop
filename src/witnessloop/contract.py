@@ -156,59 +156,73 @@ def _content_provenance_ok(
             roots.add(row.path)
 
     def is_manifest(seen: str) -> bool:
-        """**看见的路径**（不是解析后的真身）按 glob 是不是一份 manifest。
+        """**门禁看见的路径**（不是解析后的真身）按 glob 是不是一份 manifest。
 
-        ⚠️ 门禁是从**文件系统** glob `reviews/*.manifest.json` 的 ⇒ 一个**名叫** `x.manifest.json`
-        的符号链接同样被读到（读的是目标的内容）⇒ 这里的判据必须用**看见的路径**，
-        否则「manifest 做成符号链接、`report_path` 指到别处」会让借来的报告永不入比对集（实现审阅的 H2）。
+        ⚠️ 门禁是从**文件系统** glob `reviews/*.manifest.json` 的：一个**名叫** `x.manifest.json`
+        的符号链接同样会被读到（读的是目标内容）⇒ 这里必须用「看见的路径」判，否则
+        「目录链接 + manifest 在里面 + `report_path` 指向别处」会让借来的报告永不入比对集
+        （实现审阅的 H2/H3：作者第一版按**真身路径**判、第二版在**展开目录链接时把逻辑路径覆写掉**，
+        两种写法都判绿）。
         """
         return under_path(seen, directory) and fnmatch.fnmatch(seen[len(directory) + 1:], manifest_glob)
 
-    def queue_report(seen: str, content_src: str) -> None:
-        try:
-            doc = json.loads(view.read(rev, content_src) or "")
-        except ValueError:
-            return
-        if not isinstance(doc, dict):
-            return
-        resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
-        if resolved is not None and under_path(resolved, directory):
-            queue.append((resolved, resolved))
+    def follow(path: str) -> str | None:
+        """跟随符号链接链到不动点；悬空 / 逃出仓根 / 过深 ⇒ None。
+
+        返回**内容真正所在**的树路径。链上任何一跳是 gitlink 也在这里被挡下（返回 None）。
+        """
+        current = path
+        for _ in range(32):
+            entry = view.entry(rev, current)
+            if entry is None or entry.is_gitlink:
+                return None
+            if not entry.is_symlink:
+                return current
+            target = _resolve_rel(posixpath.dirname(current), view.read(rev, current) or "")
+            if target is None or view.entry(rev, target) is None:
+                return None
+            current = target
+        return None
 
     seen_paths: set[str] = set()
     compared: set[str] = set()
+    # 队列项 = (`seen`：门禁看见的逻辑路径, `src`：内容所在的路径)。
+    # ⚠️ 两者必须分开：**逻辑路径**决定「这是不是一份 manifest / 报告」（glob）；**内容路径**决定字节。
     queue: list[tuple[str, str]] = [(path, path) for path in sorted(roots)]
     while queue:
-        seen, content_src = queue.pop()
+        seen, src = queue.pop()
         if seen in seen_paths:
             continue
         seen_paths.add(seen)
-        entry = view.entry(rev, seen)
+        final = follow(src)
+        if final is None:
+            return False                              # 悬空 / gitlink / 逃出仓根
+        entry = view.entry(rev, final)
         if entry is None:
             continue
-        if entry.is_gitlink:
-            return False
-        if entry.is_symlink:
-            target = _resolve_rel(posixpath.dirname(seen), view.read(rev, seen) or "")
-            if target is None or view.entry(rev, target) is None:
-                return False                        # 逃出仓根 / 悬空 / 未被 git 跟踪
-            if is_manifest(seen):
-                queue_report(seen, target)          # 正文按**内容源**（= 目标）读
-            if under_path(target, directory):
-                queue.append((target, target))      # 目标并入 Ev(A)（按目标自身路径比对）
-            elif _is_reused(view.entry(rev, target).sha, seen, base_blobs, rename_dests):
-                # 逃出 A：按**目标**的 blob 比对；(b) 的判定对象仍是**链接自身**的路径。
-                return False
-            continue
         if entry.type == "tree":
-            queue.extend((row.path, row.path) for row in view.walk(rev, seen))
+            # 目录（可能是链接过来的）：其下文件**保留逻辑前缀**入队 —— H3 的修复点。
+            prefix = seen if seen == src else seen
+            for row in view.walk(rev, final):
+                rel = row.path[len(final) + 1:]
+                queue.append((f"{prefix}/{rel}", row.path))
             continue
         if seen not in compared:
             compared.add(seen)
-            if _is_reused(entry.sha, seen, base_blobs, rename_dests):
+            # (b) 的判定对象：目标**在 A 之内** ⇒ 目标自己的路径（合法 move 的目标是改名落点）；
+            # 逃出 A ⇒ **看见的路径**（R7/spec：等价于「把内容 `cp` 到该路径」）。
+            judge_path = final if under_path(final, directory) else seen
+            if _is_reused(entry.sha, judge_path, base_blobs, rename_dests):
                 return False
         if is_manifest(seen):
-            queue_report(seen, content_src)
+            try:
+                doc = json.loads(view.read(rev, final) or "")
+            except ValueError:
+                doc = None
+            if isinstance(doc, dict):
+                resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
+                if resolved is not None and under_path(resolved, directory):
+                    queue.append((resolved, resolved))
     return True
 
 
