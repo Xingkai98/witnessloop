@@ -111,10 +111,19 @@ grilling pass（审阅者独立求完备，用户不参与）
 
 ## 风险
 - <新发现的风险>
+
+## User Confirmation
+- **Q1**: 用户答复：<答复原文>；确认时间: <日期>
+- ……（**停轮之后追加**；逐条覆盖 `## Open Questions` 里的每个 `Q<n>`）
 ```
 
 `## Confirmed Decisions` **至少 3 条**、每条附 `来源: <run id>` 是**硬门槛**：
 下游的检查器按这个格式解析，少一条或少了来源就当作证据不合格。
+
+`## Open Questions` 的**标题必须逐字**（`## Open Questions`），且**即使没有待定问题也要保留该小节**
+（正文写 `（无）`）。检查器按标题认小节，只接受逐字与**以 `Open Questions` 结尾**的紧近义写法
+（`## Open Questions 汇总` / `## Open questions` 这类**认不出** ⇒ 报「缺少小节」⇒ **红**）。
+⇒ 产出方**不要改这个标题**，拿不准就写逐字的那个；小节必须**存在**（`## User Confirmation` 同理）。
 
 `## Open Questions` 每条都要给**推荐答案**与**具体例子或场景**——「一般来说没问题」
 不算，用户在停轮时要能快速判断。
@@ -204,7 +213,7 @@ witnessloop manifest build --change <id> --stage grill-adversarial \
 - **缺证据不得进入实现**。四件事**全部**满足之前，**不得**开始写代码：
   1. `frontier` 为空（设计树求完备）；
   2. 对抗验证已到 `PASS`（或轮数封顶并交人）；
-  3. `## Open Questions` 已由用户逐条确认、记入 `## User Confirmation`；
+  3. `## Open Questions`（**逐字标题、小节必须存在**）已由用户逐条确认、记入 `## User Confirmation`；
   4. `## Confirmed Decisions` ≥3 条且每条带 `来源:`。
   这是门禁的前置条件，不是建议。
 - **时序**：先收敛（第 3、5 步），**再**停轮（第 6 步）——别做反。
