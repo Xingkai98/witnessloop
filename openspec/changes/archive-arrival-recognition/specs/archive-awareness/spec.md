@@ -19,6 +19,10 @@
 
 `check` SHALL 把 `archive/<name>/` 认作「本次 diff 里到达的 change」，当且仅当**同时**满足：
 
+> **术语**：**到达组**（arrival group）SHALL 指本次 diff 里 **`new_path` 落在某个到达目录 A 之下**的记录集合
+> （判据 3 / 判据 4 与下文「到达集合的用途」里的「到达组」都指它）。
+
+
 1. **基准树里该路径完全没有 entry**：在 `M = git merge-base(base, head)` 的树里，
    `<changes_root>/archive/<name>` **既不是 tree 也不是 blob**（该路径下也没有任何 entry）。
    基准树 SHALL 是 **`git merge-base(base, head)` 的树**——与 `gitutil.changed_files`
@@ -63,8 +67,8 @@
 ⚠️ **判据 5 的能力边界（SHALL 明写，不得被读成防伪造）**：
 - 它拦的是**机械搬运**：整份复制、复制后改路径、复制后改 / 删一两个文件（即使随后用 `manifest build`
   **重算哈希**）、混多个源、搬一个无关文件进来洗白、源是嵌套归档目录——上述形态 SHALL 全部不授予；
-- 把**每一个**文件都改掉字节再重算 manifest 哈希者**不在此判据射程内**——那等价于「自己写一份完整证据」，
-  属本工具既有的能力边界（`src/witnessloop/contract.py:9`：hash 绑定证「证据之间没漂移」，**不防伪造**）；
+- 把**每一个**文件都改掉字节再重算 manifest 哈希者**不在此判据射程内**——准确口径见下方「能力天花板」条
+  （⚠️ SHALL NOT 写成「等价于自己写一份完整证据」：R3 已用真 CLI 证伪该论证，见 `design.md §D1` 第 5 条）；
 - **扫描面**是 `<changes_root>/**`（不是「扁平 change 目录」，也不是全仓）：放在 `changes_root`
   之外的现成证据副本**不可见**；
 - **能力天花板（SHALL 明写，不得被读成「拦住了全部复用」）**：本判据是**逐字节**判据。
@@ -74,7 +78,8 @@
   属本 change 的**非目标**（既有边界：hash 绑定证「证据之间没漂移」，**不防伪造**）。
 - **完全旁路**：本判据的效力**依赖「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提**。
   现成证据的字节若在基准树里**另有副本**（发布副本 `docs/shipped/**`、仓内镜像、`changes_root` 迁移遗留的旧路径），
-  把该副本 **`git mv` 进来** ⇒ (a) 与 (b) **同时**豁免同一份内容 ⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §6`。
+  则那些字节**落在 `changes_root` 之外 ⇒ 分句 (a) 单独即豁免**（与是 `git mv` 还是普通 `cp` 进来**无关**，
+  也**不需要**任何 rename 记录）⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §6`。
 - **误伤面**：A 里某个**非空证据文件**与 base 的 `<changes_root>/**` 下某文件**逐字节相同**、且它不是本次搬来的
   ⇒ **fail-closed 拒绝**（finding SHALL **同时点名两侧路径**）。现实来源：从兄弟 change 原样复制来的
   `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板、

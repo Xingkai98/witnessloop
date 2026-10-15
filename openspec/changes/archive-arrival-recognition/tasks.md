@@ -18,9 +18,12 @@
   - `reviews/grill-adversarial-r2.md`（R2）✅ 完成：证伪 3 条（A1 豁免洗白 / A2 指纹形态可零成本打断 / A3 扫描面盲区）+ B1/B2，判定**不收敛**；
   - `reviews/grill-adversarial-r3.md`（R3）✅ 完成：证伪 5 条（A1 报告挪出 `reviews/` / A2 每个证据文件各加一字节 /
     A3 路径形态 / A4 `D`+`A` 幽灵 id / B1 `:494` 配方 / B2 `test_N6` 误判 / B3 模板骨架），判定**不收敛** ⇒ 已回写；
-  - **R4**：待跑（针对 R3 之后的文本）。R3 附注点名 R4 至少复算三处：① 新 `Ev(A)` 下「手写 manifest 把 `report_path`
-    指向任意路径」还能不能出圈；② 「A2 档不要求红」这条**文档化天花板**与 §8 Q4 的取舍是否一致；
-    ③ 新 D 侧排除键在「`D` 记录的 `path` 落在**仍在 head** 的源目录下」时**不得**排除（否则重开静默逃检）。
+  - `reviews/grill-adversarial-r4.md`（R4）✅ 完成：**安全级新绕过 0 条**（R3 附注三处逐条复算成立：新 `Ev(A)` 抓回了挪出
+    `reviews/` 的证词 / 天花板与 Q4 口径一致 / D 侧排除键不误排除），但报出 4 条**文档级**可证伪项
+    （spec 残留伪等价论证、计数与实列不符、完全旁路的机理写窄、指针失效）⇒ 已**逐条机械核对**落库；
+    另附低危：`required_artifacts:[""]` 可中和判据 2（只多报红、非绕过）、「到达组」需定义、空 `reviews/` 的树/工作树口径。
+  - **R5**：待跑（针对 R4 之后仅剩**措辞 / 计数 / 指针**类改动的文本）。**收敛判据 = 一轮下来没有新的可证伪项
+    且所有「必须修改项」都已落库**；没有轮数上限。
   - **收敛判据 = 一轮下来没有新的可证伪项、且所有「必须修改项」都已落库**；没有轮数上限。
 - [ ] 0.5 把第 5 条与第 2 条的**能力边界**（`Ev(A)` 的定义 / 逐字节天花板 / `changes_root` 之外的完全旁路 / 误伤面 /
   模板要放在 `changes_root` 之外）写进 `docs/gate.md §6`，并把「复制式归档 ⇒ 不授予」这条**有意的行为变化**一并登记。
@@ -124,7 +127,7 @@
 - [ ] 3.2 `src/witnessloop/contract.py`：新增到达判定（树读取作为**注入谓词**，判定本体为纯函数），
   实现 D1 五条判据：判据 1（基准树无 entry）、判据 2（head 是 tree 且含**全部**必需件，语义与 `validate_change_dir` 一致）、
   判据 3（记录层）、判据 4（**每一个**源都须被名字认得）、
-  判据 5（`Ev(A)` **按数据推导**：`HASHED_ARTIFACTS` 的 artifact 路径整体 + 每份 manifest 的
+  判据 5（**到达组** = `new_path` 落在该目录下的记录集合；`Ev(A)` **按数据推导**：`HASHED_ARTIFACTS` 的 artifact 路径整体 + 每份 manifest 的
   `resolve_report_path(report_path)` 目标 + `reviews/**`；**逐文件**判「新 blob or 本次改名落点」；**空文件豁免**）。
 - [ ] 3.3 `src/witnessloop/contract.py`：改 `changed_change_ids` 的 `archived_sources` 为
   「**`R`/`C` 记录的 `old_path` + `D` 侧记录的 `path`**，只要落在某个到达组的源 change 目录下、

@@ -68,7 +68,10 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
 
 ### D1 「到达」的判据 = 目录级事实，不看改名分
 
-`archive/<name>/` 是**本次到达的 change**，当且仅当**五条同时成立**：
+`archive/<name>/` 是**本次到达的 change**，当且仅当**五条同时成立**。
+
+> **术语**：**到达组**（arrival group）= 本次 diff 里 **`new_path` 落在某个到达目录 `A` 之下**的记录集合
+> （判据 3 / 判据 4 / D4 / D5 里的「到达组」都指它）。`A` 本身由判据 1–2 与判据 5 选出。
 
 1. **基准树里该路径完全没有 entry**：在 **`M = git merge-base(base, head)`** 的树里，
    `<changes_root>/archive/<name>` **既不是 tree 也不是 blob**（该路径下也没有任何 entry）。
@@ -81,6 +84,8 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
    （判定语义与契约门**完全一致**：`<dir>/<artifact>` **路径存在**——
    实测 `git ls-tree -r <head> -- <dir>/` 一条命令即可判定，且对「`specs` 是同名普通文件」这类形态也与 `validate_change_dir` 同结论）。
    ⇒ 组织型 / 工具型子目录（`archive/2026/`、`archive/notes/`、`archive/templates/`）**不是** change 目录。
+   ⚠️ 实现 SHALL 忽略**空串 / `.`** 这类退化 artifact 名（`(dir/"").exists()` 恒真 ⇒ 判据 2 会退化成「任何目录」；
+   R4 实测 `required_artifacts: [""]` 只**多报红**、不构成绕过——判据 2 本就不承重安全，但文案会变差）。
 3. **不是从另一个归档目录改名而来**：到达组里**没有**任何记录的 `old_path` 落在 `<changes_root>/archive/**` 下。
 4. **有源时须名识别**：若到达组里存在 `old_path` 落在 `<changes_root>/<src>/` 下（即**有源** `src`），
    则对**每一个**这样的源 SHALL 要求 `name == src` 或 `name.endswith("-" + src)`；**无源**（出生即归档）时本条无从施加。
@@ -100,6 +105,8 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
    2. `policy.review_manifest_glob` 命中的**每份 manifest**，**以及每份 manifest 的 `report_path` 解析出的那个文件**
       （用既有的 `contract.resolve_report_path`，与哈希校验同一口径）⇒ 关掉「报告挪出 `reviews/`」那一档；
    3. `<A>/reviews/**` 下的全部文件（回归面：即使某份报告没被写进 `report_path` 也照样进集）。
+      ⚠️ 这一项**刻意与 `policy.review_manifest_glob` 无关**（它是固定的兜底面）——两者在自定义 glob 下会分叉，
+      但自定义 glob 本就不可用：`manifest build` 硬编码把报告与 manifest 写在 `<label>/reviews/` 下（`manifestcmd.py:136-142,201`）。
    `proposal.md` / `design.md` **不在**集内：它们不被哈希绑定，且「共用 stub ⇒ 逐字节撞车」是现实误伤源
    （实测 E11：两个 change 共用同一份 design stub ⇒ 不触发）。
 
@@ -175,12 +182,16 @@ change 目录的 `E(D)` 做 `⊆` 比对。R2 实测：**打断 `⊆` 的成本�
 **已知边界（明写，逐条登记进 `docs/gate.md §6`）**：
 - **完全旁路（R3 的 M6）**：判据 5 的效力**完全依赖**「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提。
   现成证据的字节若在基准树里**另有副本**（`docs/shipped/**` 这类发布副本、仓内镜像、`changes_root` 迁移遗留的旧路径），
-  把那份副本 **`git mv` 进来**（实测 `a4b`：10 条 `R100`）⇒ (a) 与 (b) **同时**豁免同一份内容 ⇒ 判据 5 零命中。
+  把那份副本搬进来就**逐字节复用**了整份证词：那些字节**落在 `<changes_root>` 之外 ⇒ 分句 (a) 单独即豁免**，
+  **与是 `git mv` 还是普通 `cp` 无关、也不需要任何 rename 记录**（实测：`a4b` 的 10 份文件 blob **0/10** 落在 base 的 `changes_root/**` 里；
+  普通 `cp` 的 `i5` 构造同样 `arrived=True`）⇒ 判据 5 零命中。
   （扫描面刻意只取 `changes_root/**`：取全树会把「任何一处逐字节撞车」都变成误伤。）
 - **逐字节天花板**：`Ev(A)` 里每个文件各加一个字节 + 重算 manifest ⇒ 绕过（见上段）。
 - **报告位置**：`check` 只要求报告「解析后仍在 change 目录内」，强制 `reviews/` 的只有 `manifest build`
   （`manifestcmd.py:136-142`）——**这条既有宽松面本 change 不改变**；但第 5 条现在**按 `report_path` 取证据**
   ⇒ 它**不再是**判据 5 的旁路（R3 的 A1 已关掉）。仍登记进 `docs/gate.md §6`。
+- **模板骨架**：仓内模板若放在 `<changes_root>` **之内**（如 `changes/_template/**`），其 `tasks.md` / `specs/**`
+  与新建 change 逐字节相同时会触发误伤 ⇒ **模板 SHALL 放在 `<changes_root>` 之外**（登记进 `docs/gate.md §6`）。
 - **`changes_root` 被 policy 覆写**：到达判定与 diff 成员共用**同一份**（工作树 / head 侧）policy，与今天一致。
 - **判据 2 的近失文案（R3 的 E-2）**：件不齐的到达目录**不是** target ⇒ 报的是「没有任何 change 目录」，
   而**不**点名缺的那一件（如「缺 `reviews`」）。实现时在 `_require_change` 的文案里补一句
@@ -342,7 +353,7 @@ R2 补充：「先修第 5 条、再谈这条」——第 5 条修好之后，�
 | R2 | 树查询在浅克隆下失败 | `gate.yml` 已 `fetch-depth: 0`；仍失败则 **fail-closed**，并有用例钉住。⚠️ 触发面比初稿暗示的窄：`merge-base` 求不出时 `changed_files` **已经**抛错并 fail-closed（`gitutil.py:107`、`checkcmd.py:55`），新增的独立面只剩「`merge-base` 成功但对某个 tree/blob 的 `ls-tree` 失败」（R2 浅克隆探针支持：`--depth 1` 时 `merge-base` 无输出而 `ls-tree -r origin/main` 正常） |
 | R3 | 到达判定依赖 git 新 API，行为漂移 | 判定做成**注入读取器**的纯函数，单测不碰真 git；接线处另有集成用例 |
 | R4 | 与 `manifest build` 的归档解析出现**两套实现** | **已订正**：`manifestcmd` 不调 `change_targets`（grill M4 实测），本 change 不声称该处共用 |
-| R5 | 旧行为被无意改动 | §5.2 回归面逐条点名；纯 move 与既有否定面各有用例；§5.2 第 6 行点名**必须改写**（3 条）与**不要误改**（3 条）的既有测试 |
+| R5 | 旧行为被无意改动 | §5.2 回归面逐条点名；纯 move 与既有否定面各有用例；§5.2 第 6 行点名**必须改写**（5 条）与**不要误改**（3 条）的既有测试 |
 | R6 | **第 5 条误伤**（逐字节撞车 ⇒ fail-closed 拒绝） | 误伤面已明写（§D1 第 5 条）：**空文件已豁免**；触发面是「极短样板文件 / 从兄弟 change 复制的 spec」；finding **同时点名两侧路径**；见 §8 Q4。用例正面钉住「合法 move / move+重建 manifest / 出生即归档不被误伤」（R2 已用模拟器 + 真 CLI 复核这三条） |
 | R7 | 第 5 条让「拿旧 change 复制成新 change 再改内容」的接入方踩雷 | ⚠️ **订正（本轮实测）**：判据是**逐证据文件**的（`tasks.md` / `specs/**` / `reviews/**`），
 所以「复制后只改一半」**仍会被拒**——必须**每一份**被复制的证据文件都重写（或改成 `git mv`）。
@@ -395,7 +406,7 @@ R2 补充：「先修第 5 条、再谈这条」——第 5 条修好之后，�
 - **删除** change 目录（`D`，非 rename）⇒ 仍报「change 目录不存在」。
 - 归档 target 的 `change_id` 别名行为不变。
 - `archive/` 本身不是 change id。
-- **必须改写的既有测试**（4 条；改前绿是**旧语义**下的绿）：
+- **必须改写的既有测试**（5 条；改前绿是**旧语义**下的绿）：
   1. `tests/test_archive_awareness.py:274` `test_rebuilding_a_moved_manifest_in_the_same_diff_is_rejected`
      —— 断言「move + 重写被 move 的 manifest（`R<100`）⇒ 红 + 幽灵 id」，**这正是本 change 要修好的形态 ii**
      ⇒ 语义**反转**为「绿、无幽灵 id」，测试改名（如 `..._is_accepted`）。
@@ -446,9 +457,6 @@ R2 补充：「先修第 5 条、再谈这条」——第 5 条修好之后，�
 | N9 | **纯 `cp -r`**（R1 的 F1：源原封不动 + 只改 manifest 的 `change_id`/`head_sha`） | 红：第 5 条 |
 | N10 | **复制 + 改路径**（改证据文件的后缀 / 改名 spec 文件） | 红：第 5 条（blob 比对与路径无关） |
 | N11 | **复制 + 只改一处**（给**某一个**证据文件加一个字节 / 删掉一个，并重跑 `manifest build` 重算哈希） | 红：第 5 条（**其余**证据文件既不新、也不是本次搬来的） |
-| N19 | **复制 + 报告挪出 `reviews/`**（放 change 目录根）+ 手写 manifest 指过去（R3 的 A1，真 CLI 曾绿） | 红：第 5 条（`Ev(A)` 含**每份 manifest 的 `report_path` 目标**） |
-| N20 | **复制 + `specs` 换成同名普通文件**、或 **`tasks.md` 做成目录**并把借用内容塞进去（R3 的 A3） | 红：第 5 条（`Ev(A)` 取 artifact 路径**整体**） |
-| N21 | **复制 + 给 `Ev(A)` 里每一个文件各加一个字节** + 官方 `manifest build`（R3 的 A2，真 CLI 绿） | ⚠️ **不红 —— 能力天花板**（§D1 第 5 条明写；用例只钉「已知行为」，见 §8 Q4）。**若用户选「再加一档强度」，本行改判红** |
 | N12 | **复制 + 删一个证据文件**（并重跑 `manifest build`） | 红：第 5 条（同上） |
 | N13 | **A1**：`git mv` 一个非证据文件（如 `notes.md`）进 A + 其余整份 `cp` | 红：第 5 条（第 3 条失明：源是 active；第 4 条被 `-<src>` 后缀满足） |
 | N14 | **A3**：源是**嵌套**归档目录 `archive/2026/10-15-old/`，整份 `cp` 成扁平新名 | 红：第 5 条（扫描面是 `<changes_root>/**` 全量） |
@@ -456,6 +464,9 @@ R2 补充：「先修第 5 条、再谈这条」——第 5 条修好之后，�
 | N16 | **组织型子目录**：新建 `archive/2026/10-15-foo/{…}` + 改 `src/**` | 红，但报的是「没有任何 change 目录」（`archive/2026/` 不是 target），**不是**「`archive/2026/` 缺少必需件」 |
 | N17 | **组织型子目录（B1 变体）**：`archive/notes/` 只含 `sub/` 与一个 `reviews/` 子目录 | 同上：不是 target |
 | N18 | **base 同路径是 blob**：base 有 `archive/foo`（文件）、head 是 `archive/foo/{…}` + 改 `src/**` | 红（第 1 条判「有 entry」⇒ 不授予） |
+| N19 | **复制 + 报告挪出 `reviews/`**（放 change 目录根）+ 手写 manifest 指过去（R3 的 A1，真 CLI 曾绿） | 红：第 5 条（`Ev(A)` 含**每份 manifest 的 `report_path` 目标**） |
+| N20 | **复制 + `specs` 换成同名普通文件**、或 **`tasks.md` 做成目录**并把借用内容塞进去（R3 的 A3） | 红：第 5 条（`Ev(A)` 取 artifact 路径**整体**） |
+| N21 | **复制 + 给 `Ev(A)` 里每一个文件各加一个字节** + 官方 `manifest build`（R3 的 A2，真 CLI 绿） | ⚠️ **不红 —— 能力天花板**（§D1 第 5 条明写；用例只钉「已知行为」，见 §8 Q4）。**若用户选「再加一档强度」，本行改判红** |
 | — | **把受保护文件搬进到达目录**（`git mv openspec/specs/x.md → archive/<到达名>/x.md`） | 红（仍要解释事件，M-D5 钉住） |
 | — | 归档时**顺带改 change id**（`git mv changes/old-id archive/2026-10-15-new-id`） | **当前设计下红**（第 4 条）；**明写**的拒绝面，取舍见 §8 Q1（选 (b) 则变绿） |
 
@@ -553,9 +564,9 @@ R2 补充：「先修第 5 条、再谈这条」——第 5 条修好之后，�
 | **A4**（中危） | `gitutil` 的 `D` 记录 `old_path` 为空、被删路径在 `path` 里 ⇒ 「move + 被搬文件整体重写」仍留幽灵 active id（**今天也红**，非回归，但本 change 声称修好的形态 ii 只修好一档） | **D4 排除键补 `D` 侧 `path`**（§2 D4 的订正段）；§5.1 **2b** |
 | **B1**（中危） | §5.2 给 `:494` 的改写配方**产出的到达目录不是 target**（新 active change 占同路径 ⇒ git 报 `M` 而非 `D` ⇒ 配不成改名 ⇒ 判据 5 命中 3 份） | 换成 R3 给的替代配方（`archive/x` 走出生即归档 + 在 `changes/x` 上做一次 `M`）；§5.2 第 2 条 |
 | **B2**（中危） | `test_N6`（`:600`）被列入「不要误改」是**错的**：D4 收窄后它成为 active target ⇒ `:621` 的断言失守 | 移入「必须改写」（第 5 条），断言改成「`another-change` 仍按 active 契约校验」；§5.2 |
-| **B3**（低-中） | 仓内**模板骨架**（`changes/_template/**`）被原样复制 ⇒ 误伤（已登记，但理由与「排除 `proposal`/`design`」的依据不自洽） | 明写「模板请放在 `changes_root` 之外」进 `docs/gate.md §6`（§3 第 5 条）；作为 §8 Q4 的误伤证据 |
-| **M5**（中） | 「必须改写（3 条）」与实列 **4** 项不一致 | 计数与清单已对齐（§5.2） |
-| **M6**（低-中） | `changes_root` 之外的现成证据 `git mv` 进来 ⇒ (a)(b) **同时**豁免同一份内容 ⇒ **判据 5 的完全旁路** | 从「低危边角」升格为**明写的完全旁路**（§D1 第 5 条「已知边界」）；`docs/gate.md §6` 登记（§3 第 5 条） |
+| **B3**（低-中） | 仓内**模板骨架**（`changes/_template/**`）被原样复制 ⇒ 误伤（已登记，但理由与「排除 `proposal`/`design`」的依据不自洽） | 明写「模板请放在 `changes_root` 之外」（**§D1 第 5 条「已知边界」+ §3 第 5 条 + `tasks.md` 6.1**）；作为 §8 Q4 的误伤证据 |
+| **M5**（中） | 「必须改写（3 条）」与实列不一致 | ⚠️ R3 只落了一半（R4 复核为假）；本轮**已机械核对**：标题写 **5 条**、清单恰列 5 项（`:274`/`:494`/`:600`/`:109`/`:49`），R5 表的那处计数同步改齐 |
+| **M6**（低-中） | `changes_root` 之外的现成证据 `git mv` 进来 ⇒ (a)(b) **同时**豁免同一份内容 ⇒ **判据 5 的完全旁路** | 从「低危边角」升格为**明写的完全旁路**（§D1 第 5 条「已知边界」）；`docs/gate.md §6` 登记（**§D1 第 5 条「已知边界」+ §3 第 5 条**） |
 | **M7**（低） | `:378` 的注释更新未落 | 记进 `tasks.md`（实现期做） |
 | **E-2**（低） | 判据 2 收紧后**近失文案变差**（件不齐 ⇒ 「没有任何 change 目录」，不点名缺的那一件） | `_require_change` 文案补一句：列出「`archive/` 下缺必需件的目录」（`tasks.md` 3.9） |
 
