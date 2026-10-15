@@ -59,12 +59,17 @@
       解析出的那个文件**（SHALL 用与哈希校验同一解析器 `contract.resolve_report_path`）；
    3. `<A>/reviews/**` 下的全部文件。
 
-   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对**：git 把符号链接存成「链接文本」的 blob，
-   只看链接自身时，把 `tasks.md` / `specs` 做成**指向基准树里现成 change 的符号链接**，链接 blob 是「新」的
-   而证据门读的是**解析后的内容**（逐字节复用）⇒ 不处理符号链接，本判据整体失明。
-   ⇒ 链接**解析后逃出 `A`**、**悬空**、或该条目是 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）；
-   链接**解析后仍在 `A` 之内** ⇒ SHALL 按**目标文件**的 blob 参与 (a)/(b) 比对，且**目标路径 SHALL 并入 `Ev(A)`**
-   （递归到不动点，配 visited 集防环）。
+   ⚠️ **枚举 SHALL 覆盖 `git ls-tree -r` 的全部非 tree 行**（含 `160000 commit` 的 gitlink 条目，R7 的 M2 实测：
+   只枚举 blob 会让「`N22 ②` gitlink ⇒ 红」**不可满足**）；`<A>` 下（或 `Ev(A)` 里）出现 gitlink ⇒ fail-closed。
+
+   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对**（**只作用于 `Ev(A)` 的条目**）。
+   git 把符号链接存成「链接文本」的 blob：只看链接自身时，把 `tasks.md` / `specs` 做成
+   **指向基准树里现成 change 的符号链接**，链接 blob 是「新」的，而证据门读的是**解析后的内容**（逐字节复用）
+   ⇒ 不处理符号链接，本判据整体失明。
+   解析口径 SHALL 与 `contract.resolve_report_path` 同款（`Path.resolve()` + `pathutil.is_within`）：
+   目标**在 `A` 之内** ⇒ 按**目标文件**的 blob 比对，且目标路径 SHALL 并入 `Ev(A)`（递归到不动点，visited 防环）；
+   目标**在 `A` 之外** ⇒ 按**该目标路径在 head 树里的 blob** 比对（与 `cp` 进来同结论）；
+   目标**未跟踪 / 悬空**、或条目是 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）。
    ⚠️ SHALL NOT 一刀切禁止符号链接：`reviews/alias.md → reviews/grill-review.md`（指向 `A` 之内）
    是本仓既有钉绿布局（`tests/test_orphan_reports.py:273`），今天真 CLI 判绿。
 
@@ -97,6 +102,8 @@
   `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板、
   仓内**模板骨架**（`changes/_template/**`——模板 SHALL 放在 `changes_root` 之外）。
   **空文件**（0 字节，如 `reviews/.gitkeep`）SHALL 被豁免；`proposal.md` / `design.md` 的逐字节撞车 SHALL NOT 触发。
+  ⚠️ **另有两条由「符号链接口径」带来的 fail-closed 误伤（今天绿、本 change 红，R7 的 M1）**：
+  `Ev(A)` 里某个符号链接的**目标未被 git 跟踪 / 悬空**，或该条目是 **gitlink** ⇒ 不授予。
 
 该 change 的 **id SHALL 是归档目录名**（不解析日期前缀）；其契约与证据校验 SHALL 与 active change 同一套
 （必需件、review manifest 的 hash/revision 绑定、grill 报告正文、`code_hits` 触发的
@@ -313,7 +320,10 @@ grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
 ### Scenario: 同一内容两种位置结论一致
 - **Given** 同一份 change 内容（件齐 + 三份 manifest + 报告），一份在 `changes/<id>/`、一份在 `archive/<name>/`
 - **When** 分别运行 `check`
-- **Then** 两者的判绿判红结论相同
+- **Then** 两者的判绿**判红**结论在**证据门槛维度**相同
+- ⚠️ **限定（与 `D2` 同等）**：本 Scenario SHALL NOT 被读成「任何维度都相同」。已知例外：① `stale` 维度
+  （`stale_exempt_paths` 对 `archive/**` 整块豁免）；② 本 change 明写的**内容来源边界**（第 5 条的符号链接 /
+  gitlink / 悬空目标 fail-closed；`<changes_root>` 之外另有副本时第 5 条零命中）。
 
 ## Requirement: 既有行为不变（**回归护栏**）
 
@@ -335,12 +345,15 @@ grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
 1. 「**复制式归档**」（`cp` 一份到 `archive/<date>-<id>/` 而**不**删源目录）在本 change 下 SHALL NOT 被授予资格
    （判据 5）。它在改动前**也**不授予（全 `A` ⇒ 无 `R100`），故非回归；
    但对采用该流程的接入方是**可感知的**行为（报错文案从「没有任何 change 目录」变为判据 5 的 finding，且点名两侧路径）。
-2. 「**删除 `changes/<id>/` 的其余文件 + 把它的一个文件搬进一个件齐的新到达目录**（名字认得 `<id>`）」：
+2. 「**源 change 目录在 head 里消失**（其文件被**删除**或**被搬走**）+ 把它的一个文件搬进一个件齐的新到达目录（名字认得 `<id>`）」：
    在改动前**报**「`<changes_root>/<id>`：change 目录不存在」（幽灵 id）；本 change 下 `check` 退出码为 **0**
    （D4 的排除键是**目录级**的：源目录在 head 里不存在 ⇒ 它的路径不再被当 active id）。
    理由：这与本 change 修好的形态同族（该 change 在到达目录里被**完整校验**；被删文件里受保护的那几类
    —— `reviews/*.manifest.json` / `workflow-events.jsonl` —— 仍要解释事件）。
    ⚠️ **对照仍须红**：若到达目录**件不齐**（不是到达）⇒ 该 change 仍被按 active 校验 ⇒ 退出码非 0。
+3. 「`Ev(A)` 里的**符号链接目标未被跟踪 / 悬空**，或该条目是 **gitlink**」：改动前**判绿**，本 change 下**判红**
+   （fail-closed；其内容不在本仓树里，无法核验）。⚠️ **反向仍须绿**：链接**指向 `A` 之内**、或指向
+   `<changes_root>` **之外**的**被跟踪**文件 ⇒ 与今天一致（见上「符号链接」段）。
 
 ### Scenario: 只改代码、什么都不建 —— 仍然红
 - **Given** 一个 PR 只改动 `src/**`，没有新建任何 change 目录、也没有归档到达

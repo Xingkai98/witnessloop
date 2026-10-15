@@ -32,7 +32,13 @@
     但**新报 1 条**：无差别「不许符号链接」**误伤合法 move**（本仓 `tests/test_orphan_reports.py:273` 的钉绿布局，
     今天真 CLI 绿、现稿红）⇒ 已按 R6 的选项①改成「按**解析后**内容比对 + 只对逃出 `A` / 悬空 / gitlink fail-closed」，
     并用模拟器在 R6 的两个合法构造（绿）与 R5 的攻击构造（红）上复算通过；9 条措辞项已逐条落库。
-  - **R7**：待跑（针对 R6 修复之后的文本）。**收敛判据 = 一轮下来没有新的可证伪项
+  - `reviews/grill-adversarial-r7.md`（R7）✅ 完成：R6 的符号链接修复在 **`A` 之内一侧成立**（两个合法构造仍绿、
+    攻击构造仍红、R7 新造的 6 类变体全部落在预期一侧，**未找到绕过**）；新报 2 条：① 「逃出 `A` ⇒ 不授予」
+    这条拒绝面**四处登记位全空**且 Scenario 未加限定；② `git ls-tree -r` **会列 `160000 commit` 行**（作者原描述有误）
+    ⇒ `N22 ②` 的「gitlink ⇒ 红」在只枚举 blob 时不可满足。⇒ 已按 R7 的 M1 把符号链接口径改成**与判据模型一致**
+    （指向 `A` 外**被跟踪**文件 ⇒ 与 `cp` 同结论；仅未跟踪 / 悬空 / gitlink fail-closed），并补登记 + Scenario 限定 +
+    枚举口径订正；7 条措辞项已落库。
+  - **R8**：待跑（针对 R7 修复之后的文本）。**收敛判据 = 一轮下来没有新的可证伪项
     且所有「必须修改项」都已落库**；没有轮数上限。
 - [ ] 0.5 把第 5 条与第 2 条的**能力边界**（`Ev(A)` 的定义 / 逐字节天花板 / `changes_root` 之外的完全旁路 / 误伤面 /
   模板要放在 `changes_root` 之外）写进 `docs/gate.md §6`，并把「复制式归档 ⇒ 不授予」这条**有意的行为变化**一并登记。
@@ -116,10 +122,13 @@
   若用户裁『不接受』，本用例改判红」）。**不要**把这条写成「必须红」。
   ⑪ **误伤对照（必须绿）**：新 change 的 `proposal.md` / `design.md` 与 base 里某 change **逐字节相同**（共用 stub）⇒ 绿。
   ⑫ **明写的误伤面（预期红，文档里已登记）**：原样复制兄弟 change 的 `specs/**` 文件 ⇒ 红，finding **只点名该文件**。
-  ⑬ **符号链接（R5 的 M1 + R6 的 M1）**：① 把 `tasks.md` / `specs` / 报告做成**指向基准树里现成 change 的符号链接**
-  ⇒ **红**（按解析后的内容比对；逃出 `A` 的链接直接 fail-closed）；② **悬空链接** / **gitlink** ⇒ **红**；
-  ③ **对照（必须绿）**：`reviews/alias.md → reviews/grill-review.md`（指向 `A` 之内、目标是本次改名落点）
-  ⇒ **绿**——本仓既有钉绿布局（`tests/test_orphan_reports.py:273`），R6 实测今天真 CLI 判绿。
+  ⑬ **符号链接 / gitlink（R5 的 M1 + R6 的 M1 + R7 的 M1/M2）**：
+  ① `tasks.md` / `specs` / 报告是**指向基准树里现成 change 的符号链接** ⇒ **红**（按解析后的内容比对）；
+  ② 链接**悬空 / 目标未被 git 跟踪** ⇒ **红**（fail-closed）；③ `<A>` 下（或 `Ev(A)` 里）出现 **gitlink**
+  （`160000`，含**放在 `reviews/` 下、artifact 目录**之下**等不同位置**）⇒ **红**；
+  ④ **对照（必须绿）**：`reviews/alias.md → reviews/grill-review.md`（指向 `A` 之内、目标是本次改名落点）
+  ⇒ **绿**（本仓既有钉绿布局 `tests/test_orphan_reports.py:273`，R6 实测今天真 CLI 判绿）；
+  链接指向 `<changes_root>` **之外**的**被跟踪**文件 ⇒ 与 `cp` 同结论（内容落在 `changes_root` 外 ⇒ (a) 放行）。
 - [ ] 2.10 **组织型子目录用例（两种）**：`archive/2026/10-15-foo/…` ⇒ `archive/2026/` 不是 target；
   **B1 变体**：`archive/notes/` 只含 `sub/` 与一个 `reviews/` 子目录 ⇒ 也不是 target、不产生「缺少必需件」假阴性。
   并钉住 `archive/notes/sub/workflow-events.jsonl`（`:378`）的行为与今天一致。
@@ -137,7 +146,12 @@
 
 ## 3. 实现
 
+- [ ] 3.0 新增/改写 `spec.md`「既有行为不变（**回归护栏**）」Requirement 的落地任务（该 Requirement 由 R1 的 M6 之后新增，
+  目前 §1.x 里没有对应条目）：其 Scenario 全部要落成用例（只改代码仍红 / 删 change 目录仍红 / 别名照旧 /
+  `archive` 不作 id / 退出码语义不变），并在实现时逐条复算。
 - [ ] 3.1 `src/witnessloop/gitutil.py`：新增树查询帮助函数（`tree_entry` / `tree_entries`），
+  ⚠️ **到达候选只取 head 树里是 `tree` 的直接子项**（`archive/<name>` 自身是 blob ⇒ 不是候选）；
+  `-r` 枚举须同时覆盖 **blob 行与 `160000 commit`（gitlink）行**（R7 的 M2 实测）。
   **精确命令语义见 `design.md §2 D7` 的表**（不带尾斜杠 = 路径自身；带尾斜杠 = 直接子项；`-r` = 其下全部 blob），
   `fail-closed`：读不出 ⇒ 抛错 / 返回失败，调用处报 finding。
 - [ ] 3.2 `src/witnessloop/contract.py`：新增到达判定（树读取作为**注入谓词**，判定本体为纯函数），

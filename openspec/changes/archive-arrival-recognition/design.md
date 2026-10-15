@@ -109,15 +109,18 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
       但自定义 glob 本就不可用：`manifest build` 硬编码把报告与 manifest 写在 `<label>/reviews/` 下（`manifestcmd.py:136-142,201`）。
    `proposal.md` / `design.md` **不在**集内：它们不被哈希绑定，且「共用 stub ⇒ 逐字节撞车」是现实误伤源
    （实测 E11：两个 change 共用同一份 design stub ⇒ 不触发）。
-   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对；解析后逃出 `A`（或悬空、或 gitlink `160000`）⇒ 不授予（fail-closed）**。
+   ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对**（**只作用于 `Ev(A)` 的条目**；`A` 下的非证据文件不参与判定）。
    依据（R5 的 M1 实测）：git 把符号链接存成「链接文本」的 blob——只看链接自身时，把 `tasks.md` / `specs` 做成
    **指向基准树里现成 change 的符号链接**，链接 blob 是**新**的（(a) 成立），而证据门读的是**解析后的内容**
    （逐字节等于受害者的）⇒ 不处理符号链接，判据 5 **整体失明**。
-   ⚠️ **但 SHALL NOT 一刀切「不许符号链接」**（R6 的 M1 实测：那是**合法绿色样态**被误伤）：
-   `reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**）是**本仓既有钉绿布局**
-   （`tests/test_orphan_reports.py:273` `test_symlinked_report_is_not_an_orphan`），真 CLI 今天判绿；
-   ⇒ 指向 `A` **之内**的链接：**按目标文件的 blob** 参与 (a)/(b) 比对，并把**目标路径**并入 `Ev(A)`
-   （递归到不动点，配 visited 集防环）；指向 `A` **之外**的链接：fail-closed。
+   解析口径 SHALL 与 `contract.resolve_report_path` 同款（`Path.resolve()` + `pathutil.is_within`，展开 `..` 与符号链接）：
+   - 目标**落在 `A` 之内** ⇒ 取**目标文件**的 blob 参与比对，并把目标路径**并入 `Ev(A)`**（递归到不动点，配 visited 集防环）；
+   - 目标**落在 `A` 之外** ⇒ 取**该目标路径在 head 树里的 blob** 参与比对（**与 `cp` 进来同结论**：
+     字节落在 `<changes_root>/**` 就命中 (a)、否则放行——这正是本判据的模型，**不额外制造误伤**，见 R7 的 M1）；
+   - 目标**未被 git 跟踪 / 悬空**，或该条目是 **gitlink（`160000`）** ⇒ **fail-closed 不授予**（其内容不在本仓树里，无法核验）。
+   ⚠️ **SHALL NOT 一刀切「不许符号链接」**（R6 的 M1 实测：那是**合法绿色样态**被误伤）：
+   `reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**）是本仓既有钉绿布局
+   （`tests/test_orphan_reports.py:273` `test_symlinked_report_is_not_an_orphan`），真 CLI 今天判绿。
 
 ⇒ 与 `change.status` 是 `A` 还是 `R<分数>` **完全无关**。两只症状（出生即归档 / move 带内容改动）同一刀切掉。
 
@@ -200,6 +203,8 @@ change 目录的 `E(D)` 做 `⊆` 比对。R2 实测：**打断 `⊆` 的成本�
 - **报告位置**：`check` 只要求报告「解析后仍在 change 目录内」，强制 `reviews/` 的只有 `manifest build`
   （`manifestcmd.py:136-142`）——**这条既有宽松面本 change 不改变**；但第 5 条现在**按 `report_path` 取证据**
   ⇒ 它**不再是**判据 5 的旁路（R3 的 A1 已关掉）。仍登记进 `docs/gate.md §6`。
+- **符号链接的 fail-closed 残余（R7 的 M1）**：`Ev(A)` 里链接的**目标未跟踪 / 悬空**、或条目是 **gitlink**
+  ⇒ 不授予（**今天判绿**）——这是本 change **明写的行为变化**（登记在 `spec.md` 的「有意的行为变化」第 3 条）。
 - **模板骨架**：仓内模板若放在 `<changes_root>` **之内**（如 `changes/_template/**`），其 `tasks.md` / `specs/**`
   与新建 change 逐字节相同时会触发误伤 ⇒ **模板 SHALL 放在 `<changes_root>` 之外**（登记进 `docs/gate.md §6`）。
 - **`workflow-events.jsonl` 不在 `Ev(A)` 里**（它是自由文本、不是被绑定的证据本体）——**本 change 不改变**这条既有面。
@@ -314,7 +319,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
   |---|---|---|
   | 某路径**自身**是否存在（blob 或 tree） | `git ls-tree <rev> -- <path>`（**不带尾斜杠**） | 存在 ⇒ 1 行（`100644 blob …` 或 `040000 tree …`）；不存在 ⇒ 0 行。**D1 第 1 条用这个** |
   | 某目录的**直接子项** | `git ls-tree <rev> -- <dir>/`（**带尾斜杠**，不递归） | 列直接子项（blob + tree） |
-  | 某目录**其下全部文件**的 blob | `git ls-tree -r <rev> -- <dir>`（递归；带不带斜杠同结果） | 只列 blob 行，**不含** tree 行（因此「`specs` 是同名普通文件」也看得见 ⇒ 与契约门 `.exists()` 同结论） |
+  | 某目录**其下的条目** | `git ls-tree -r <rev> -- <dir>`（递归；带不带斜杠同结果） | 列 blob 行**与 `160000 commit`（gitlink）行**，**不含** tree 行（R7 实测：gitlink 行确实会出现）；因此「`specs` 是同名普通文件」看得见（与契约门 `.exists()` 同结论），**而 gitlink 条目也必须被显式处理**（见 §D1 第 5 条） |
   一次 `ls-tree -r <merge-base> -- <changes_root>` 就能同时拿到「基准树里全部 blob sha 集合」与「existing change 目录」。
 - 到达判定只留**一份**实现，且**纯函数化**：把树读取作为**注入的谓词**（不在判定里调 git）——
   判定本体保持可单测（不需要真 git 仓）。注入面是**一对读取器**（`entry(rev, path)` / `entries(rev, path)`），
@@ -377,7 +382,8 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | R6 | **第 5 条误伤**（逐字节撞车 ⇒ fail-closed 拒绝） | 误伤面已明写（§D1 第 5 条）：**空文件已豁免**；触发面是「极短样板文件 / 从兄弟 change 复制的 spec」；finding **同时点名两侧路径**；见 §8 Q4。用例正面钉住「合法 move / move+重建 manifest / 出生即归档不被误伤」（R2 已用模拟器 + 真 CLI 复核这三条） |
 | R7 | 第 5 条让「拿旧 change 复制成新 change 再改内容」的接入方踩雷 | ⚠️ **订正（本轮实测）**：判据是**逐证据文件**的（`tasks.md` / `specs/**` / `reviews/**`），
 所以「复制后只改一半」**仍会被拒**——必须**每一份**被复制的证据文件都重写（或改成 `git mv`）。
-对「**复制式归档**」（`cp` 而不删源）是**有意的行为变化**（今天该形态也红：全 `A` ⇒ 无 `R100`），见 §8 Q4 |
+对「**复制式归档**」（`cp` 而不删源）是**有意的行为变化**（今天该形态也红：全 `A` ⇒ 无 `R100`），见 §8 Q4；
+另外**符号链接的 fail-closed 残余**（目标未跟踪 / 悬空 / gitlink）是**今天绿 → 本 change 红**，已登记 |
 
 ## 5. 测试策略（TDD）
 
