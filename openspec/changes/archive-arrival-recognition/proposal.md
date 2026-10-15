@@ -60,8 +60,11 @@
    （两个目标）。
 2. **到达方式不设限**：整目录 `git mv` 过来（含本 diff range 内有内容改动）与**直接新建在 `archive/` 下**
    一律认。⇒ 症状 1、2 同时消失。
-3. **保留既有的、真正承重的收窄面**（`design.md §2.4`）：`base` 里**已存在**的归档目录
+3. **保留既有的、真正承重的收窄面**（`design.md §2 D3`）：`base` 里**已存在**的归档目录
    SHALL NOT 被授予资格；对它的修改 / 删除 SHALL 仍要解释事件；单文件移入既有归档目录 SHALL NOT 授予。
+   并**升级**为内容层：`archive/<name>/` 里的内容**整份搬运自仍在的 change 目录**
+   （复制 / 复制后改路径 / 改一两个字节 / 删一个文件 / 混源 / 搬一个无关文件洗白 / 源是嵌套归档目录）
+   SHALL NOT 被授予资格（`design.md §2 D1` 第 5 条；该项由对抗轮 R1 的 F1 与 R2 的 A1–A3 逼出）。
 4. **不产生新的绕过面**：归档 target 走与 active change **完全同一套**契约与证据校验
    （必需件、manifest 的 hash/revision 绑定、grill 正文、以及 `code_hits` 触发的
    `building` / `grill-adversarial` 两条硬门）——**到达方式不改变证据门槛**。
@@ -87,6 +90,10 @@
   「`base` 里已存在的归档目录被**修改**」（`M`）与「单文件 `git mv` 进**既有**归档目录且目标名不认得源 id」。
 - **对称性**：同一个 change 的同一份内容，**放在 active 与放在 `archive/` 下判绿**——
   这对本 change 是核心不变量（到达方式不该影响证据门槛）。
+  ⚠️ **限定到「证据门槛」维度**（必需件 / manifest 的 hash+revision 绑定 / `reviewer ≠ author` /
+  grill 正文 / stage 集合）：`policy.stale_exempt_paths` 对 `archive/**` 整块豁免、对 active 的
+  `proposal/design/tasks` 不豁免，**这个非对称是既有口径**，本 change 不改变、也不宣称在该维度上对称
+  （见 `design.md §2 D2`；该限定由 grill 实测逼出，R2 复核 `proposal.md` 漏改后本轮补上）。
 - **回归**：`uv run pytest -q` 全绿（基线见 `design.md §5.2` 的实测数字）。
 
 ## 测试策略

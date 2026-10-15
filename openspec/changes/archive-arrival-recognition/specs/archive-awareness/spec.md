@@ -1,15 +1,19 @@
 # archive-awareness — 归档 change 的到达判定改为「目录级」
 
 > 本 change 修改 `archive-awareness` 的四条 Requirement：
-> 把「本次 diff 里到达了一个归档 change」的判据，从**逐文件 `R100` 改名**换成
-> **`archive/<name>/` 在基准树里不存在、在 head 树里存在且**是一个含必需件的 change 目录****。
+> 把「本次 diff 里到达了一个归档 change」的判据，从**逐文件 `R100` 改名**换成**目录级事实**——
+> `archive/<name>/` 在基准树里**没有 entry**、在 head 树里是一个**含全部必需件的 change 目录**、
+> 且其内容**不是现成证据的机械搬运**。
 > 到达方式（`git mv` 过来 / 直接新建在 `archive/` 下）**不设限**；
 > 到达的 target 走与 active change **完全同一套**契约与证据校验（**到达方式不改变证据门槛**）。
-> ⚠️ 已知**会被反转**的旧条款：`archive-awareness` 的否定面 N2（「新建 `archive/<name>/**`（`A`、无 active 源）⇒ 不授予」）
-> 与 N7（「同一 diff 里既归档又改写被 move 的文件 ⇒ 不授予」）。反转理由见
-> `design.md §1.5`：这两条**不承重**（`archive/**` 的 stale 暗房今天就已存在）；
-> 真正承重的「不得**白捡**一份现成证据」被 D3（基准树里已存在 ⇒ 不授予）与
-> **D1 第 5 条**（内容整份来自仍在的既有 change 目录 ⇒ 不授予）**升级**保留。
+> ⚠️ 已知**会被反转**的旧条款：
+> - 否定面 **N7**（「同一 diff 里既归档又改写被 move 的文件 ⇒ 不授予」）——**反转**（`design.md §1.5`：它**不承重**，
+>   且它正是接入方的真实形态 ii）；
+> - 否定面 **N2**（「新建 `archive/<name>/**`（`A`、无 active 源）⇒ 不授予」）——**部分反转**：
+>   **件齐**的新建归档目录**会**被授予（然后由证据门把关）；但**缺任一必需件**的伪造目录**仍不授予**
+>   （判据 2 不成立 ⇒ 它根本不是到达）。⚠️ R1 曾把这条写成「全部反转」，第 2 条收紧后必须按本段读。
+> 真正承重的「不得**白捡**一份现成证据」被**升级**保留：判据 3（记录层：来自 `archive/**` 的改名）
+> + 判据 5（**内容层**：内容必须是新写的或本次搬来的）。
 
 ## Requirement: 归档 change 的「到达」判定 SHALL 基于目录级事实，SHALL NOT 基于逐文件改名分
 
@@ -22,31 +26,42 @@
    SHALL NOT 用 `base` ref 自身的树。
    ⚠️ 判据 SHALL **不**表述成「该前缀下没有任何 tree entry」：实测
    `git ls-tree -r <M> -- <path>/`（带尾斜杠）在「base 同路径是一个 blob」时返回 **0 行**，
-   会把「base 里已有实体」误判成「不存在」；
-2. **head 树里该路径存在、是 tree，且其直接子项里含 ≥1 个 `policy.required_artifacts`**
-   （探测 SHALL 用契约门**同一张** `policy.required_artifacts` 表）。
-   ⇒ 组织型 / 工具型子目录（`archive/2026/`、`archive/notes/`、`archive/templates/`）
-   SHALL NOT 被当作「到达的 change」；
+   会把「base 里已有实体」误判成「不存在」。判定 SHALL 用**不带尾斜杠**的
+   `git ls-tree <M> -- <path>`（base 是 blob ⇒ 非空 ⇒ **不授予**；不存在 ⇒ 空 ⇒ 进入下一条）；
+2. **head 树里该路径是 tree，且含全部 `policy.required_artifacts`**
+   （判定语义 SHALL 与契约门**完全一致**：`<dir>/<artifact>` **路径存在**——即「`specs` 是同名普通文件」
+   这类形态与 `contract.validate_change_dir` 同结论）。
+   ⇒ 组织型 / 工具型子目录（`archive/2026/`、`archive/notes/`、`archive/templates/`）SHALL NOT 被当作到达的 change；
 3. **不是从另一个归档目录改名而来**：到达组里**没有**任何记录的 `old_path` 落在
-   `<changes_root>/archive/**` 下（否则「把旧归档目录改个名」就能白捡一份现成证据）；
+   `<changes_root>/archive/**` 下；
 4. **有源时须名识别**：若到达组里存在 `old_path` 落在 `<changes_root>/<src>/` 下（即**有源** `src`），
-   则 SHALL 要求 `name == src` 或 `name.endswith("-" + src)`；**无源**（出生即归档）时本条无从施加；
-5. **内容不得整份取自 base 树里仍然存在的 change 目录**（**防「整份复制现成证据」**）：
-   记 `E(X)` = 目录 X 的「证据指纹」= `(相对路径, blob sha)` 集合，取
-   `<X>/tasks.md` + `<X>/specs/**` + `<X>/reviews/**/*.md`
-   （= 被 manifest 哈希绑定的 artifact 与被绑定为报告的报告正文；**排除** `reviews/*.manifest.json` 自身）。
-   若 base 树里存在一个 change 目录 `D`（active 的 `<changes_root>/<id>/` 或归档的
-   `<changes_root>/archive/<name>/`）满足 `E(D) ≠ ∅`、`E(D) ⊆ E(A)`，
-   且 **`D` 不是「本次已被搬走的目录」**（D 的路径既不是到达组某条记录的源目录，也**不是**在 head 树里已不存在），
-   则 `A` SHALL NOT 被授予资格。
-   ⇒ 只改 `reviews/*.manifest.json`、往 A 里新增文件都 SHALL NOT 使判据失效；
-   删掉 / 改字节由既有的必需件、哈希绑定与孤儿规则拦下（**判据不宣称防伪造**，
-   与 `contract.py` 既有的「防漂移、不防伪造」能力边界一致）。
+   则对**每一个**这样的源 SHALL 要求 `name == src` 或 `name.endswith("-" + src)`；
+   **无源**（出生即归档）时本条无从施加；
+5. **内容来源（防「搬运现成证据」）**：到达目录 A 下的**证据文件**——`tasks.md`、`specs/**`、
+   `reviews/**` 下的**全部文件**——**每一个**（按 head 树；**内容为空**者除外）SHALL 满足下列**之一**：
+   - (a) 其 blob 在基准树的 `<changes_root>/**` 里**不出现**（= 本次新写的内容）；
+   - (b) 它是**本次 diff 里某条改名记录的落点**（记录的 `new_path`，即本次搬过来的）。
+   违反 ⇒ `A` SHALL NOT 被授予资格。
+   ⚠️ `proposal.md` / `design.md` SHALL NOT 被纳入本判据的证据集：它们**不被 manifest 哈希绑定**，
+   且「共用 stub ⇒ 逐字节撞车」是现实误伤源；排除它们**不削弱**本判据——一次**搬运**必然连
+   `tasks.md` / `specs` / `reviews` 一起搬（否则必需件与哈希绑定立刻红）。
 
 `check` SHALL NOT 依据 `git diff --find-renames` 给出的**逐文件状态**（`A` / `R<分数>`）或**相似度分数**
 来判定到达资格。特别是：SHALL NOT 要求 `status == "R100"`，SHALL NOT 因为「某个被移动文件在同一 diff range 内
-另有内容改动」而收回资格，SHALL NOT 依赖 `-M` / `-C` 的**副本检测启发式**（实测 `-M -C` 看不见
-「源目录原封不动」的整份复制）。
+另有内容改动」而收回资格，SHALL NOT 依赖 `-M` / `-C` 的**副本检测启发式**
+（实测 `-M -C` 看不见「源目录原封不动」的整份复制）。
+
+⚠️ **判据 5 的能力边界（SHALL 明写，不得被读成防伪造）**：
+- 它拦的是**机械搬运**：整份复制、复制后改路径、复制后改 / 删一两个文件（即使随后用 `manifest build`
+  **重算哈希**）、混多个源、搬一个无关文件进来洗白、源是嵌套归档目录——上述形态 SHALL 全部不授予；
+- 把**每一个**文件都改掉字节再重算 manifest 哈希者**不在此判据射程内**——那等价于「自己写一份完整证据」，
+  属本工具既有的能力边界（`src/witnessloop/contract.py:9`：hash 绑定证「证据之间没漂移」，**不防伪造**）；
+- **扫描面**是 `<changes_root>/**`（不是「扁平 change 目录」，也不是全仓）：放在 `changes_root`
+  之外的现成证据副本**不可见**；
+- **误伤面**：A 里某个**非空证据文件**与 base 的 `<changes_root>/**` 下某文件**逐字节相同**、且它不是本次搬来的
+  ⇒ **fail-closed 拒绝**（finding SHALL **同时点名两侧路径**）。现实来源：从兄弟 change 原样复制来的
+  `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板。
+  **空文件**（0 字节，如 `reviews/.gitkeep`）SHALL 被豁免；`proposal.md` / `design.md` 的逐字节撞车 SHALL NOT 触发。
 
 该 change 的 **id SHALL 是归档目录名**（不解析日期前缀）；其契约与证据校验 SHALL 与 active change 同一套
 （必需件、review manifest 的 hash/revision 绑定、grill 报告正文、`code_hits` 触发的
@@ -54,7 +69,7 @@
 
 ### Scenario: 出生即归档（base 里无此 change，head 里全新增）
 - **Given** diff 的基准树里**没有** `openspec/changes/<id>/`
-- **And** head 里有 `openspec/changes/archive/2026-10-15-<id>/`（件齐：`proposal.md` / `design.md` / `tasks.md` / `specs/` / `reviews/`）
+- **And** head 里有 `openspec/changes/archive/2026-10-15-<id>/`（**件齐**：`proposal.md` / `design.md` / `tasks.md` / `specs/` / `reviews/`，且这些内容都是本次新写的）
 - **And** 本次 diff 同时改动命中 `policy.require_change_for` 的路径
 - **When** 运行 `check`
 - **Then** 退出码为 0，且不再出现「本次 diff 里没有任何 change 目录」
@@ -74,33 +89,30 @@
 - **When** 运行 `check`
 - **Then** 退出码为 0（与改动前一致）
 - **And** 该归档 change 仍被认作本次 diff 的 change（`1 个 change 目录`）
-- **And** 达成的第 5 条判据 SHALL **不**误伤它：base 里的 `openspec/changes/<id>/` 在 head 里已不存在
-  （整体搬走）⇒ 它不是「仍然存在的 change 目录」
-
-### Scenario: **整份复制现成证据不授予资格**（防「cp -r」绕过）
-- **Given** 基准树里已存在归档目录 `openspec/changes/archive/2026-09-30-old/`（证据齐全，**本 PR 原封不动**）
-- **And** 本 PR 把它的**整份内容 `cp`** 到 `openspec/changes/archive/2026-10-15-new/`，
-  只改其中的 `reviews/*.manifest.json`（`change_id` / `head_sha`），并改动 `src/**`
-- **When** 运行 `check`
-- **Then** 退出码非 0（`2026-10-15-new` 虽「在基准树里不存在」、且到达组里没有任何 `old_path`，
-  但 `E(2026-09-30-old) ≠ ∅`、`⊆ E(2026-10-15-new)`，且源目录**仍在 head 里** ⇒ 判据 5 不成立）
-- **And** stderr 点名 `src/**` 与 `require_change_for`
-- ⚠️ 没有判据 5 时，这份**逐字节未变的现成证据**（哈希绑定、`reviewer ≠ author`、grill 正文、三条 stage 门
-  全部成立）会让一个**零新证据**的纯代码 PR 变绿
+- **And** 判据 5 SHALL **不**误伤它：被搬走的文件都是本次 diff 里改名记录的落点（(b) 成立）
 
 ### Scenario: 组织型子目录 SHALL NOT 被当成到达的 change
 - **Given** 基准树里没有 `openspec/changes/archive/2026/`
 - **And** head 里有 `openspec/changes/archive/2026/10-15-foo/{proposal.md, design.md, tasks.md, specs/, reviews/}`
 - **When** 运行 `check`
-- **Then** `archive/2026/` **不**被认作到达的 change（其直接子项是 `10-15-foo`，不含任何必需件）
+- **Then** `archive/2026/` **不**被认作到达的 change（它不含 `proposal.md` 等必需件，其直接子项是一个目录）
 - **And** **不**出现「`archive/2026/` 缺少必需件 `proposal.md`」这类 finding
 - **And** 行为与改动前一致：若非嵌套布局的 `archive/<name>/` 不存在，则「没有任何 change 目录」照旧命中
 
-### Scenario: 基准树里同路径是**文件**时不得被误放行
-- **Given** 基准树里 `openspec/changes/archive/foo` 是一个 **blob**（文件）
-- **And** head 里 `openspec/changes/archive/foo/` 是一个**目录**（含必需件）
+### Scenario: 只含部分必需件的子目录 SHALL NOT 被当成到达的 change
+- **Given** head 里新建 `openspec/changes/archive/notes/`，其下只有 `sub/workflow-events.jsonl`
+  与一个 `reviews/` 子目录（**没有** `proposal.md` / `design.md` / `tasks.md` / `specs/`）
 - **When** 运行 `check`
-- **Then** 判据 1 SHALL 判「基准树里该路径**有** entry」⇒ 不授予（不得因「前缀下没有 tree entry」的措辞漏洞放行）
+- **Then** `archive/notes/` **不**被认作到达的 change（判据 2 要求**全部**必需件）
+- **And** stderr **不**出现「`archive/notes/：缺少必需件 proposal.md」这类假阴性
+- ⚠️ 若判据 2 只要求「≥1 个必需件」，本形态会翻成假红（R2 的 B1）
+
+### Scenario: 基准树里同路径是**文件** ⇒ 不授予
+- **Given** 基准树里 `openspec/changes/archive/foo` 是一个 **blob**（文件）
+- **And** head 里 `openspec/changes/archive/foo/` 是一个含必需件的**目录**
+- **When** 运行 `check`
+- **Then** 判据 1 SHALL 判「基准树里该路径**有** entry」⇒ **不授予**
+  （不得因「前缀下没有 tree entry」的措辞漏洞放行，也不得崩溃）
 
 ### Scenario: 基树不可读 ⇒ fail-closed
 - **Given** 无法解析基准 revision 的树（例如浅克隆，且 `merge-base` 本身可解析）
@@ -108,7 +120,7 @@
 - **Then** 退出码非 0，且报出**点名该 revision** 的 finding
 - **And** **不授予**任何归档到达资格（不得静默按「已到达」或「未到达」之一放行）
 
-## Requirement: 只有「base 里不存在**且内容不是白捡**」的归档目录才授予资格（**保留承重守卫**）
+## Requirement: 只有「基准树里没有**且内容不是搬运来的**」的归档目录才授予资格（**保留承重守卫**）
 
 「该 change 出现在本次 diff 里」这一资格的取得，SHALL 满足上一条的**五条**判据
 （其措辞与 `design.md §2 D1` 逐条对齐）；
@@ -117,11 +129,11 @@
 - **修改 / 删除** `<changes_root>/archive/<name>/**` 里**已存在**的文件（基准树里该路径有 entry ⇒ 判据 1 不成立）；
 - 往一个**已存在**的归档目录里**新增**文件（同上）；
 - 把 active change 的**单个文件**移入一个**已存在**的归档目录
-  （如 `git mv changes/z/notes.md → changes/archive/y/notes.md`）——目标目录在基准树里存在 ⇒ 不授予，
+  （如 `git mv changes/z/notes.md → changes/archive/y/notes.md`）——目标目录在基准树里有 entry ⇒ 不授予，
   源 change `z` 不得因此**静默逃检**；
 - **删除** change 目录（非 rename）；
 - 把非 change 目录（如受保护 spec）搬进 `archive/`；
-- **整份复制**一个**仍然存在**的 change 目录（判据 5）；
+- **整份复制**一个仍在的 change 目录，或复制后**改路径 / 改一两个字节 / 删一个文件 / 混多个源**（判据 5）；
 - 把**已存在**的归档目录**改名**（判据 3；判据 5 通常同时命中）。
 
 ### Scenario: 触碰已存在的归档目录不授予资格（`M` / `A` 两种造法）
@@ -135,14 +147,43 @@
 - **When** 运行 `check`
 - **Then** 退出码非 0（`y` 不被授予；`z` 也不得因此绕过）
 
-### Scenario: 把已存在的归档目录**改名**不授予资格（防「白捡现成证据」）
+### Scenario: 把已存在的归档目录**改名**不授予资格
 - **Given** 基准树里已存在 `openspec/changes/archive/2026-09-30-foo/`（证据齐全）
 - **And** 本 PR 只做 `git mv openspec/changes/archive/2026-09-30-foo openspec/changes/archive/2026-10-15-foo`，
   并改动 `src/**`，**没有**产出任何新证据
 - **When** 运行 `check`
 - **Then** 退出码非 0（判据 3 不成立——到达组里有 `old_path` 落在 `archive/**`）
-- **And** 判据 5 通常也同时命中（旧目录的内容指纹 `⊆` 新目录，且旧目录仍按新名存在于 head）
-- ⚠️ 没有这两条判据时，这份**三个月前的现成证据**会被复用 ⇒ 一个零新证据、只改了 `src/**` 的 PR 变绿
+- **And** 判据 5 通常也同时命中
+
+### Scenario: **整份复制现成证据不授予资格**（防 `cp -r` 绕过）
+- **Given** 基准树里已存在归档目录 `openspec/changes/archive/2026-09-30-old/`（证据齐全，**本 PR 原封不动**）
+- **And** 本 PR 把它的**整份内容 `cp`** 到 `openspec/changes/archive/2026-10-15-new/`，
+  只改其中的 `reviews/*.manifest.json`（`change_id` / `head_sha`），并改动 `src/**`
+- **When** 运行 `check`
+- **Then** 退出码非 0（判据 5 不成立：A 里每一个文件既不是新 blob，也不是本次 diff 里改名记录的落点）
+- **And** stderr 点名 `src/**` 与 `require_change_for`
+- ⚠️ 没有判据 5 时，这份**逐字节未变的现成证据**（哈希绑定、`reviewer ≠ author`、grill 正文、三条 stage 门
+  全部成立）会让一个**零新证据**的纯代码 PR 变绿
+
+### Scenario: 复制后**改路径 / 改一个字节 / 删一个文件 / 混源**也 SHALL NOT 授予
+- **Given** 同上的复制构造，但攻击者额外做下列**任一**改动：
+  ① 把某个证据文件**改名或改后缀**（如 `reviews/grill-review.md` → `.txt`）；
+  ② 把 `specs/` 目录换成同名普通文件；
+  ③ 给某个证据文件**加一个字节**，随后用 `manifest build` **重算** manifest 哈希；
+  ④ **删**掉 `specs/` 里的一个文件，随后重算哈希；
+  ⑤ 报告取自 base 的 change `a`、`tasks.md` + `specs` 取自 change `b`；
+  ⑥ 同时 `git mv` 一个**非证据文件**（如 `notes.md`）进新目录，其余整份 `cp`
+- **When** 运行 `check`
+- **Then** 退出码非 0（判据 5 逐文件成立性都被破坏：总有一个文件既不新、也不是本次搬来的）
+- ⚠️ 判据 5 SHALL NOT 依赖「路径」或「哈希是否被重算」——`manifest build` 会从磁盘重算哈希
+  （`src/witnessloop/manifestcmd.py:146-153`），因此**哈希绑定本身不足以**拦住这些改动
+
+### Scenario: 源是**嵌套**归档目录时同样不授予
+- **Given** 基准树里有 `openspec/changes/archive/2026/10-15-old/`（件齐、报告齐）
+- **And** 本 PR 把它**整份 `cp`** 成扁平的新目录 `openspec/changes/archive/2026-10-15-new/`，并改动 `src/**`
+- **When** 运行 `check`
+- **Then** 退出码非 0（判据 5 的扫描面是 `<changes_root>/**` **全量**，不是「扁平 change 目录」）
+- ⚠️ 若把扫描面收窄成「扁平 change 目录 + 相对路径匹配」，本形态会漏（R2 的 A3）
 
 ### Scenario: 基准 revision 与 diff 成员同源
 - **Given** PR 的 base 分支在**分叉点之后**又前进过（`base` ref 的树 ≠ `merge-base` 的树）
@@ -155,7 +196,7 @@
 - **And** 本 PR 执行 `git mv openspec/changes/old-id openspec/changes/archive/2026-10-15-new-id`，并改动 `src/**`
 - **When** 运行 `check`
 - **Then** 退出码非 0（判据 4 不成立：`2026-10-15-new-id` 既不等于 `old-id`、也不以 `-old-id` 结尾）
-- ⚠️ 本条是**拒绝面本身**，其取舍（是否保留判据 4）见 `design.md §8 Q1`——裁定删守卫则本 Scenario 语义反转
+- ⚠️ 本条是**拒绝面本身**，取舍见 `design.md §8 Q1`——裁定删守卫则本 Scenario 语义反转
 
 ## Requirement: 到达集合的用途 —— 归属、幽灵 id 与保护写豁免 SHALL 共用同一份判定
 
@@ -194,8 +235,7 @@
 - **Given** 一个到达的归档目录 `archive/<name>/`，本 PR 同时执行
   `git mv openspec/specs/x.md openspec/changes/archive/<name>/x.md`
 - **When** 运行 `check`
-- **Then** 仍报该记录的「受保护路径被写入，但没有结构化解释事件」
-  （旧侧不在 active change 目录下 ⇒ 不满足豁免的旧侧条件）
+- **Then** 仍报该记录的「受保护路径被写入，但没有结构化解释事件」（旧侧条件不满足）
 
 ### Scenario: 部分搬走的 active change 不得静默消失
 - **Given** 一个到达的归档目录 `archive/<name>/`（本次新建、件齐），
@@ -247,6 +287,11 @@ grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
   它按**磁盘存在性**解析 active 优先、否则 `archive/<name>`（`src/witnessloop/manifestcmd.py:33-48`）；
   本 change SHALL NOT 声称在该处共用，也 SHALL NOT 让 `manifest build` 引入第二套「到达」判据；
 - `check` 的退出码语义 SHALL 不变（非 0 = 未通过）。
+
+⚠️ **有意的行为变化（不是回归，须在 `docs/gate.md §6` 记录）**：
+「**复制式归档**」（`cp` 一份到 `archive/<date>-<id>/` 而**不**删源目录）在本 change 下 SHALL NOT 被授予资格
+（判据 5）。它在改动前**也**不授予（全 `A` ⇒ 无 `R100`），故非回归；
+但对采用该流程的接入方是**可感知的**行为（报错文案从「没有任何 change 目录」变为判据 5 的 finding，且点名两侧路径）。
 
 ### Scenario: 只改代码、什么都不建 —— 仍然红
 - **Given** 一个 PR 只改动 `src/**`，没有新建任何 change 目录、也没有归档到达
