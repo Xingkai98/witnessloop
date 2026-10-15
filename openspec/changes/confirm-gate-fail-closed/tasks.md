@@ -145,7 +145,8 @@
 - [x] D5 全量 `uv run pytest -q` 全绿（本 change **前**实测基线 = **521 passed**；
       ⚠️ **加上本 change 新增的守卫 `tests/test_confirm_gate_docs.py`（12 条）后，全量 = 533**
       ——别拿 521 对账（R6 的 N26）；
-      **实现阶段再增 59 条用例** ⇒ **实测 `592 passed`**，见文末「实测记录（实现期）」）
+      **实现阶段再增 59 条用例** ⇒ **实测 `592 passed`**（见文末「实测记录（实现期）」）；
+      **实现审阅修订轮再增 9 条** ⇒ **实测 `601 passed`**（见文末「实测记录（实现审阅修订轮）」））
 
 ## E. 产出方：模板与命令（`proposal.md` 目标 5）
 
@@ -536,7 +537,7 @@ R8 判 **CONVERGED（设计已收敛，可进停轮）**，明确「**不建议�
     里 1 份有差别** —— **本 change 自己的 `reviews/grill-adversarial.md`（1 → 3 条）**：
     它按对抗轮的习惯在**围栏里**引用带 `## User Confirmation` / `## Open Questions` 的示例片段，
     跳围栏后那些片段不再算小节。⚠️ 该份是 `verify_body=False`（`grill-adversarial` 只要求
-    **证据存在**）⇒ **这 3 条不进 `check`**，方向是**多报**。
+    **证据存在**）⇒ **这 3 条不进判据面**（既不是多报也不是漏报——实现审阅的措辞订正）。
     ⇒ 「211 份 0 影响」在**当时**的语料上成立；本轮新产生的这份对抗报告是其**唯一**例外。
 - **E3 复核（结论：不改）**：`plugin/commands/grill.md` 里两处提及都在**行内 code span**、
   **不在行首**（其一在本行中段、其二前有缩进）⇒ `_HEADING_RE` 根本不把它们当标题
@@ -544,3 +545,48 @@ R8 判 **CONVERGED（设计已收敛，可进停轮）**，明确「**不建议�
 - **G1 的前置已就位**：本 change 自己的 `reviews/grill-design.md` 过新判据 = **0 条**
   （标题本就逐字；停轮答复已按 CQ2 追加）。三份 stage manifest 仍由主流程在**内容冻结点**
   统一建（本文件 G1，**实现会话刻意不建**）。
+
+## 实测记录（实现审阅修订轮 · 依据 `reviews/building-review.md`）
+
+> 实现后独立审阅判 **CHANGES_REQUESTED**（**1 阻塞 + 4 非阻塞**）。下面逐条记落点与实测；
+> **只改了 `evidence.py` 的候选判定（正则 → 线性等价实现）与一条文案**，其余生产面未动。
+
+### 阻塞 1：候选判定正则**指数回溯**（门禁可被一份报告挂住）
+
+- **成因**：规范形态 `^(?:\S+[- ])*Open Questions$` 的 `\S+` 与 `[- ]` **字符集相交**
+  （`-` 既是词内合法字符、又是分隔符）⇒ 每个连字符一条新切分路径 ⇒ **2^(连字符数)**。
+  候选判定对**每个** H2 标题都跑，且**与 Open Questions 无关的标题同样触发**
+  ⇒ `check`（CI）与 `guard`（本地写代码路径）共用的路径会被挂住（同 `guard-crash-exit` 的类别）。
+- **修法**：`_is_open_questions_title` 不再直接跑那条正则，改成
+  **`_strip_trailing_qualifiers`（反向一遍扫描）+ `_is_tail_phrase`（一遍前向扫描）**，
+  **与规范正则逐输入等价**（等价条件与来历写进 `_is_tail_phrase` 的 docstring）。
+- **实测（修前 → 修后）**：45 字 / 22 连字符 **0.34 s** → **0.0004 ms**；53 字 **6.5 s** → **0.0005 ms**；
+  20 002 字 / 10 000 连字符**等于挂住** → **0.0043 ms**。
+- **同一类的第二条路径（本轮实测发现）**：剥尾括号是 O(n²)——每层都从左往右重搜。
+  `Open Questions` + `（a）` × 20 000 ⇒ **19.3 s**；改成反向游标后 **9.0 ms**（线性）。
+- **等价性怎么证**：新增 4 组 oracle 用例（短前缀穷举 / 尾括号形态 / 空白口径 / 随机长输入，
+  合计 **1 024 条**），oracle 就是**规范正则本身**；另跑一次性大扫
+  **124 261 个输入、0 处不一致**（含 `\xa0` / `　` / `\x1c` 等空白边界）。
+  ⚠️ 这条用例**不是形式**：它当场抓出第一版推导的错（前缀只有单独一个 `-` 时被判成候选，
+  而规范正则判非候选）⇒ 补上「末位分隔符前必须有一个词」这一条才通过。
+- **钉子**：`test_a_hyphen_dense_title_is_judged_in_linear_time`（53 字与 20 002 字，阈值 0.05 s）、
+  `test_a_long_run_of_trailing_qualifiers_is_stripped_in_linear_time`、`test_the_equivalence_corpus_is_large_enough`。
+
+### 非阻塞 2–5
+
+- **2 §7.20 指纹**：那块「本轮稳定锚」的**四个值全过期**、且块标签（R3）与表行（R8 整合稿）
+  自相矛盾 ⇒ 已按**实测重算**并改齐（见 `design.md §7.20`；`design.md` 自身是本节唯一没有
+  稳定锚的那份，口径未变）。⚠️ **本节的守卫仍绿**（`tests/test_confirm_gate_docs.py` 12 passed）——
+  它不读指纹值，只按正则数行；新增/修改的指纹行不得破坏
+  `test_loose_caliber_identity` 的恒等式。
+  ⚠️ **再动这四份文档中的任何一份都会重新让它失效** ⇒ 仍由 **G7** 在每次收尾时补记。
+- **3 接入方 fixture 恒 skip**：改为**冻结副本** `tests/fixtures/adopter-grill-design-nonverbatim.md`
+  （逐字节取自 `/home/happy/wl-review-a/…`，`sha256 7a520c3e…`），用例读它 ⇒
+  **CI 上真跑**（全量 **0 skipped**）。不放进 change 的 `reviews/`（会触发孤儿报告红）。
+- **4 文案与筛选错位**：提示文案里的字样改成 **单数 `Open Question`**（= `_missing_open_questions_message`
+  的实际筛选口径，也是 `spec.md` D4 的写法）；`design.md §D4` 引的那句同步改齐。
+- **5 两条副作用缺「有无提示」断言**：补 `test_the_two_known_title_side_effects_differ_in_whether_the_hint_appears`
+  （双空格 ⇒ **无**提示；尾部全角冒号 ⇒ **有**提示），另补
+  `test_the_hint_names_the_substring_that_is_actually_filtered_on`（钉阻塞项 4）。
+
+⇒ 全量 `uv run pytest -q`：**592 → 601 passed**（新增 9 条：2 性能 + 1 输入集规模 + 4 等价性 + 2 提示）。
