@@ -114,10 +114,13 @@ uvx --from "git+https://github.com/Xingkai98/witnessloop@<ref>" \
    **指向基准树里现成 change 的符号链接**，链接 blob 是**新**的（(a) 成立），而证据门读的是**解析后的内容**
    （逐字节等于受害者的）⇒ 不处理符号链接，判据 5 **整体失明**。
    解析口径 SHALL 与 `contract.resolve_report_path` 同款（`Path.resolve()` + `pathutil.is_within`，展开 `..` 与符号链接）：
-   - 目标**落在 `A` 之内** ⇒ 取**目标文件**的 blob 参与比对，并把目标路径**并入 `Ev(A)`**（递归到不动点，配 visited 集防环）；
+   **存在性与字节一律按 head 树判定**（`Path.resolve()` **只用于路径规范化**，不用于「文件是否在」）。
+   - 目标**落在 `A` 之内** ⇒ 取**目标条目**的 blob 参与比对（**目标是目录 ⇒ 其下全部文件逐个比对**，等价于把该目录 `cp` 进来），
+     并把目标路径**并入 `Ev(A)`**（递归到不动点，配 visited 集防环）；
    - 目标**落在 `A` 之外** ⇒ 取**该目标路径在 head 树里的 blob** 参与比对（**与 `cp` 进来同结论**：
      字节落在 `<changes_root>/**` 就命中 (a)、否则放行——这正是本判据的模型，**不额外制造误伤**，见 R7 的 M1）；
-   - 目标**未被 git 跟踪 / 悬空**，或该条目是 **gitlink（`160000`）** ⇒ **fail-closed 不授予**（其内容不在本仓树里，无法核验）。
+   - 目标**未被 git 跟踪 / 悬空**、**解析到仓根之外**，或该条目是 **gitlink（`160000`）** ⇒ **fail-closed 不授予**（其内容不在本仓树里 / 无法核验）。
+   ⚠️ **对 `A` 之外的链接，`(b)` 的判定对象是「链接自身所在的路径」**（等价于「把解析后的内容 `cp` 到该路径」）；**目标路径本身是否为本次改名落点 SHALL NOT 参与判定**（否则「先把受害者的报告在它自己的目录内原地改名、再链接过去」会被读成绿，见 R8 的 `q1`）。
    ⚠️ **SHALL NOT 一刀切「不许符号链接」**（R6 的 M1 实测：那是**合法绿色样态**被误伤）：
    `reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**）是本仓既有钉绿布局
    （`tests/test_orphan_reports.py:273` `test_symlinked_report_is_not_an_orphan`），真 CLI 今天判绿。
@@ -381,7 +384,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | R5 | 旧行为被无意改动 | §5.2 回归面逐条点名；纯 move 与既有否定面各有用例；§5.2 第 6 行点名**必须改写**（5 条）与**不要误改**（3 条）的既有测试 |
 | R6 | **第 5 条误伤**（逐字节撞车 ⇒ fail-closed 拒绝） | 误伤面已明写（§D1 第 5 条）：**空文件已豁免**；触发面是「极短样板文件 / 从兄弟 change 复制的 spec」；finding **同时点名两侧路径**；见 §8 Q4。用例正面钉住「合法 move / move+重建 manifest / 出生即归档不被误伤」（R2 已用模拟器 + 真 CLI 复核这三条） |
 | R7 | 第 5 条让「拿旧 change 复制成新 change 再改内容」的接入方踩雷 | ⚠️ **订正（本轮实测）**：判据是**逐证据文件**的（`tasks.md` / `specs/**` / `reviews/**`），
-所以「复制后只改一半」**仍会被拒**——必须**每一份**被复制的证据文件都重写（或改成 `git mv`）。
+所以「复制后只改一半」**仍会被拒**——必须**每一份**被复制的证据文件都**至少动一个字节并重算 manifest**（= §D1 第 5 条的**能力天花板**那一档）或改成 `git mv`。
 对「**复制式归档**」（`cp` 而不删源）是**有意的行为变化**（今天该形态也红：全 `A` ⇒ 无 `R100`），见 §8 Q4；
 另外**符号链接的 fail-closed 残余**（目标未跟踪 / 悬空 / gitlink）是**今天绿 → 本 change 红**，已登记 |
 
@@ -436,6 +439,8 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 - **删除** change 目录（`D`，非 rename）⇒ 仍报「change 目录不存在」。
 - 归档 target 的 `change_id` 别名行为不变。
 - `archive/` 本身不是 change id。
+- ⚠️ **本 change 明写的行为变化**（须在实现期落成用例）：含**未跟踪链接 / 悬空链接 / gitlink** 的到达目录
+  **改动前判绿、本 change 判红**（fail-closed；见 §D1 第 5 条与 `spec.md` 的「有意的行为变化 3」）。
 - **必须改写的既有测试**（5 条；改前绿是**旧语义**下的绿）：
   1. `tests/test_archive_awareness.py:274` `test_rebuilding_a_moved_manifest_in_the_same_diff_is_rejected`
      —— 断言「move + 重写被 move 的 manifest（`R<100`）⇒ 红 + 幽灵 id」，**这正是本 change 要修好的形态 ii**
@@ -497,7 +502,7 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 | N19 | **复制 + 报告挪出 `reviews/`**（放 change 目录根）+ 手写 manifest 指过去（R3 的 A1，真 CLI 曾绿） | 红：第 5 条（`Ev(A)` 含**每份 manifest 的 `report_path` 目标**） |
 | N20 | **复制 + `specs` 换成同名普通文件**、或 **`tasks.md` 做成目录**并把借用内容塞进去（R3 的 A3） | 红：第 5 条（`Ev(A)` 取 artifact 路径**整体**） |
 | N21 | **复制 + 给 `Ev(A)` 里每一个文件各加一个字节** + 官方 `manifest build`（R3 的 A2，真 CLI 绿） | ⚠️ **不红 —— 能力天花板**（§D1 第 5 条明写；用例只钉「已知行为」，见 §8 Q4）。**若用户选「再加一档强度」，本行改判红** |
-| N22 | **符号链接**（R5 的 M1 + R6 的 M1）：① 把 `tasks.md` / `specs` / 报告做成**指向基准树里现成 change 的符号链接**；② 同类的**悬空链接** / **gitlink**（`160000`） | ① 红（按解析后的内容比对 ⇒ 指向 `changes_root` 里现成 change ⇒ 既非新 blob、也非本次改名落点；**逃出 `A` 的链接直接 fail-closed**）；② 红（fail-closed）。**对照（必须绿）**：`reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**、且目标是本次改名落点）⇒ 第 5 条不命中（本仓既有钉绿布局 `tests/test_orphan_reports.py:273`） |
+| N22 | **符号链接**（R5 的 M1 + R6 的 M1）：① 把 `tasks.md` / `specs` / 报告做成**指向基准树里现成 change 的符号链接**；② 同类的**悬空链接** / **gitlink**（`160000`） | ① 红（按解析后的内容比对 ⇒ 指向 `changes_root` 里现成 change ⇒ 既非新 blob、也非本次改名落点）；② 红（fail-closed）。**对照（必须绿）**：`reviews/alias.md → reviews/grill-review.md`（指向 `A` **之内**、且目标是本次改名落点）⇒ 第 5 条不命中（本仓既有钉绿布局 `tests/test_orphan_reports.py:273`） |
 | — | **把受保护文件搬进到达目录**（`git mv openspec/specs/x.md → archive/<到达名>/x.md`） | 红（仍要解释事件，M-D5 钉住） |
 | — | 归档时**顺带改 change id**（`git mv changes/old-id archive/2026-10-15-new-id`） | 红（第 4 条）——⚠️ **今天亦红**（`archive_grant` 的名识别同样不满足）⇒ 这是**明写的拒绝面**、**不是本 change 新引入的**；取舍见 §8 Q1（选 (b) 则变绿） |
 

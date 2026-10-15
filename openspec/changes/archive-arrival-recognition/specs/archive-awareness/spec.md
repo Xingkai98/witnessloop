@@ -60,16 +60,19 @@
    3. `<A>/reviews/**` 下的全部文件。
 
    ⚠️ **枚举 SHALL 覆盖 `git ls-tree -r` 的全部非 tree 行**（含 `160000 commit` 的 gitlink 条目，R7 的 M2 实测：
-   只枚举 blob 会让「`N22 ②` gitlink ⇒ 红」**不可满足**）；`<A>` 下（或 `Ev(A)` 里）出现 gitlink ⇒ fail-closed。
+   只枚举 blob 会让「`N22 ②` gitlink ⇒ 红」**不可满足**）；**`<A>` 下任何位置出现 gitlink ⇒ fail-closed**（取宽的一侧）。
 
    ⚠️ **符号链接 SHALL 按「解析后的内容」参与 (a)/(b) 比对**（**只作用于 `Ev(A)` 的条目**）。
    git 把符号链接存成「链接文本」的 blob：只看链接自身时，把 `tasks.md` / `specs` 做成
    **指向基准树里现成 change 的符号链接**，链接 blob 是「新」的，而证据门读的是**解析后的内容**（逐字节复用）
    ⇒ 不处理符号链接，本判据整体失明。
    解析口径 SHALL 与 `contract.resolve_report_path` 同款（`Path.resolve()` + `pathutil.is_within`）：
-   目标**在 `A` 之内** ⇒ 按**目标文件**的 blob 比对，且目标路径 SHALL 并入 `Ev(A)`（递归到不动点，visited 防环）；
+   **存在性与字节一律按 head 树判定**（`Path.resolve()` **只用于路径规范化**）。
+   目标**在 `A` 之内** ⇒ 按**目标条目**的 blob 比对（**目标是目录 ⇒ 其下全部文件逐个比对**，等价于把该目录 `cp` 进来），
+   且目标路径 SHALL 并入 `Ev(A)`（递归到不动点，visited 防环）；
    目标**在 `A` 之外** ⇒ 按**该目标路径在 head 树里的 blob** 比对（与 `cp` 进来同结论）；
-   目标**未跟踪 / 悬空**、或条目是 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）。
+   目标**未跟踪 / 悬空**、**解析到仓根之外**、或条目是 **gitlink**（`160000`）⇒ `A` SHALL NOT 被授予资格（fail-closed）。
+   ⚠️ 对 `A` **之外**的链接，`(b)` 的判定对象 SHALL 是**链接自身所在的路径**（等价于「把解析后的内容 `cp` 到该路径」）；**目标路径本身是否为本次改名落点 SHALL NOT 参与判定**。
    ⚠️ SHALL NOT 一刀切禁止符号链接：`reviews/alias.md → reviews/grill-review.md`（指向 `A` 之内）
    是本仓既有钉绿布局（`tests/test_orphan_reports.py:273`），今天真 CLI 判绿。
 
@@ -95,7 +98,7 @@
   属本 change 的**非目标**（既有边界：hash 绑定证「证据之间没漂移」，**不防伪造**）。
 - **完全旁路**：本判据的效力**依赖「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提**。
   现成证据的字节若在基准树里**另有副本**（发布副本 `docs/shipped/**`、仓内镜像、`changes_root` 迁移遗留的旧路径），
-  则那些字节**落在 `changes_root` 之外 ⇒ 分句 (a) 单独即豁免**（与是 `git mv` 还是普通 `cp` 进来**无关**，
+  则那些字节**落在 `changes_root` 之外 ⇒ 分句 (a) 单独即豁免**（与是 `git mv`、普通 `cp`，还是 `ln -s` 链接进来**无关**，
   也**不需要**任何 rename 记录）⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §6`。
 - **误伤面**：A 里某个**非空证据文件**与 base 的 `<changes_root>/**` 下某文件**逐字节相同**、且它不是本次搬来的
   ⇒ **fail-closed 拒绝**（finding SHALL **同时点名两侧路径**）。现实来源：从兄弟 change 原样复制来的
@@ -322,8 +325,8 @@ grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
 - **When** 分别运行 `check`
 - **Then** 两者的判绿**判红**结论在**证据门槛维度**相同
 - ⚠️ **限定（与 `D2` 同等）**：本 Scenario SHALL NOT 被读成「任何维度都相同」。已知例外：① `stale` 维度
-  （`stale_exempt_paths` 对 `archive/**` 整块豁免）；② 本 change 明写的**内容来源边界**（第 5 条的符号链接 /
-  gitlink / 悬空目标 fail-closed；`<changes_root>` 之外另有副本时第 5 条零命中）。
+  （`stale_exempt_paths` 对 `archive/**` 整块豁免）；② **第 5 条（内容来源）整体**（以下仅为举例）：符号链接 / gitlink / 悬空目标 fail-closed；
+  `<changes_root>` 之外另有副本时第 5 条零命中；原样复制兄弟 change 的 `specs/**` 时 archive 侧判红而 active 侧判绿。
 
 ## Requirement: 既有行为不变（**回归护栏**）
 
