@@ -68,8 +68,14 @@ def test_deleting_an_evidence_file_still_needs_an_event(repo: Path, cli):
     assert "受保护路径被写入" in err
 
 
-def test_modifying_a_file_inside_archive_still_needs_an_event(repo: Path, cli):
-    """archive/ 不是法外之地：里面的 manifest 被改，仍须解释事件。"""
+def test_modifying_an_archived_manifest_in_the_archiving_diff_is_exempt(repo: Path, cli):
+    """**语义变化**：move 与「改被 move 的 manifest」在**同一个 diff range** 内 ⇒ 免解释事件（绿）。
+
+    这就是接入方的**真实形态 ii**（收尾次序：先重建 manifest、后 move ⇒ `R<100`）——
+    旧实现只豁免逐文件 `R100`，于是这类 PR 每个 manifest 报两条「受保护写入没有解释事件」。
+    豁免面仍然收窄：**已存在**（base 里就在）的归档目录里的改动**照旧要事件**，
+    见 `test_archive_awareness.py::test_rebuilding_an_already_archived_manifest_needs_one_event_each`。
+    """
     _repo_with_a_complete_change(repo, cli)
     _archive(repo)
 
@@ -77,11 +83,11 @@ def test_modifying_a_file_inside_archive_still_needs_an_event(repo: Path, cli):
     archived.write_text(
         archived.read_text(encoding="utf-8") + "\n", encoding="utf-8"
     )
-    commit_all(repo, "偷改归档里的 manifest")
+    commit_all(repo, "归档 + 改写被 move 的 manifest（同一 range）")
 
     code, _, err = check(repo, cli)
-    assert code == C.EXIT_FAIL
-    assert "受保护路径被写入" in err
+    assert code == C.EXIT_PASS, err
+    assert "受保护路径被写入" not in err
 
 
 def test_renaming_within_the_active_change_still_needs_events(repo: Path, cli):

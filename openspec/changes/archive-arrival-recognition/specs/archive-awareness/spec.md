@@ -100,7 +100,7 @@
 - **完全旁路**：本判据的效力**依赖「`<changes_root>/**` 是存放 change 证据的唯一地方」这一前提**。
   现成证据的字节若在基准树里**另有副本**（发布副本 `docs/shipped/**`、仓内镜像、`changes_root` 迁移遗留的旧路径），
   则那些字节**落在 `changes_root` 之外 ⇒ 分句 (a) 单独即豁免**（与是 `git mv`、普通 `cp`，还是 `ln -s` 链接进来**无关**，
-  也**不需要**任何 rename 记录）⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §6`。
+  也**不需要**任何 rename 记录）⇒ 本判据零命中。SHALL 登记进 `docs/gate.md §7`（能力边界）。
 - **误伤面**：A 里某个**非空证据文件**与 base 的 `<changes_root>/**` 下某文件**逐字节相同**、且它不是本次搬来的
   ⇒ **fail-closed 拒绝**（finding SHALL **同时点名两侧路径**）。现实来源：从兄弟 change 原样复制来的
   `specs/**` 文件、内容就是 `PASS\n` 这类**极短样板**的报告、被原样复制的 `tasks.md` 样板、
@@ -344,7 +344,7 @@ grill 报告正文判据、以及 `code_hits` 触发的 stage 集合。
   本 change SHALL NOT 声称在该处共用，也 SHALL NOT 让 `manifest build` 引入第二套「到达」判据；
 - `check` 的退出码语义 SHALL 不变（非 0 = 未通过）。
 
-⚠️ **有意的行为变化（不是回归，须在 `docs/gate.md §6` 记录）**：
+⚠️ **有意的行为变化（不是回归，须在 `docs/gate.md §7`（能力边界） 记录）**：
 1. 「**复制式归档**」（`cp` 一份到 `archive/<date>-<id>/` 而**不**删源目录）在本 change 下 SHALL NOT 被授予资格
    （判据 5）。它在改动前**也**不授予（全 `A` ⇒ 无 `R100`），故非回归；
    但对采用该流程的接入方是**可感知的**行为（报错文案从「没有任何 change 目录」变为判据 5 的 finding，且点名两侧路径）。

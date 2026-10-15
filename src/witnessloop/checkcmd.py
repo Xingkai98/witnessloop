@@ -70,11 +70,30 @@ def run(args: argparse.Namespace) -> int:
         evidence_patterns=pol.stale_exempt_paths,
     )
 
-    # 本次 diff 触及的 change：**active ∪ 归档授予**（change archive-awareness / issue #21）。
-    # 归档 move 把那个 change「归属」回本次 diff——**不豁免任何东西**：它照旧走下面同一套门禁，
-    # 只是路径落在 `archive/<name>/` 下、`change_id` 多一个别名（D8）。⚠️ 以**目录**为键（列表）：
-    # 同一个 id 可以同时来自 active 与归档，两份都要校验。
-    targets = contract.change_targets(root, pol, changes)
+    # 本次 diff 触及的 change：**active ∪ 本次到达的归档目录**（change archive-arrival-recognition / #26）。
+    # ⚠️ `base_rev` 必须与 `changed_files` 的 `base...head` **同源** ⇒ 用 `merge-base(base, head)`
+    # （不是 `base` ref 自身的树）：否则「到达判定」与「diff 成员」会在 base 分支前进后对不上。
+    # 树读不出来 ⇒ **fail-closed**（报 finding、不授予），与 merge-base 求不出的既有处置同向。
+    merge_base = gitutil.merge_base(root, base, head)
+    if merge_base is None:
+        print(
+            f"check：未通过 ✗ —— 无法求出 {base} 与 {head} 的 merge-base："
+            "到达判定与 diff 成员都要求它（fail-closed，不等同于放行）",
+            file=sys.stderr,
+        )
+        return C.EXIT_FAIL
+    view = gitutil.GitTree(root)
+    try:
+        arrivals = contract.archive_arrivals(changes, pol, view, merge_base, head)
+        targets = contract.change_targets(root, pol, changes, view, merge_base, head)
+        # 近失（像归档目录但缺必需件）：**只**用来把文案写准（R3 的 E-2），不参与任何判定。
+        near_misses = contract.near_miss_archives(pol, view, merge_base, head)
+    except gitutil.GitError as exc:
+        print(
+            f"check：未通过 ✗ —— 无法读取 {merge_base}/{head} 的树（到达判定 fail-closed）：{exc}",
+            file=sys.stderr,
+        )
+        return C.EXIT_FAIL
     change_ids = sorted({target.change_id for target in targets})
     # building-review-gate：**本次 diff 落了实现**（触及 require_change_for）⇒ 每个被触及的 change
     # 都要有实现后的独立审阅证据。触发用**客观的 diff 事实**，不用「tasks 是否勾选」那种自声明
@@ -118,8 +137,8 @@ def run(args: argparse.Namespace) -> int:
                 reason="本 change 改了受管控代码，必须有实现后的独立审阅证据（review-loop）",
             )
     findings += _tests_execution_point(root, pol)
-    findings += _require_change(pol, changes, change_ids)
-    findings += _protected_writes(root, pol, changes)
+    findings += _require_change(pol, changes, change_ids, near_misses)
+    findings += _protected_writes(root, pol, changes, arrivals)
 
     _report(base, head, changes, targets, findings)
     return C.EXIT_FAIL if findings else C.EXIT_PASS
@@ -194,7 +213,7 @@ def _code_hits(pol: policy_mod.Policy, changes) -> list[str]:
     )
 
 
-def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contract.Finding]:
+def _require_change(pol: policy_mod.Policy, changes, change_ids, near_misses=()) -> list[contract.Finding]:
     """改了代码就必须挂一个 change 目录。
 
     没有这条时，`check` 只保证「**如果你**动了 change 目录/受保护路径，它要齐备」，
@@ -212,6 +231,13 @@ def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contrac
         return []
 
     shown = ", ".join(hits[:5]) + ("…" if len(hits) > 5 else "")
+    hint = (
+        f"⚠️ {pol.archive_root}/ 下有**新目录但不是 change 目录**（缺必需件，所以不算到达）："
+        + "、".join(near_misses)
+        + "。补上缺的必需件即可。"
+        if near_misses
+        else ""
+    )
     return [
         contract.Finding(
             hits[0],
@@ -220,12 +246,35 @@ def _require_change(pol: policy_mod.Policy, changes, change_ids) -> list[contrac
             f"也没有一次把它归档进来的 `git mv {pol.changes_root}/<id>/… {pol.archive_root}/…`"
             "（**归档 move 也算「挂了 change」**——那个 change 会按归档路径走同一套证据门禁）。"
             "补一个 change 目录（或补上那条归档 move），"
-            "或把该路径从 policy.require_change_for 里移除。",
+            "或把该路径从 policy.require_change_for 里移除。"
+            + hint,
         )
     ]
 
 
-def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contract.Finding]:
+def _archive_move_exempt(change, pol: policy_mod.Policy, arrivals) -> bool:
+    """该记录是不是「本次到达的搬移」⇒ 免解释事件。
+
+    两个条件**缺一不可**（R1 的 M-D5）：
+
+    1. `new_path` 落在某个**到达目录**下（= 属于到达组）；
+    2. `old_path` 落在 `<changes_root>/<active-id>/` 下（源在 **active** change 目录里——
+       **不能**只看向新侧：那会把「把 `openspec/specs/x.md` 移进到达目录」也豁免掉）。
+
+    与旧实现（逐文件 `R100`）的差别：`R<100`（如重建过的 manifest）也免——那正是收尾次序的必然产物。
+    """
+    if not change.old_path:
+        return False
+    root = pol.changes_root.rstrip("/")
+    archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    old = pathutil.normalize(change.old_path)
+    if not old.startswith(root + "/") or contract.under_path(old, archive_root):
+        return False
+    new = pathutil.normalize(change.path)
+    return any(contract.under_path(new, arrival.directory) for arrival in arrivals)
+
+
+def _protected_writes(root: Path, pol: policy_mod.Policy, changes, arrivals) -> list[contract.Finding]:
     """D5 + D6：受保护路径的写入必须有结构化解释事件。
 
     两类受保护路径，规则差一条：
@@ -249,10 +298,10 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes) -> list[contr
 
     findings: list[contract.Finding] = []
     for change in changes:
-        # 归档 = 把已审的 change 从 active 挪进 archive/ 的**纯改名**，是簿记动作，
-        # 不是受保护写入。豁免面刻意收窄（见 contract.is_archive_move）：
-        # 带走内容改动的移动、以及 archive 里的删改，仍都要解释事件。
-        if contract.is_archive_move(change, pol.changes_root):
+        # 到达 = 把 change 搬进一个**本次新到达**的归档目录（`R100` 与 `R<100` 都算），
+        # 是簿记动作，不是受保护写入。豁免面刻意收窄（见 `_archive_move_exempt`）：
+        # 源不在 active change 目录里、以及对**已存在**归档目录的删改，仍都要解释事件。
+        if _archive_move_exempt(change, pol, arrivals):
             continue
 
         # 每个变更文件贡献 1~2 个「待解释的路径」：新路径（写入），

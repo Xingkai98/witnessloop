@@ -136,14 +136,19 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 **不需要**手写解释事件；删改证据文件仍然要。边界见
 [docs/gate.md §5.1](docs/gate.md)。
 
-**归档感知**（issue #21）：归档 move 也**只会**做一件事——把那 change「归属」回本次 diff
+**归档感知**：把 change 搬进 `openspec/changes/archive/` 也**只会**做一件事——把那 change「归属」回本次 diff
 （`require_change_for` 不再对它误报、`manifest build` 能解析归档目标、`events` 扫得到归档目录）。
 它**不豁免任何东西**：归档态与 active 走**同一套**证据门禁，归档 PR **也会红**（uniform）。
+（`archive-arrival-recognition` / issue #26 起，「到达」按**目录级事实**判：`git mv` 过来（**带内容改动也行**）
+与**直接新建在 `archive/` 下**都认；但**搬运现成证据**（整份 `cp`、复制后改路径/改一处/混源、符号链接到既有 change）
+**不授予**——它的两条已知边界见 `docs/gate.md §7`。）
 三条要记住的操作边界：
 
-- **归档 move 必须是纯改名**：同一个 diff 里**不得**同时改写被 move 的文件（否则 git 报 `R<100`，
-  那次移动就不再算归档、被搬走的 active 目录会以**幽灵 id**回来，且一条改写要吃**两条**解释事件）。
-  推荐顺序：**① 内容（实现 + 收尾）→ ② 在 active 态产证据 → ③ `git mv` 归档放最后**。
+- **归档时带内容改动也可以**（issue #26 放宽）：move 与「改写被 move 的文件」（含在归档态重建 manifest，
+  git 报 `R<100`）同时在同一个 diff 里**照样算到达**，不再产生幽灵 id。推荐顺序仍是
+  **① 内容（实现 + 收尾）→ ② 在 active 态产证据 → ③ `git mv` 归档放最后**（省事），但不再强制。
+- **不要「搬」现成证据**：把别的 change 的证据整份 `cp`/改名到新归档目录、或做成指向它的**符号链接**
+  ⇒ 不授予（会报「没有任何 change 目录」）。
 - **归档前的 manifest 不必重建**：归档态 manifest 的 `change_id` 接受「归档目录名」与**源 id**
   两个名字，两种归档命名（`archive/<id>`、`archive/<date>-<id>`）都算数。
 - **要改归档后的证据** ⇒ 放到**不含该归档 move** 的后继 diff 里（那会是覆盖 = 每条一条解释事件）。
