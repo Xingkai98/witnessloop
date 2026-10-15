@@ -126,7 +126,8 @@ def _content_provenance_ok(
     rev: str,
     directory: str,
     base_blobs: set[str],
-    rename_dests: set[str],
+    moved_content: set,
+
     manifest_glob: str,
 ) -> bool:
     """判据 5：`Ev(A)` 里**实际交付的每个文件**都必须是「新内容」或「本次搬过来的」。
@@ -186,10 +187,16 @@ def _content_provenance_ok(
 
     seen_paths: set[str] = set()
     compared: set[str] = set()
+    # ⚠️ 硬上限（实现审阅的 H6）：`ln -s .. A/specs/l` 这类**自引用目录链接**会让 `seen` 每轮都变
+    # （`A/specs/l/l/l/...`）⇒ visited 集永远不命中 ⇒ 展开不终止（CI 挂死）。⇒ 超限 **fail-closed**。
+    budget = 1024
     # 队列项 = (`seen`：门禁看见的逻辑路径, `src`：内容所在的路径)。
     # ⚠️ 两者必须分开：**逻辑路径**决定「这是不是一份 manifest / 报告」（glob）；**内容路径**决定字节。
     queue: list[tuple[str, str]] = [(path, path) for path in sorted(roots)]
     while queue:
+        budget -= 1
+        if budget < 0:
+            return False
         seen, src = queue.pop()
         if seen in seen_paths:
             continue
@@ -212,7 +219,7 @@ def _content_provenance_ok(
             # (b) 的判定对象：目标**在 A 之内** ⇒ 目标自己的路径（合法 move 的目标是改名落点）；
             # 逃出 A ⇒ **看见的路径**（R7/spec：等价于「把内容 `cp` 到该路径」）。
             judge_path = final if under_path(final, directory) else seen
-            if _is_reused(entry.sha, judge_path, base_blobs, rename_dests):
+            if _is_reused(entry.sha, judge_path, base_blobs, moved_content):
                 return False
         if is_manifest(seen):
             try:
@@ -226,12 +233,15 @@ def _content_provenance_ok(
     return True
 
 
-def _is_reused(sha: str, path: str, base_blobs: set[str], rename_dests: set[str]) -> bool:
-    """这份内容是不是「基准树里已有、且不是本次搬过来的」⇒ 白捡。"""
+def _is_reused(sha: str, path: str, base_blobs: set[str], moved_content: set) -> bool:
+    """这份内容是不是「基准树里已有、且**不是本次原样搬过来的**」⇒ 白捡。
+
+    (b) 用 `(路径, 源侧 blob)` 二元组判：同一条改名记录必须**内容未变**才算「搬过来的」（H5）。
+    """
     return (
         sha != EMPTY_BLOB_SHA     # 空文件豁免
         and sha in base_blobs
-        and pathutil.normalize(path) not in rename_dests
+        and (pathutil.normalize(path), sha) not in moved_content
     )
 
 
@@ -251,9 +261,18 @@ def archive_arrivals(
     archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
     required = tuple(a for a in policy.required_artifacts if a.strip() and a.strip() != ".")
     base_blobs = {row.sha for row in view.walk(base_rev, root)}
-    rename_dests = {
-        pathutil.normalize(change.path) for change in changes if change.status[:1] in ("R", "C")
-    }
+    # **(b) 的判定用「内容未变的搬移」**：`(new_path, 源侧 blob)` 二元组。
+    # ⚠️ 只看「落点**路径**是不是改名记录」会被洗白（实现审阅的 H5）：把一条与借来文件 ≥50% 相似的
+    # base 文件 `git mv` 到证据路径、再把内容覆盖成借来的字节 ⇒ 路径是改名落点、而字节是别人的。
+    # 要求「落点的 blob **等于源侧的 blob**」（= 内容确实搬过来了）才免；`R<100` 的字节已变，
+    # 由 (a)（新内容）兜——形态 ii 重建的 manifest 走的正是 (a)。
+    moved_content: set[tuple[str, str]] = set()
+    for change in changes:
+        if change.status[:1] not in ("R", "C") or not change.old_path:
+            continue
+        old = view.entry(base_rev, pathutil.normalize(change.old_path))
+        if old is not None:
+            moved_content.add((pathutil.normalize(change.path), old.sha))
 
     arrivals: list[Arrival] = []
     for child in view.children(head_rev, archive_root):
@@ -284,7 +303,7 @@ def archive_arrivals(
             continue
         # 判据 5：内容来源（`Ev(A)` 逐项：新内容 or 本次搬来的）。
         if not _content_provenance_ok(
-            view, head_rev, directory, base_blobs, rename_dests, policy.review_manifest_glob
+            view, head_rev, directory, base_blobs, moved_content, policy.review_manifest_glob
         ):
             continue
         sources = {

@@ -26,20 +26,17 @@
 
 ## Verdict
 
-**CHANGES_REQUESTED（Round 3 复验后仍为此）**
+**CHANGES_REQUESTED（Round 4 复验后仍为此）**
 
-- **Round 1 的 H1、Round 2 的 H2 均已修复** ✓（两条原构造复跑：均拒绝）；**M2 / M4** 已修；
-  battery **`与设计预期不符：0/20`**；Round 2 的 V1–V5 现在全红；`pytest` 629 passed。
-- 但同一个根因（`Ev(A)` 的归属**由路径推导**，而符号链接会把路径「改名」）还有两个未堵的形状，
-  两条都**端到端可复现**、借来的字节**一个都没改**、`check：通过 ✓`：
-  - **H3（高危）**：`reviews -> _r`（**目录**符号链接）时，`_r/*.manifest.json` 的**看见路径**变成
-    `_r/...` ⇒ 不再被认成 manifest ⇒ 它 `report_path` 指向的 `A/stolen/` 里那三份**逐字节借来**的
-    审阅报告**永不入比对集**（`contract.py:158-176, 204, 210`）。
-  - **H4（中危）**：符号链接的目标落在 **`A` 之外**且是**目录**时，只比那条目的 **tree sha**
-    （`contract.py:199`）——tree sha 恒不在 `base_blobs` 里 ⇒ **目录内容从不展开** ⇒
-    `A/specs -> ../<现成归档 change>/specs` 把整棵 specs 借来也判绿（`spec.md:74` 要求「与 `cp` 进来同结论」）。
-- 低危：Round 2 点名的死用例 `_disabled_alias_order_case` **仍在**（并仍调用已删除的 `_targets`），
-  与作者的「已删除」声明不符。
+- **Round 1 的 H1、Round 2 的 H2、Round 3 的 H3/H4 均已修复** ✓（四个原构造复跑：全部拒绝）；
+  **M2 / M4** 已修；battery **`与设计预期不符：0/20`**；Round 2 的 V1–V5、Round 3 的 V6–V8 均判红；
+  `pytest` **631 passed**。
+- 但判据 5 的 **(b) 判定只认「落点路径」、不认「落点内容」**，于是有一条**不需要任何符号链接**的洗白：
+  `git mv <一个与借来文件 ≥50% 相似的 base 文件> <证据路径>`（⇒ 该路径进 `rename_dests`）**再**把内容
+  覆盖成借来的字节 ⇒ **三份逐字节未改的审阅报告**全部过关，`check：通过 ✓`（**H5**，高危；
+  `contract.py:212-215` 的 `_is_reused`）。
+- 另有一条**不终止**：到达目录里放一个**自引用的目录符号链接**（`ln -s .. A/specs/l`）⇒
+  `check` **永不返回**（`seen` 每轮都变、`seen_paths` 去重失效；`contract.py:187-208`）——CI 直接挂死（**H6**，中危）。
 
 ---
 
@@ -755,3 +752,167 @@ $ /home/happy/wl-wt/archive-arrival-recognition/.venv/bin/python /tmp/rev26/vari
    在遍历里**只**用「逻辑路径」做归属/glob/(b) 判定、用「内容路径」只做读取，两者**永不混用**；
    并补一条**属性式**回归（对同一份 `A`，任意地在 `A` 内插入 `ln -s` 不应改变判定结果）——
    否则下一轮还会在第四个形状上复现。
+
+---
+
+# Round 4（复验）
+
+**范围**：复核作者声明的 H3/H4 + 低危修复，并对新实现（`seen` / `src` / `follow` 三个新概念）再找缝。
+作者声明一律当**待验证断言**。
+
+**跑了**：
+
+1. `.venv/bin/pytest -q` → **631 passed**（29.4s；Round 3 是 629，多出的 2 条正是 `F15/F16`）。
+2. `/tmp/rev26/battery.py` → 末行 **`与设计预期不符：0/20`**。
+3. `/tmp/rev26/variants2.py`（Round 2 的 V1–V5）→ **5/5 全红**。
+4. `/tmp/rev26/variants3.py`（Round 3 的 V6–V8）→ **3/3 全红**（V7/V8 的 `check` 输出已是「`0 个 change 目录`」，即到达被**判据 5** 拒，不再靠证据门兜底）。
+5. **新造 5 条变体**（`/tmp/rev26/variants4.py`，全新仓）+ **1 条无符号链接的洗白**（`/tmp/rev26/h5_launder.py`）。
+6. `F15/F16` 的读码 + 回退变异分析。
+
+---
+
+## R4-① 作者声明的修复：逐条复核
+
+| # | 声明 | 复核 | 结论 |
+|---|---|---|---|
+| **H3+H4 同一根因** | 队列 `(seen, src)`；新增 `follow()` 跟链到不动点（悬空/gitlink/逃出仓根/过深 ⇒ fail-closed）；目录展开保留 `seen` 前缀；`judge_path` = 目标在 `A` 内 ⇒ 目标自身路径、逃出 ⇒ `seen`；manifest 正文按 `follow()` 后的内容源读 | 读 `contract.py:169-226`；V5/V7/V8 三个原构造复跑 | ✅ **成立**：V7（Round 3 的 H3）现在 `0 个 change 目录`；V8（H4）同样；`follow` 的 4 个 fail-closed 出口（`:176-185`）都在 |
+| **低危** | 删掉 `_disabled_alias_order_case`；新增 `F15`（H3 回归）/`F16`（H4 回归） | `grep -n "_disabled_alias_order_case" tests/test_archive_awareness.py` → **0 命中**；读 `F15/F16` | ✅ **成立**：死用例已删（同文件 `:456 _removed_alias_order_case` 是纯 docstring 占位，无害，见「建议 3」）；两条回归用例都在且**真在验行为**（见 R4-④） |
+
+## R4-② 复跑原始输出要点
+
+```
+$ .venv/bin/pytest -q                       →  631 passed in 29.38s
+$ python /tmp/rev26/battery.py              →  与设计预期不符：0/20
+$ python /tmp/rev26/variants2.py            →  V1..V5 全部 FAIL(1)（5/5）
+$ python /tmp/rev26/variants3.py            →  V6/V7/V8 全部 FAIL(1)（3/3）
+      V7: check：基线 main...HEAD，12 个变更文件，0 个 change 目录   ← Round 3 时是「1 个 change 目录 + 判据 5 放行」
+      V8: check：基线 main...HEAD，11 个变更文件，0 个 change 目录   ← 同上
+```
+
+⇒ Round 3 的两条高危/中危**确已关闭**，且**没有**误伤 6 条「必须绿」与天花板（battery 仍 0/20）。
+
+## R4-③ 新造的变体
+
+| # | 构造 | 期望 | 实测 |
+|---|---|---|---|
+| **W1** | 链接链里混入**逃出仓根**的一跳（`A/specs -> ../../../../../../etc/passwd`），其余件齐、内容全新 | 红 | **`FAIL(1)`** ✓（`follow` 的 `_resolve_rel` 返回 None ⇒ fail-closed） |
+| **W2** | **同一个最终文件**被两条不同 `seen` 路径指到（`A/reviews/alias1.md` 与 `A/specs/alias2.md` 都指向 `A/stolen-report.md`，内容是借来的） | 红 | **`FAIL(1)`** ✓（两条 seen 都判同一个 `final`，都命中） |
+| **W3** | `report_path` 指到 **`A` 内的一个目录**（目录里是借来的报告） | 红 | **`FAIL(1)`** ✓（判据 5 拒；证据门另有「报告不存在」，但到达已先被拒） |
+| **W4** | `report_path` 指向**另一份 manifest**（`A/reviews/alias.manifest.json -> grill.manifest.json`） | 观察 | **`PASS(0)`** —— 这**不是**绕过：该构造里所有证据字节都是本次新写的，多一份同 stage 的 manifest 被容忍属于既有口径 |
+| **W5** | **自引用的目录符号链接**：`ln -s .. A/specs/l`（从 `A/specs` 出发 `..` = `A` 自己） | 红 | ❌ **`check` 30s / 60s 内都没有结束**（`timeout` 退 124）—— **H6** |
+| **H5** | **不需要任何符号链接**：`git mv docs/templates/<f> A/reviews/<f>`（造出 R 记录）+ 覆盖成借来的字节 | 红 | ❌ **`PASS(0)`，`check：通过 ✓`**，三份报告与既有归档 change **逐字节相同** —— **H5** |
+
+### H5 详证（`/tmp/rev26/h5_launder.py`，一条命令可复算）
+
+```
+$ .venv/bin/python /tmp/rev26/h5_launder.py
+R057  docs/templates/grill-adversarial.md → openspec/changes/archive/2026-10-15-new/reviews/grill-adversarial.md
+R063  docs/templates/grill-review.md      → openspec/changes/archive/2026-10-15-new/reviews/grill-review.md
+  grill-review.md / grill-adversarial.md / building-review.md 与既有归档 change 的逐字节相同？ True / True / True
+check：基线 main...HEAD，11 个变更文件，1 个 change 目录
+  change：2026-10-15-new（归档）
+check：通过 ✓
+EXIT = 0
+```
+
+**机理**：`rename_dests`（`contract.py:236-238`）是**路径集合**；`_is_reused`（`:227-233`）的 (b) 只问
+「`judge_path` 在不在这个集合里」，**从不看落点上的字节是不是搬来的那份**。
+于是「先 `git mv` 一个相似文件占住证据路径（该路径从此永久进 `rename_dests`），再把内容覆盖成借来的字节」
+就同时躲开 (a)（blob 在 `base_blobs` 里）与 (b)（路径是改名落点）。
+
+**前提（必须写明，不夸大）**：要让 git 把这次搬运记成 `R` 记录，被搬的 base 文件与最终内容须 **≥50% 相似**
+（git 默认阈值）。本构造用 `docs/templates/*.md`——**规格自己正是要求把模板放在 `changes_root` 之外**
+（`spec.md:104-108` 的误伤面 + `docs/gate.md:338`），所以「仓里有与报告同源的模板/样板文件」是**本仓推荐的布局**，
+不是奇技淫巧。样本量：我用 95% 相似（模板 = 报告改一个词 + 追加一行）；阈值本身取决于内容，未做扫参。
+
+### H6 详证（`/tmp/arr26/battery/w5_self_referential_dir_symlink`）
+
+```
+$ ls -l openspec/changes/archive/2026-10-15-new/specs/
+lrwxrwxrwx  l -> ..
+$ timeout 60 .venv/bin/python -m witnessloop check --root . --base main --head HEAD
+$ echo $?
+124                       # 60s 内没有结束，被 timeout 杀掉
+
+# 直接打 archive_arrivals，统计每 5 秒发的 git ls-tree 次数：
+  t=   5s  ls-tree: entry=  2113  walk=   268  （archive_arrivals 仍未返回）
+  t=  10s  ls-tree: entry=  4238  walk=   534
+  t=  20s  ls-tree: entry=  8343  walk=  1047
+  t=  35s  ls-tree: entry= 14675  walk=  1838
+```
+
+**机理**：目录展开时 `queue.append((f"{prefix}/{rel}", row.path))`（`contract.py:205-208`），
+`prefix` = 上一层的 **`seen`**；而 `seen_paths`（`:187, 194-196`）**按 `seen` 去重**。
+自引用链接让 `seen` 每轮都变（`A/specs/l` → `A/specs/l/specs/l` → …），
+**永不重复** ⇒ visited 集形同虚设 ⇒ 队列无界增长、进程不终止。
+`design.md:73` 与 `spec.md:73` 都写着「递归到不动点，配 **visited 防环**」——这条**未落实**。
+影响：任何提交了这种链接的 PR 都会让 CI 的 `check` 挂到 job 超时（不是判绿，是**不判**）。
+
+## R4-④ `F15`/`F16` 真的在验行为吗？（回退变异分析）
+
+- **`F15_dir_link_keeps_the_logical_path_for_manifests`**（= Round 3 的 H3 形状）：`reviews -> _r`，
+  manifest 在 `_r/` 里、`report_path` 指向 `stolen/grill-review.md`（借来的）；断言 `EXIT_FAIL` + `"没有任何 change 目录"`。
+  **变异**：把目录展开的 `seen` 前缀换回「真身路径」（即回退 H3 的修复）⇒ manifest 不被认成 manifest ⇒
+  `report_path` 不进集 ⇒ 到达被授予 ⇒ 该构造的 manifest `base_sha="0"*40` 解析不到提交、且缺另两个 stage，
+  **报的是别的 finding**，`"没有任何 change 目录"` 不出现 ⇒ 断言失守。✅ **能杀死回退变异**。
+- **`F16_dir_link_target_outside_a_cannot_borrow_a_whole_tree`**（= Round 3 的 H4 形状）：`specs` 指向 A 之外的目录；
+  同款断言。**变异**：把「A 外目录逐文件比对」退回「只比目标 tree sha」⇒ `_is_reused(tree_sha)` 恒 False ⇒
+  到达被授予 ⇒ 该构造**没有 manifest** ⇒ 报「缺少 review manifest」⇒ `"没有任何 change 目录"` 不出现 ⇒ 失守。✅
+- ⚠️ 两条都**不覆盖** H5（无符号链接）与 H6（不终止）——它们打的是判断逻辑与终止性，不是符号链接形状。
+
+## R4-⑤ 试过但**没有**构成绕过的方向（如实记录）
+
+- `report_path` 指向**另一份 manifest**（W4）：判绿，但那次构造里所有证据字节都是新的，不构成复用。
+- **两条 `seen` 路径指向同一份借来的最终文件**（W2）：被判据 5 抓住（两条 seen 各自都比到了那个 `final`）。
+- **链中混入逃出仓根的一跳**（W1）：`follow` 的 `_resolve_rel` 直接返回 None ⇒ fail-closed ✓。
+- **`report_path` 指向 `A` 内的目录**（W3）：拒 ✓。
+- 另核对：`follow()` 的 32 跳上限对**环形文件链接**（`a -> b`、`b -> a`）有效（超限 ⇒ None ⇒ fail-closed）——
+  只有**目录**自引用（H6）绕过了它，因为那种环路不在 `follow` 里、而在**展开队列**里。
+
+## Round 4：必须修改项
+
+**1）（高危，新）H5：判据 5 的 (b) 必须同时看「落点的内容」，不能只看「落点的路径」**
+
+- 位置：`src/witnessloop/contract.py:227-233`（`_is_reused`）与 `:236-238`（`rename_dests` 的构造）。
+- 违反对应：`spec.md:51`（(b) = 「它是本次 diff 里某条改名记录的落点（记录的 `new_path`，**即本次搬过来的**）」——
+  「即本次搬过来的」这个**内容**含义没被判、只判了路径）；
+  `design.md:133-134`（「合法 move 的文件**全是**改名记录的落点」——这句话的前提是落点内容 = 搬来的内容）。
+- 复现：`.venv/bin/python /tmp/rev26/h5_launder.py`（输出见 R4-③；`check：通过 ✓`，三份报告逐字节 = 既有归档 change 的）。
+- 期望修法（建议）：把 `rename_dests` 从「路径集合」升级成 **「(落点路径, 该记录源路径在 base 里的 blob sha)」集合**，
+  `_is_reused` 命中 (b) 的条件收紧成「路径匹配 **且** `entry.sha` == 那条记录的源 blob」。
+  ⚠️ 核对不误伤：形态 ii（move + 重建 manifest）里**未改动**的被搬文件，其 head blob 恰好等于
+  base 里 `changes/<id>/<file>` 的 blob ⇒ (b) 仍成立；**被改写**的那些文件内容是新写的 ⇒ 走 (a)。
+  请一并补一条**必须红**用例（= H5 形状：`git mv <相似文件> <证据路径>` + 覆盖成借来的字节）。
+
+**2）（中危，新）H6：自引用的目录符号链接会让 `check` 不终止 —— visited 集必须按「内容身份」而不是「逻辑路径」**
+
+- 位置：`src/witnessloop/contract.py:187`（`seen_paths`）、`:194-196`（按 `seen` 去重）、`:205-208`（用 `seen` 拼前缀）。
+- 违反对应：`design.md:73` / `spec.md:73`（「递归到不动点，**配 visited 集防环**」）。
+- 复现：`cd /tmp/arr26/battery/w5_self_referential_dir_symlink && timeout 60 .venv/bin/python -m witnessloop check --root . --base main --head HEAD; echo $?` → **124**（60s 未终止）。
+- 期望修法（建议）：① 记账去重改用 `(seen, final)` 或直接按 `final`（内容身份）——同一份内容重复比对没有意义；
+  ② 对**逻辑路径深度**（或队列项总数 / 轮数）设硬上限，超出 ⇒ **fail-closed**（报 finding、非零退出），
+  保证任何输入下 `check` 都终止。两条建议都做，别只做一条。
+
+## Round 4：未验证项
+
+1. H5 修复后需重跑 `battery.py` + `variants2/3/4.py` + `h5_launder.py` 全量。
+2. H5 的**相似度阈值**未扫参：我只构造了 95% 相似的模板；「多相似才够」取决于 git 的 `-M` 启发式，未测。
+   同样未测：如果仓库里**没有**任何与借来内容 ≥50% 相似的 base 文件，H5 是否还成立（我判断不成立）。
+3. H6 的**触发面**只测了「`specs` 下的自引用链接」一种；`reviews` 下的、以及「A→B→A 双向目录链接」未逐一构造
+   （机制上同族）。
+4. Round 1/2/3 的未验证项（浅克隆独立失败面、merge commit 形态、自定义 `review_manifest_glob` 与多段
+   `required_artifacts` 的端到端、接入方真实数字）**仍未验证**。
+5. 本 change 自己的门禁仍红（缺三份 manifest + 相邻 change 的 stale）——流程状态，本轮未复测。
+
+## Round 4：建议（不阻塞）
+
+1. `contract.py:205` 的 `prefix = seen if seen == src else seen` 是**恒等于 `seen`** 的三元式（两个分支一样），
+   读起来像是漏了点什么，建议直接写 `prefix = seen` 或删掉这个临时变量。
+2. 这一处（`Ev(A)` 的推导）四轮里被连打四次（H1/H2/H3+H4、现在的 H5/H6），**打法在变**：
+   前三轮是**符号链接形状**，这一轮是**改名记录**与**终止性**。建议在收官前做一次**结构性**收口：
+   把「归属」统一表达成对**内容身份（blob sha + 来源记录）**的判定，而不是对路径字符串的判定；
+   并补一条**属性式**回归——「只往 `A` 里加符号链接 / 只改 A 内文件的名字，不得翻转判定」。
+3. `tests/test_archive_awareness.py:456 _removed_alias_order_case` 现在只剩 docstring（无害），
+   建议顺手删掉，别留一个叫 `_removed_..._case` 的空函数。
+4. `design.md §7.5` 仍停在 Round 1 的四行（「均已修复」）。建议每轮复验后同步该表（至少补一行
+   「Round 2/3 的 H2/H3/H4 已修；Round 4 的 H5/H6 待修」），否则库里的结论会与实际状态脱节。

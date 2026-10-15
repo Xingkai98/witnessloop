@@ -1051,3 +1051,70 @@ def test_F16_dir_link_target_outside_a_cannot_borrow_a_whole_tree(repo: Path, cl
 
     assert code == C.EXIT_FAIL
     assert "没有任何 change 目录" in err, err
+
+
+def test_F17_laundering_via_a_similar_file_rename_is_rejected(repo: Path, cli):
+    """判据 5（**实现审阅 Round 4 的 H5**）：把一条与借来文件**相似**的 base 文件 `git mv` 到证据路径、
+    再把内容覆盖成借来的字节 ⇒ 落点**路径**确实是改名记录，但**字节是别人的** ⇒ 必须**不授予**。
+
+    ⚠️ 只在「(b) 看落点路径」的实现下会被放行；收紧为「(b) 要求**内容未变的搬移**」后应当拒绝。
+    """
+    init_wired(repo, cli)
+    _seed_victim_in_base(repo)
+    # 仓里放一份**与受害者报告高度相似**的「样板」（这正是规格推荐的模板布局：放 changes_root 之外）
+    template = repo / "templates" / "report.md"
+    template.parent.mkdir(parents=True, exist_ok=True)
+    # ⚠️ 必须**相似但不逐字节相同**：逐字节相同的话 git 会报 `R100`（那本来就算是「内容原样搬过来」）；
+    # 改一处措辞 ⇒ `R5x~R9x`（配对成功、落点是改名记录），再把内容覆盖成借来的字节才是 H5 的手法。
+    template.write_text(
+        (repo / ARCHIVE_REL / "2026-09-30-old" / "reviews" / "grill-review.md")
+        .read_text(encoding="utf-8")
+        .replace("Grill:", "Grill（样板）:"),
+        encoding="utf-8",
+    )
+    commit_all(repo, "templates/report.md（与受害者报告逐字节相同的样板）")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    target = repo / ARCHIVE_REL / "2026-10-15-laundered"
+    (target / "specs" / "retry").mkdir(parents=True, exist_ok=True)
+    (target / "reviews").mkdir(parents=True, exist_ok=True)
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n新的。\n"),
+        ("design.md", "# design\n\n新的。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 新的\n"),
+        ("specs/retry/spec.md", "# spec: 新的\n"),
+    ):
+        (target / rel).write_text(body, encoding="utf-8")
+    # ① 把相似的样板 `git mv` 进证据路径（git 会配对成改名 ⇒ 落点是「改名落点」）
+    git(repo, "mv", "templates/report.md", f"{ARCHIVE_REL}/2026-10-15-laundered/reviews/grill-review.md")
+    # ② 再把内容覆盖成**借来的**字节
+    shutil.copy(repo / ARCHIVE_REL / "2026-09-30-old" / "reviews" / "grill-review.md",
+                target / "reviews" / "grill-review.md")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "改名落点 + 覆盖成借来的字节")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F18_self_referential_directory_link_terminates(repo: Path, cli):
+    """判据 5（**实现审阅 Round 4 的 H6**）：`specs/l -> ..` 这类**自引用目录链接**会让
+    「看见的路径」无限变长（`…/specs/l/l/l/…`）⇒ 展开必须有硬上限，**不得挂死**（CI 超时）。
+
+    本用例同时钉两件事：① `check` **能返回**（不超时）；② 该到达**不被授予**（fail-closed）。
+    """
+    init_wired(repo, cli)
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    _born_archived_artifacts(repo, "2026-10-15-selfref")
+    os.symlink("..", repo / ARCHIVE_REL / "2026-10-15-selfref" / "specs" / "l")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "到达目录里一个自引用目录链接")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
