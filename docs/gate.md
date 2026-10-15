@@ -390,14 +390,31 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 （分两份实现必然漂移：本仓已因 `check` / `manifest build` 各写一套踩过坑，故共用 `constants.HASHED_ARTIFACTS`）。
 
 **判据**（`src/witnessloop/evidence.py`）：`## Confirmed Decisions` **顶层 bullet（含其续行）≥ 3 条**、
-**每条块内含 `来源:`**；`## Open Questions` 每条的 `Q<n>` 都要在 `## User Confirmation` 有对应确认；
-占位文本（`待确认` 等；**短答复才查强占位**）不算确认。
+**每条块内含 `来源:`**；`## Open Questions`（**逐字标题**）**必须存在**、其每条的 `Q<n>` 都要在
+`## User Confirmation` 有对应确认；占位文本（`待确认` 等；**短答复才查强占位**）不算确认。
 **块级**——`来源:` 允许只出现在续行（实测：本仓 dogfood 的 `来源:` **全在续行**，任何行级口径命中 0）。
+
+**`## Open Questions` 的候选小节判定**（change `confirm-gate-fail-closed`）：**逐字** `Open Questions`，
+或**以 `Open Questions` 结尾**的紧近义标题（反复剥掉尾部括号限定语后匹配——`## Open Questions（收敛后）`、
+`## Remaining Open Questions` 算候选；`## Open Questions 汇总`、`## Open questions` **不算**）。
+**一个候选都没有 ⇒ 红**，且诊断**列出**报告里含 `Open Questions` 字样的二级标题（全部、排序）——
+让修法（改回逐字标题）一步可达，而不是静默跳过。内容判据作用于**全部候选小节的并集**
+（同名标题沿用既有的 `setdefault` 合并语义）；**代码围栏内的行不参与小节切分**
+（报告里**引用**一段 `## User Confirmation` 示例不再被当成真确认）。
+**同一 stage 有多份 manifest 时逐份校验正文**（此前只校验排序第一份 ⇒ 一份合规的**诱饵**就能让
+整段正文判据失效）。⚠️ 这道门的**前提**是「`stage=grill` 那份 manifest 绑定的报告**就是**决策记录」：
+把真记录绑到别的 stage、给 `stage=grill` 一份合格 stub ⇒ 通过（不在机械面内）。
 
 **`check` 侧**：每个 change 必须有一个 **`stage=<grill_stage>`**（默认 `grill`，`policy.evidence.grill_stage`
 可覆写）的 manifest，且其报告正文合格；缺则**红**并点名**现有** stage（拼错可诊断）。
 `stage` 因此纳入 manifest **必填字段**（此前「写而不校」）。
-⚠️ **对**接入方**是行为变更**：历史无 grill manifest 的 change 会新增一条红。
+⚠️ **对**接入方**是行为变更**：历史无 grill manifest 的 change 会新增一条红；
+标题**非逐字**的存量报告也会新增一条红（此前那条判据对它们**整段静默跳过**）。
+
+- **标题非逐字时的补救姿势**：**追加**一个逐字的 `## Open Questions` 小节（把原小节里的
+  `Q<n>` 抄进去，或写 `（无）`），**不改审阅者原文**——证据被 `report_hash` 绑着，改正文先撞
+  hash 校验；**追加**属新增行，是既有先例。追加后按 §3.1 的顺序**重建那份 manifest**，
+  报告与 manifest 一起作为**证据**提交。
 
 **`guard` 侧**：`witnessloop guard --root R --path P [--path P2] [--change ID]`
 ——写目标命中 `policy.require_change_for` 且**当前 change 的 grill 证据不完备** ⇒ **1（拦）**。

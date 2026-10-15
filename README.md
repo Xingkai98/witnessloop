@@ -169,9 +169,10 @@ grill 证据不完备就不许写代码路径（**写文档豁免**，否则永�
 即绕过**。真正的锚仍是 CI required check。
 
 ⚠️ **对**接入方**是行为变更**：`check` 现在要求每个 change 有一个 **`stage=grill`** 的 manifest，
-且该报告正文合格（`Confirmed Decisions` ≥3 且每条带 `来源:`、`Open Questions` 都经用户确认）——
-**此前没有这道校验**；历史 change 若缺 `stage=grill` manifest 会**新增一条红**。详见
-[docs/gate.md §8](docs/gate.md)。
+且该报告正文合格（`Confirmed Decisions` ≥3 且每条带 `来源:`、`Open Questions` 都经用户确认——
+⚠️ `## Open Questions` 小节必须**逐字**存在，标题改了、或压根没这个小节 ⇒ 红）——
+**此前没有这道校验**（标题非逐字的报告此前会被**整段静默跳过**）；历史 change 若缺
+`stage=grill` manifest 会**新增一条红**。详见 [docs/gate.md §8](docs/gate.md)。
 
 ⚠️ **对**接入方**还有一条报错形态变更**（issue #12）：损坏的 `workflow-events.jsonl`
 （解码失败 / 读不到）此前会表现为**工具故障**——`witnessloop：内部错误（UnicodeDecodeError…）`，
