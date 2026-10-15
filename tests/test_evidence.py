@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import itertools
+import random
+import re
+import time
 from pathlib import Path
 
 import pytest
@@ -105,6 +109,11 @@ def test_missing_sections_are_flagged():
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+#: 接入方非逐字报告的**冻结副本**（C3 的 fixture）——见 `test_the_adopters_non_verbatim_report_passes`。
+ADOPTER_FIXTURE = (
+    Path(__file__).resolve().parent / "fixtures" / "adopter-grill-design-nonverbatim.md"
+)
+
 #: 占位答复（抽出正文 3 字，命中 `_UNCONFIRMED_STRONG` 的 `待拍板`）。
 _PLACEHOLDER_CONFIRMATION = "- **Q1**: 用户答复：待拍板；确认时间: t"
 #: 实质答复（同一前缀，抽出正文 21 字 ⇒ 越过 `_UNCONFIRMED_MAX_ANSWER_LEN = 20`）。
@@ -182,6 +191,144 @@ def test_open_question_title_judgement(title: str, expected: bool):
     """A1：候选判定逐行对齐 §D2 的判定表。"""
     got = evidence._open_question_sections({title: ""})
     assert (title in got) is expected, f"{title!r} 的候选判定应为 {expected}，实测 {got}"
+
+
+def test_a_hyphen_dense_title_is_judged_in_linear_time():
+    """审阅 Issue 1（**阻塞**）：候选判定必须**线性**——不得指数回溯。
+
+    规范形态 `^(?:\\S+[- ])*Open Questions$` 的 `\\S+` 与 `[- ]` **字符集相交**
+    （`-` 既是词内合法字符、又是分隔符）⇒ 2^(连字符数) 条回溯路径。实测（修前）：
+    45 字标题 0.34 s、53 字 **6.5 s**、101 字**等于挂住**；`check` / `guard` 共用这条路径
+    ⇒ 一份报告即可把门禁挂住（与 `guard-crash-exit` 的「不许崩到入口兜底」同类）。
+
+    阈值 0.05 s：线性实现是**微秒级**（留 ~10⁴ 倍余量给慢机器），
+    而 20 002 字的输入即便退化成**平方**也会 ~0.5 s ⇒ 这条用例同时排除两种退化。
+    ⚠️ 输入**以分隔符结尾**（`x-x-…-x-`）：否则新实现的「末位必须是分隔符」会提前返回，
+    整段前缀根本没被扫到——那样的用例证明不了什么。
+    """
+    for hyphens in (26, 10_000):
+        title = "-".join(["x"] * (hyphens + 1)) + "-"
+        start = time.perf_counter()
+        evidence._is_open_questions_title(title)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 0.05, (
+            f"{len(title)} 字、{hyphens} 个连字符的标题耗时 {elapsed:.4f}s"
+            "——判定退化成指数/平方回溯了（候选判定对**每个** H2 标题都跑）"
+        )
+
+
+def test_a_long_run_of_trailing_qualifiers_is_stripped_in_linear_time():
+    """同一类缺陷的另一条路径（**本轮的实测发现**）：剥尾括号也不得是 O(n²)。
+
+    修前实测：`Open Questions` + `（a）` × 20 000 ⇒ **19.3 s**（每剥一层都从左往右重搜一遍）。
+    """
+    title = "Open Questions" + "（a）" * 10_000
+    start = time.perf_counter()
+    evidence._is_open_questions_title(title)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.05, f"剥尾括号退化成 O(n²) 了：{elapsed:.4f}s"
+
+
+#: spec.md:38-39 / `design.md §D2` 的**规范形态** —— 实现改成线性扫描后，用它当 oracle
+#: 逐输入核对等价性（⚠️ 输入刻意短：这个 oracle 自己就是会指数回溯的那一个）。
+_SPEC_BRACKET_TAIL_RE = re.compile(r"[（(]([^（）()]*)[）)]$")
+_SPEC_TAIL_RE = re.compile(r"^(?:\S+[- ])*Open Questions$")
+
+
+def _oracle_is_candidate(title: str) -> bool:
+    """按**规范正则**（逐字照抄 spec）判候选——只作等价性 oracle，不进生产路径。"""
+    if title == "Open Questions":
+        return True
+    remaining = title
+    while True:
+        match = _SPEC_BRACKET_TAIL_RE.search(remaining)
+        if match is None:
+            break
+        remaining = remaining[: match.start()].rstrip()
+    return bool(_SPEC_TAIL_RE.match(remaining))
+
+
+#: 尾括号项的各种形态（全角/半角/空/嵌套/带空格/单独的括号…）。
+_BRACKET_GROUPS = ("（a）", "（）", "(a)", "（a（b）c）", " (a)", "（）（）", "（", "）", "a）", "（ ）")
+
+
+def _short_prefix_inputs() -> list[str]:
+    """短前缀**穷举**（含连字符 / 空格 / 制表符）⇒ 附上尾短语。"""
+    inputs: list[str] = []
+    for length in range(5):
+        for alphabet in (("a", "-", " "), ("a", "-", " ", "\t")):
+            for combo in itertools.product(alphabet, repeat=length):
+                inputs.append("".join(combo) + "Open Questions")
+    return inputs
+
+
+def _bracket_tail_inputs() -> list[str]:
+    """尾括号项：单独出现 + 与各种前缀组合。"""
+    inputs: list[str] = []
+    for count in range(4):
+        for group in _BRACKET_GROUPS:
+            inputs.append("Open Questions" + group * count)
+    for prefix in ("", "Design-Level ", "Remaining ", "Non-Open ", "a--b ", "x ", "  ", "- "):
+        for group in _BRACKET_GROUPS:
+            inputs.append(prefix + "Open Questions" + group)
+    return inputs
+
+
+def _whitespace_variant_inputs() -> list[str]:
+    """各种「空白」——`\\s` 与 `str.isspace()` 的定义**并不完全一致**（如 `\\x1c`），
+    而本判定的规范是正则 ⇒ 这些输入就是「口径跟引擎走」的钉子。"""
+    inputs: list[str] = []
+    for space in ("\t", "\n", "\xa0", "　", "\x1c", "\x85", " "):
+        inputs += [f"a{space}b Open Questions", f"a{space}Open Questions",
+                   f"a {space}b Open Questions", f"{space}Open Questions",
+                   f"Open Questions{space}（a）", f"a-{space}b Open Questions"]
+    return inputs
+
+
+def _random_inputs() -> list[str]:
+    """随机长输入（⚠️ 连字符 ≤ 6：oracle 自己就是会指数回溯的那一个）。"""
+    rng = random.Random(20261015)
+    inputs: list[str] = []
+    while len(inputs) < 400:
+        body = "".join(rng.choice("a- ()\t（）　\xa0") for _ in range(rng.randint(0, 20)))
+        if body.count("-") <= 6:
+            inputs.append(body + "Open Questions")
+    return inputs
+
+
+def _assert_equivalent(titles: list[str]) -> None:
+    """逐个核对线性实现与**规范正则**的判定——不一致就报出**具体输入**。"""
+    bad = [
+        (title, evidence._is_open_questions_title(title), _oracle_is_candidate(title))
+        for title in titles
+        if evidence._is_open_questions_title(title) != _oracle_is_candidate(title)
+    ]
+    assert not bad, "线性实现与 spec 的规范正则不一致（输入 / 实现 / oracle）：" + repr(bad[:5])
+
+
+#: 等价性核对的四组输入（合计 1 000+ 条；每组的规模由下一条用例守住）。
+_EQUIVALENCE_FAMILIES = {
+    "短前缀穷举": _short_prefix_inputs(),
+    "尾括号形态": _bracket_tail_inputs(),
+    "空白口径": _whitespace_variant_inputs(),
+    "随机长输入": _random_inputs(),
+}
+
+
+def test_the_equivalence_corpus_is_large_enough():
+    """输入集**不许被改小**——这条用例的价值正来自覆盖面（下面是当时实测的规模）。"""
+    sizes = {name: len(items) for name, items in _EQUIVALENCE_FAMILIES.items()}
+    assert sum(sizes.values()) > 1000, f"等价性输入集被改小了：{sizes}"
+
+
+@pytest.mark.parametrize("titles", _EQUIVALENCE_FAMILIES.values(), ids=list(_EQUIVALENCE_FAMILIES))
+def test_candidate_judgement_matches_the_spec_regex(titles: list[str]):
+    """审阅 Issue 1 的「**证明语义没变**」：线性实现与 spec 的规范正则**逐输入等价**。
+
+    oracle 是**规范正则本身**（逐字照抄 spec 的 `^(?:\\S+[- ])*Open Questions$` 与
+    D2 的尾括号剥离）⇒ 把「改法等价」变成机械核对，而不是我的口述。
+    """
+    _assert_equivalent(titles)
 
 
 def test_candidate_titles_are_sorted_and_only_candidates():
@@ -269,6 +416,38 @@ def test_the_hint_lists_every_title_containing_the_phrase():
         "`Open Questions 汇总`、`逐条对抗（针对上游 Confirmed Decisions / 风险 / Open Questions）`"
         in findings[0].message
     )
+
+
+def test_the_two_known_title_side_effects_differ_in_whether_the_hint_appears():
+    """A1 末句（`design.md §2.5` / `spec.md` 声明 6 的两条已知副作用）。
+
+    「非候选」这一半由 `CANDIDATE_TITLES` 钉住；这里钉**另一半**——
+    **有无附加提示不同**：提示用的子串是 `Open Question`（大小写敏感、且要求**连续**），
+    ⇒ `Open  Questions`（双空格）**不**含它 ⇒ 通用文案、**无**提示；
+    尾部全角冒号的 `Open Questions：` **含**它 ⇒ **有**提示。
+    （逐字/近义那两条**是**候选，不走这一档。）
+    """
+    no_hint = _doc(open_title="Open  Questions", open_body="- **Q1** 真的问题？")
+    assert _messages(evidence.grill_evidence_findings(no_hint)) == ["缺少 `## Open Questions` 小节"]
+
+    with_hint = _doc(open_title="Open Questions：", open_body="- **Q1** 真的问题？")
+    messages = _messages(evidence.grill_evidence_findings(with_hint))
+    assert len(messages) == 1
+    assert "检测到含" in messages[0] and "Open Questions：" in messages[0]
+
+
+def test_the_hint_names_the_substring_that_is_actually_filtered_on():
+    """实现审阅 issue 4：提示里的字样必须与**实际筛选口径**一致（单数 `Open Question`）。
+
+    一个含 `Open Question` 而**不含** `Open Questions` 的标题会被列出 ⇒
+    文案若写复数就是在陈述一件不成立的事。
+    """
+    text = _doc(open_title="Open Question Archive", open_body="- 无")
+    messages = _messages(evidence.grill_evidence_findings(text))
+    assert len(messages) == 1
+    assert "Open Question Archive" in messages[0]
+    assert "含 `Open Question` 字样" in messages[0]
+    assert "含 `Open Questions` 字样" not in messages[0]
 
 
 def test_an_empty_shell_plus_a_synonym_hiding_a_real_question():
@@ -549,18 +728,16 @@ def test_the_adopters_non_verbatim_report_passes():
     """C3 / F5（护栏）：接入方那 1 份非逐字报告（`Design-Level Open Questions（…）`）的真实内容。
 
     ⇒ **0 条**（它的 Q1/Q2/Q6 都有实质确认）——「收紧必伤存量」在 ③ 下不成立的机械证明。
+    这条用例**不是花瓶**：把候选判定退回「只认逐字」它就会红（变异 M1）。
 
-    ⚠️ fixture 在**本机**的接入方检出里（相对路径会被解析到本仓、静默取不到内容，
-    故按 R7 的 N32 用**绝对路径**）；CI 无此检出 ⇒ **显式 skip**（该护栏另有
-    `test_the_repos_own_two_candidate_titles_do_not_produce_findings` 覆盖本仓侧）。
+    ⚠️ fixture 是**冻结副本** `tests/fixtures/adopter-grill-design-nonverbatim.md`
+    （逐字节取自接入方检出 `/home/happy/wl-review-a/…`，`sha256 7a520c3e…`）。
+    实现审阅 issue 3：原先直接读那条**绝对路径**，CI 上没有该检出 ⇒ 这条钉子在 CI 上**恒 skip**，
+    而本仓自己的书面标准否掉「能静默消失的守卫」（`tests/test_confirm_gate_docs.py` 的
+    `_change_dir` 就是为此写成 fail 不 skip）。
+    ⚠️ 副本放在 `tests/fixtures/`：放进本 change 的 `reviews/` 会触发**孤儿报告**红。
     """
-    path = Path(
-        "/home/happy/wl-review-a/openspec/changes/archive/2026-09-30-workflow-dry-run"
-        "/reviews/grill-design.md"
-    )
-    if not path.is_file():
-        pytest.skip(f"接入方检出不在本机：{path}（CI 无此 fixture）")
-    text = path.read_text(encoding="utf-8")
+    text = ADOPTER_FIXTURE.read_text(encoding="utf-8")
     assert "Design-Level Open Questions（已并入 design 的 Q1–Q6）" in text
     assert evidence.grill_evidence_findings(text) == []
 

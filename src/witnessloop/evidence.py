@@ -35,14 +35,15 @@ _Q_RE = re.compile(r"\bQ(\d+)\b")
 _CONF_LINE_RE = re.compile(r"^\s*[-*]\s*\*\*Q(\d+)\*\*\s*[:：]\s*(.*)$")
 _ANSWER_RE = re.compile(r"用户答复\s*[:：]\s*(.*?)(?:[;；]?\s*确认时间|$)")
 
-#: D2 的 (b)：反复剥掉**尾部的括号限定语**后，`Open Questions` 必须是**结尾的短语**。
-#: 括号内容**不得含任何括号**（不接受嵌套）；空括号同样算（`[^（）()]*` 允许空串）。
-_BRACKET_TAIL_RE = re.compile(r"[（(]([^（）()]*)[）)]$")
-_OPEN_QUESTIONS_TAIL_RE = re.compile(r"^(?:\S+[- ])*Open Questions$")
+#: 空白字符的**一份**实现（口径与正则引擎的 `\s` 逐字一致）——见 `_is_tail_phrase`。
+_WHITESPACE_RE = re.compile(r"\s")
 #: 缺件诊断（D4）：与「缺 `## User Confirmation`」**同形**的通用文案 + 一档附加提示。
+#: ⚠️ 提示里的字样是 **`Open Question`（单数）**——即 `_missing_open_questions_message`
+#: 的实际**筛选口径**（`spec.md` 的 D4 Requirement 也写的单数）。写成复数会与判据错位：
+#: 一个含 `Open Question` 而不含 `Open Questions` 的标题会被列出，而文案却声称它含的是后者。
 _OPEN_QUESTIONS_MISSING = f"缺少 `## {OPEN_QUESTIONS_TITLE}` 小节"
 _OPEN_QUESTIONS_HINT = (
-    "检测到含 `Open Questions` 字样的标题：{titles}"
+    "检测到含 `Open Question` 字样的标题：{titles}"
     "——若其中之一就是你的 Open Questions 小节，请把标题改成逐字"
 )
 
@@ -110,12 +111,68 @@ def _sections(text: str) -> dict[str, str]:
     return {title: "\n".join(lines) for title, lines in out.items()}
 
 
+def _strip_trailing_qualifiers(title: str) -> str:
+    """反复剥掉**尾部的括号限定语**（D2 的 (b) 前半）。
+
+    一层 = 一对**配对**的括号（全角或半角）**紧贴末尾**、且其**内容不含任何括号**
+    （⇒ 不接受嵌套）；**空括号也算**。⇒ 展开成一遍**反向**扫描：
+    可剥的开括号必然是「末字符之外**最靠后**的那个括号」——否则它与闭括号之间就夹着括号。
+    游标只向左走、每层的工作量正比于被剥掉的那一段 ⇒ **整体线性**。
+    （若每层都从头 `search` 一遍，长串会退化成 O(n²)：实测 `（a）` × 20 000 ⇒ 19.3 s。）
+    """
+    end = len(title)
+    while end and title[end - 1] in "）)":
+        index = end - 2
+        while index >= 0 and title[index] not in "（）()":
+            index -= 1
+        if index < 0 or title[index] not in "（(":
+            break  # 没有配对的开括号（或它其实是闭括号）⇒ 不剥
+        end = index
+        while end and title[end - 1].isspace():
+            end -= 1
+    return title[:end]
+
+
+def _is_tail_phrase(remaining: str) -> bool:
+    """`Open Questions` 是不是 `remaining` 的**结尾短语**（D2 的 (b)）。
+
+    spec 里的**规范形态**是 `^(?:\\S+[- ])*Open Questions$`（`spec.md:38-39`）。本函数与它
+    **逐输入等价**（由 `tests/test_evidence.py::test_candidate_judgement_matches_the_spec_regex`
+    拿那条正则当 oracle 核对），但**一遍扫描、不回溯**——那条正则不能直接用：`\\S+` 与 `[- ]`
+    的**字符集相交**（`-` 既是词内合法字符、又是分隔符）⇒ 每个连字符都给出一条新的切分路径
+    ⇒ **2^(连字符数)** 条回溯路径（实测：45 字标题 0.34 s、53 字 6.5 s）。候选判定对
+    **每个** H2 标题都跑，且与 Open Questions 无关的标题同样触发 ⇒ `check`（CI）与 `guard`
+    （本地、写代码路径前）共用的这条路径会被一份报告**挂住**（同 `guard-crash-exit` 的类别）。
+
+    **等价形式的来历**：把 `^(?:\\S+[- ])*$` 的语言展开（词 = 非空白串，分隔符 ∈ {`-`, 空格}），
+    前缀 P 要么为空，要么满足「`P[0]` 非空白；`P[-1]` ∈ {`-`, 空格}；`P[-2]` 非空白
+    （末位分隔符前**必须有一个词**——`\\S+` 非空 ⇒ 单独一个 `-` 不是合法前缀）；
+    P 里的空白**只能是半角空格**、且**没有两个相邻空白**」。
+    空白口径跟**正则引擎的 `\\s`** 走（`_WHITESPACE_RE`）：
+    `str.isspace()` 与 `\\s` **并不完全一致**（如 `\\x1c`），而这个判定的规范是正则。
+    """
+    if not remaining.endswith(OPEN_QUESTIONS_TITLE):
+        return False
+    prefix = remaining[: -len(OPEN_QUESTIONS_TITLE)]
+    if not prefix:
+        return True
+    # 末位必须是分隔符，且它**前面必须有一个词**（`\S+` 非空 ⇒ 单独一个 `-` 不算）。
+    if prefix[-1] not in "- ":
+        return False
+    if len(prefix) < 2 or _WHITESPACE_RE.match(prefix[-2]):
+        return False
+    if _WHITESPACE_RE.match(prefix[0]):
+        return False
+    if "  " in prefix:
+        return False
+    return all(char == " " for char in _WHITESPACE_RE.findall(prefix))
+
+
 def _is_open_questions_title(title: str) -> bool:
     """标题（已去首尾空白）是不是候选 Open Questions 小节（D2）。
 
     候选 ⇔ **(a) 逐字**等于 `Open Questions`，**或 (b) 反复剥掉尾部的括号限定语后**，
-    余下部分匹配 `^(?:\\S+[- ])*Open Questions$`——即 `Open Questions` 是**结尾短语**，
-    其前只允许空格 / 连字符分隔的词。
+    `Open Questions` 是其**结尾短语**——即其前只允许空格 / 连字符分隔的词。
 
     (b) 是**启发式**：它收敛已知的真实写法，不穷尽所有写法。两侧都**写死**：
     - 落空（`Open  Questions` 双空格 / `Open Questions：` 尾冒号 / 大小写不符 / 嵌套括号
@@ -128,13 +185,7 @@ def _is_open_questions_title(title: str) -> bool:
     """
     if title == OPEN_QUESTIONS_TITLE:
         return True
-    remaining = title
-    while True:
-        match = _BRACKET_TAIL_RE.search(remaining)
-        if match is None:
-            break
-        remaining = remaining[: match.start()].rstrip()
-    return bool(_OPEN_QUESTIONS_TAIL_RE.match(remaining))
+    return _is_tail_phrase(_strip_trailing_qualifiers(title))
 
 
 def _open_question_sections(sections: dict[str, str]) -> list[str]:
