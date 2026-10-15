@@ -121,48 +121,6 @@ def _resolve_rel(base_dir: str, target: str) -> str | None:
     return joined
 
 
-def _evidence_paths(view: TreeView, rev: str, directory: str, manifest_glob: str) -> set[str]:
-    """`Ev(A)`：**由数据推导**的证据文件集（`design.md §2 D1` 判据 5）。
-
-    1. `constants.HASHED_ARTIFACTS` 覆盖的 artifact 路径**整体**（是目录 ⇒ 其下全部文件，是文件 ⇒ 它自己）；
-    2. 每份 manifest（`policy.review_manifest_glob`）**以及它 `report_path` 解析出的那个文件**；
-    3. `<A>/reviews/**` 下的全部文件。
-
-    ⇒ **不按路径前缀硬编码**：R3 实测过，硬编码时「把报告挪出 `reviews/`」与「把 `specs` 换成同名文件」
-    这两条零成本改法都会让证词整体出圈。
-    """
-    import fnmatch
-
-    paths: set[str] = set()
-    for _field, artifact in C.HASHED_ARTIFACTS:
-        target = f"{directory}/{artifact}"
-        entry = view.entry(rev, target)
-        if entry is None:
-            continue
-        if entry.type == "tree":
-            paths |= {row.path for row in view.walk(rev, target)}
-        else:
-            paths.add(target)
-    for row in view.walk(rev, directory):
-        rel = row.path[len(directory) + 1:]
-        if fnmatch.fnmatch(rel, manifest_glob):
-            paths.add(row.path)
-    for row in view.walk(rev, f"{directory}/reviews"):
-        paths.add(row.path)
-    # 每份 manifest 的 report_path 目标（可能落在 `reviews/` 之外）
-    for manifest in sorted(p for p in paths if fnmatch.fnmatch(p[len(directory) + 1:], manifest_glob)):
-        try:
-            doc = json.loads(view.read(rev, manifest) or "")
-        except ValueError:
-            continue
-        if not isinstance(doc, dict):
-            continue
-        resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
-        if resolved is not None and under_path(resolved, directory) and view.entry(rev, resolved) is not None:
-            paths.add(resolved)
-    return {p for p in paths if under_path(p, directory)}
-
-
 def _content_provenance_ok(
     view: TreeView,
     rev: str,
@@ -171,15 +129,37 @@ def _content_provenance_ok(
     rename_dests: set[str],
     manifest_glob: str,
 ) -> bool:
-    """判据 5：`Ev(A)` 里每一项都必须是「新内容」或「本次搬过来的」。
+    """判据 5：`Ev(A)` 里**实际交付的每个文件**都必须是「新内容」或「本次搬过来的」。
 
-    符号链接按**解析后的内容**参与 (a)/(b)；解析后逃出 `A` 的链接按**目标路径在树里的 blob** 比对
-    （与 `cp` 进来同结论）；**未跟踪 / 悬空 / 解析到仓根之外 / gitlink** ⇒ fail-closed（返回 False）。
+    `Ev(A)` 的**根**（`design.md §2 D1`，由数据推导、不按路径前缀硬编码）：
+    `HASHED_ARTIFACTS` 的 artifact 路径**整体** + `<A>/reviews` + 字面命中 `review_manifest_glob` 的 manifest；
+    再叠上**每份 manifest 的 `report_path` 目标**（递归到不动点）。
+
+    展开规则（**目录与符号链接都要展开到文件**——实现审阅实测过：只比 tree/blob sha 时，
+    把 `reviews/` 做成 `ln -s _r reviews` 就能把别处的现成报告整份复用且判绿）：
+
+    * **目录** ⇒ 其下全部文件逐个参与比对；
+    * **符号链接** ⇒ 按解析后的内容参与比对（目标可能是文件或目录，见上）；
+    * **未跟踪 / 悬空 / 解析到仓根之外**，或**`<A>` 下任何位置**出现 **gitlink** ⇒ fail-closed。
     """
-    todo = sorted(_evidence_paths(view, rev, directory, manifest_glob))
+    import fnmatch
+
+    # 0) `<A>` 下**任何位置**的 gitlink ⇒ fail-closed（不只是 `Ev(A)` 成员）。
+    if any(row.is_gitlink for row in view.walk(rev, directory)):
+        return False
+
+    roots = {f"{directory}/{artifact}" for _field, artifact in C.HASHED_ARTIFACTS}
+    roots.add(f"{directory}/reviews")
+    for row in view.walk(rev, directory):
+        rel = row.path[len(directory) + 1:]
+        if fnmatch.fnmatch(rel, manifest_glob):
+            roots.add(row.path)
+
     seen: set[str] = set()
-    while todo:
-        path = todo.pop()
+    compared: set[str] = set()
+    queue = sorted(roots)
+    while queue:
+        path = queue.pop()
         if path in seen:
             continue
         seen.add(path)
@@ -190,20 +170,26 @@ def _content_provenance_ok(
             return False
         if entry.is_symlink:
             target = _resolve_rel(posixpath.dirname(path), view.read(rev, path) or "")
-            if target is None:
-                return False                       # 逃出仓根（或畸形）
-            target_entry = view.entry(rev, target)
-            if target_entry is None:
-                return False                       # 悬空 / 未被 git 跟踪
-            if not under_path(target, directory):
-                # 逃出 A：按**目标**的 blob 比对；(b) 的判定对象仍是**链接自身**的路径。
-                if _is_reused(target_entry.sha, path, base_blobs, rename_dests):
-                    return False
-                continue
-            todo.append(target)                    # 目标并入 Ev(A)（递归闭包，`seen` 防环）
+            if target is None or view.entry(rev, target) is None:
+                return False                        # 逃出仓根 / 悬空 / 未被 git 跟踪
+            queue.append(target)
             continue
-        if _is_reused(entry.sha, path, base_blobs, rename_dests):
-            return False
+        if entry.type == "tree":
+            queue.extend(row.path for row in view.walk(rev, path))
+            continue
+        if path not in compared:
+            compared.add(path)
+            if _is_reused(entry.sha, path, base_blobs, rename_dests):
+                return False
+        if under_path(path, directory) and fnmatch.fnmatch(path[len(directory) + 1:], manifest_glob):
+            try:
+                doc = json.loads(view.read(rev, path) or "")
+            except ValueError:
+                doc = None
+            if isinstance(doc, dict):
+                resolved = _resolve_rel(directory, str(doc.get("report_path") or ""))
+                if resolved is not None and under_path(resolved, directory):
+                    queue.append(resolved)
     return True
 
 

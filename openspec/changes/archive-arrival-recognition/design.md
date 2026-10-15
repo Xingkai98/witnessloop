@@ -624,6 +624,30 @@ A 会被**完整校验**；被删文件里受保护的那几类（manifests / ev
 ⑥ `required_artifacts` 覆写成多段名的端到端；⑦ 大仓下逐字节撞车的概率（`tasks.md` 4.6）；
 ⑧ A2/A4 在接入方的**现实频率**。
 
+### 7.5 实现后独立审阅（building review）
+
+独立零记忆审阅者（**非作者**）对实现做了一轮实现后审阅，产物 `reviews/building-review.md`。
+**Verdict = CHANGES_REQUESTED**，1 条高危 + 3 条低危，均已修复：
+
+| # | 发现 | 处置 |
+|---|---|---|
+| **H1**（高危，端到端可复现） | 把到达目录的 `reviews/` / `specs` 做成**指向目录的符号链接**（`ln -s _r reviews`）⇒ 旧实现只按 tree/blob sha 比对、**没展开目录** ⇒ 目标里的现成报告被整份复用且 `check` 判绿 | 按 `spec.md` 明写的「目标是目录 ⇒ 其下全部文件逐个比对」重写 `Ev(A)` 的展开器：目录与符号链接都**展开到文件**逐项比对（`contract._content_provenance_ok`）；新增回归用例 `test_F9_symlinked_directory_in_the_arrival_is_rejected` |
+| **M2**（低，规格明文 `SHALL`） | `<A>` 下**非证据位置**的 gitlink 未 fail-closed | 比对前先扫 `<A>` 全域：任何 gitlink ⇒ 不授予；用例 `test_F10_gitlink_anywhere_under_the_arrival_is_disabled`；用例追加 |
+| **M3**（低） | 三条用例未落（基准同源 / fail-closed / 符号链接端到端）+ 死代码 `_targets()` | 新增 `test_F11_arrival_judgment_uses_merge_base_not_the_base_ref` 等；删死代码 |
+| **M4**（低） | `docs/gate.md` 缺「树不可读 ⇒ fail-closed」登记 | 已补进 §5.1.1 |
+
+它同时用**真实现**复跑了 R1–R8 的全部构造 + 3 条自造新攻击（共 20 个 case）：
+
+```
+OK green 出生即归档 / 纯 move / move+重建 manifest / A 内 alias.md 符号链接 /
+         指向 changes_root 外被跟踪文件 / 空文件豁免                （6 条全绿）
+OK red   R1-F1 纯 cp / R2-A2 / R2-A3 / R3-A1 / R3-A3 / N8 / N3 /
+         R5 symlink_ev / R7 gitlink / 新攻击 gitlink 非证据位置 /
+         新攻击 符号链接→A 内目录 ×2                            （12 条全红）
+OK 天花板 R3-A2（设计：不要求红）                                  （实测绿，与文档一致）
+与设计预期不符：0/20
+```
+
 ### 7.4 作者侧复算（本工作区，`/tmp` 一次性模拟器 + scratch 仓；**不是**审阅者结论）
 
 本稿的两条新判据（第 2 条、第 5 条）在落稿后由**作者**用一次性模拟器 `/tmp/sim_d1v3.py`

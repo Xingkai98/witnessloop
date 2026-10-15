@@ -14,6 +14,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from witnessloop import constants as C
+import os
+import shutil
+
 from witnessloop import contract, gitutil, policy as policy_mod
 
 from conftest import commit_all, git
@@ -45,11 +48,6 @@ ARCHIVED_NAME = f"{DAY}-{CHANGE}"
 
 
 # --------------------------------------------------------------------------- 小工具
-
-def _targets(root: Path, changes):
-    """归档感知的「本次 diff 触及的 change」列表（出厂 policy）。"""
-    return contract.change_targets(root, policy_mod.Policy.from_doc({}), changes)
-
 
 def _move(path: str, old: str, status: str = "R100") -> gitutil.Change:
     return gitutil.Change(status, path, old)
@@ -93,7 +91,7 @@ def _archive_dir(repo: Path, name: str = ARCHIVED_NAME) -> Path:
 
 
 # --------------------------------------------------------------------------- A. 契约层
-# ⚠️ 本节的四条纯函数用例（:87 / :101 / :109 / :134 / :471）已由 `tests/test_archive_arrival.py`
+# ⚠️ 本节的四条纯函数用例（原 :87 / :101 / :109 / :134 / :471）已由 `tests/test_archive_arrival.py`
 # 的 19 条用例**替代并扩展**（同一批函数：`archive_arrivals` / `change_targets` / `changed_change_ids`）。
 # 其中 `test_grant_requires_the_target_name_to_recognize_the_source_id` 随名识别守卫的删除
 # （用户 2026-10-15 裁定）**整体删除**——「名字认不得源 id」不再是拒绝面。
@@ -799,3 +797,109 @@ def test_F8_near_miss_archive_dir_is_named_in_the_message(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "没有任何 change 目录" in err
     assert "2026-10-15-half" in err and "缺 design.md" in err, err
+
+
+def _seed_victim_in_base(repo: Path, name: str = "2026-09-30-old") -> None:
+    """在 **main（= 基准树）** 上放一份「证据齐全」的归档 change（受害者）。
+
+    ⚠️ 必须在 `checkout -b feature` **之前**提交：判据 5 的「现成证据」= **基准树里**已有的字节。
+    """
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n受害者。\n"),
+        ("design.md", "# design\n\n受害者。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 受害者\n"),
+        ("specs/retry/spec.md", "# spec: 受害者\n"),
+        ("reviews/grill-review.md", VALID_GRILL_REPORT),
+        ("reviews/grill-adversarial.md", "# Grill-ADVERSARIAL\n\n受害者。\n"),
+        ("reviews/building-review.md", "PASS\n"),
+    ):
+        write_artifact(repo, f"{ARCHIVE_REL}/{name}/{rel}", body)
+    commit_all(repo, "base：一份证据齐全的归档 change")
+
+
+def test_F9_symlinked_directory_in_the_arrival_is_rejected(repo: Path, cli):
+    """判据 5（**实现审阅抓到的真绕过**）：把到达目录的 `reviews/` 做成**指向目录**的符号链接
+    （`ln -s _r reviews`）⇒ 目标里的现成报告会被整份复用 ⇒ 必须**不授予**。
+
+    ⚠️ 规格 `spec.md` 明写「目标是目录 ⇒ 其下全部文件逐个比对」；只比 tree/blob sha 的实现会判绿。
+    """
+    init_wired(repo, cli)
+    _seed_victim_in_base(repo)
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    target = repo / ARCHIVE_REL / "2026-10-15-new"
+    (target / "specs" / "retry").mkdir(parents=True, exist_ok=True)
+    (target / "_r").mkdir()
+    for rel, body in (
+        ("proposal.md", "# proposal\n\n新的。\n"),
+        ("design.md", "# design\n\n新的。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] 新的\n"),
+        ("specs/retry/spec.md", "# spec: 新的\n"),
+    ):
+        (target / rel).write_text(body, encoding="utf-8")
+    shutil.copy(repo / ARCHIVE_REL / "2026-09-30-old" / "reviews" / "grill-review.md",
+                target / "_r" / "grill-review.md")          # 受害者报告**逐字节**搬进来
+    os.symlink("_r", target / "reviews")                     # ← 目录型符号链接
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "符号链接目录搬运 + 改代码")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F10_gitlink_anywhere_under_the_arrival_is_rejected(repo: Path, cli):
+    """判据 5：`<A>` 下**非证据位置**的 gitlink 也要 fail-closed（规格明写「任何位置」）。"""
+    init_wired(repo, cli)
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    _born_archived_artifacts(repo, "2026-10-15-with-mod")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "① 内容")
+    # ⚠️ 不能用 `add -A`（它会把磁盘上不存在的 gitlink 当成删除）⇒ 直接 commit。
+    git(repo, "update-index", "--add", "--cacheinfo",
+        f"160000,{'d' * 40},openspec/changes/archive/2026-10-15-with-mod/mod")
+    git(repo, "commit", "-qm", "塞一个 gitlink（非证据位置）")
+
+    code, _, err = check(repo, cli)
+
+    assert code == C.EXIT_FAIL
+    assert "没有任何 change 目录" in err, err
+
+
+def test_F11_arrival_judgment_uses_merge_base_not_the_base_ref(repo: Path, cli):
+    """判据 1 的**基准同源**（`merge-base(base, head)`，不是 `base` ref 的树）。
+
+    构造：feature 上出生即归档一个目录；此后 **main 也前进**、把**同名目录**加进去。
+    于是 `main` 原树里该路径**存在**、而 `merge-base(main, HEAD)` 的树里**不存在**
+    ⇒ 拿 `base` 原树当基准会判「不是到达」（于是报「没有任何 change 目录」）；
+    拿 `merge-base` 才是到达（与 `changed_files` 的 `base...head` 同源）。
+    """
+    init_wired(repo, cli)
+    commit_all(repo, "接入 witnessloop")
+    git(repo, "checkout", "-q", "-b", "feature")
+
+    _born_archived_artifacts(repo, "2026-10-15-forked")
+    write_artifact(repo, "src/app.py", "x = 1\n")
+    commit_all(repo, "① 内容（出生即归档）")
+    _born_archived_evidence(repo, cli, "2026-10-15-forked")
+    commit_all(repo, "② 证据")
+
+    git(repo, "checkout", "-q", "main")
+    for rel, body in (
+        ("proposal.md", "# proposal\n\nmain 侧的另一个。\n"),
+        ("design.md", "# design\n\nmain 侧的另一个。\n"),
+        ("tasks.md", "# tasks\n\n- [ ] main\n"),
+        ("specs/retry/spec.md", "# spec: main\n"),
+        ("reviews/notes.md", "占位\n"),
+    ):
+        write_artifact(repo, f"{ARCHIVE_REL}/2026-10-15-forked/{rel}", body)
+    commit_all(repo, "main 前进：加了同名归档目录")
+    git(repo, "checkout", "-q", "feature")
+
+    code, _, err = check(repo, cli)
+
+    # 只钉「基准取的是 merge-base」：换回 `base` 原树 ⇒ 该目录不是到达 ⇒ require_change_for 命中。
+    assert "没有任何 change 目录" not in err, err

@@ -20,14 +20,6 @@ EMPTY = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
 
 
 @dataclass
-class Entry:
-    mode: str
-    type: str
-    sha: str
-    path: str
-
-
-@dataclass
 class FakeTree:
     """假树：`{rev: {path: (mode, type, sha)}}`；`children`/`walk` 由路径前缀推导。
 
@@ -71,7 +63,8 @@ class FakeTree:
     def walk(self, rev: str, path: str):
         prefix = path.rstrip("/") + "/"
         return sorted(
-            (Entry(m, t, s, p) for p, (m, t, s) in self.trees.get(rev, {}).items() if p.startswith(prefix)),
+            (gitutil.TreeEntry(m, t, s, p)
+             for p, (m, t, s) in self.trees.get(rev, {}).items() if p.startswith(prefix)),
             key=lambda e: e.path,
         )
 
