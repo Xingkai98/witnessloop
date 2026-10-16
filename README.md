@@ -180,8 +180,11 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 
 ### 怎么钉版本 / 怎么升级
 
-> ⚠️ 前提：本仓已发布**含本 change 的 ref**（`v1.7.0` 起）。在它出现之前，
-> 下面这些命令里的 ref 都请写 `@v1`（现状），其余步骤与语义完全一样。
+> ⚠️ **前提：本仓已发布含这个能力的 ref（`v1.7.0` 起）。** 在它出现之前，本节的两步**都不成立**：
+> `v1` 那份 `gate.yml` 里没有「包 ref 由 workflow 自己推导」的解析 step（`git show v1:…` 可核），
+> 而 `@v1` 的旧 CLI 也没有「显式 `--gate-ref` ⇒ 重写 caller + 同步台账」这条语义
+> （跑它只会得到一句指向 policy 的冲突，见 [docs/gate.md §1.2](docs/gate.md)）。
+> ⇒ 现在仍请钉 `@v1`；等 `v1.7.0` 出来再按下面两步升级。
 
 caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「跑哪个 witnessloop 包」：
 `gate.yml` 把包 ref 解析成 `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit），

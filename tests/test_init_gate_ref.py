@@ -554,3 +554,76 @@ def test_the_drift_branch_also_says_the_caller_half_landed(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "被改动过" in err  # 漂移分支
     assert "已落盘、不回滚" in err  # 且点明了 caller 那半已经做成
+
+
+def test_same_ref_with_a_self_flagged_entry_is_refused_not_duplicated(repo: Path, cli):
+    """building 审阅 B2-1（**我上一轮引入的回归**）：ref 相同 + caller 那条被标 `self`。
+
+    旧（回归版）行为：台账结构判据排在「ref 是否相同」之后 ⇒ 这一态绕过全部拒绝、
+    落进 `_set_ledger_gate_ref` 的 `else` 插出**两条同路径**条目 ⇒ `uninit` 二次 unlink
+    抛 `FileNotFoundError`（半回滚）。现行为：**拒绝**（与文件在不在无关）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "self: true" in err
+    assert "幂等" not in out
+    after = json.loads((repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8"))
+    assert [e["path"] for e in after["created_files"]].count(C.GATE_WORKFLOW_PATH) == 1
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_a_hand_edited_caller_with_no_ledger_entry_is_not_silently_clobbered(repo: Path, cli):
+    """B2-4：ref **没变** + 台账缺条目 + 盘上 caller 被手改 ⇒ 拒绝，别静默覆盖用户内容。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).write_text("name: my-own-gate\n", encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "被手改过" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") == "name: my-own-gate\n"
+
+
+def test_the_repair_branch_says_it_only_filled_the_ledger(repo: Path, cli):
+    """B2-5/B2-6：补齐态（ref 未变）的两句文案都不得说成「改成 <同一个 ref>」。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", OLD_REF)
+    assert code == C.EXIT_PASS, err
+    assert "补齐" in out and "ref 未变" in out
+    assert "改成" not in out
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+    assert code == C.EXIT_PASS, err
+    assert "补齐" in out and "ref 未变" in out

@@ -190,9 +190,18 @@ def sync_caller_gate_ref(
     if not path.is_file():
         return None
 
+    if manifest.get("gate_ref") != gate_ref:
+        changing_ref = True
+    else:
+        # 补齐态（B2-5）：ref 本来就对，这一趟只为补台账条目——别把文案说成「改成 <同一个 ref>」。
+        changing_ref = False
+
     if dry_run:
-        print(f"init：[dry-run] 将重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
-        return f"[dry-run] 未落盘：{C.GATE_WORKFLOW_PATH} 与台账将一起改成 {gate_ref}"
+        if changing_ref:
+            print(f"init：[dry-run] 将重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
+            return f"[dry-run] 未落盘：{C.GATE_WORKFLOW_PATH} 与台账将一起改成 {gate_ref}"
+        print(f"init：[dry-run] 将补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目（ref 未变）")
+        return f"[dry-run] 未落盘：将补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目（ref 未变）"
 
     content = caller_workflow(gate_ref)
     path.write_text(content, encoding="utf-8")
@@ -219,11 +228,15 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None  # 坏台账由 `_already_initialized` 报（它有一手诊断）
-    if not isinstance(manifest, dict) or manifest.get("gate_ref") == gate_ref:
+    if not isinstance(manifest, dict):
         return None
     entries = manifest.get("created_files")
     if not isinstance(entries, list):
         return None  # 结构非法，同上
+    # ⚠️ **台账结构判据先于「ref 是否相同」**（building 审阅 B2-1 抓到的回归）：把
+    # `gate_ref == gate_ref` 的早退放在前面，会让「ref 相同 + caller 那条被标 self」这一态
+    # 绕过全部拒绝、直接落进 `_set_ledger_gate_ref` 的 `else`，插出**两条同路径**条目
+    # ⇒ `uninit` 二次 unlink 抛 `FileNotFoundError`。⇒ 结构先判、ref 后判。
     caller_entries = [
         entry
         for entry in entries
@@ -241,8 +254,24 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
             "该台账像被手工改过：更新它会在同一路径下再插一条、删的时候会半回滚。"
             "请人工核对台账后重跑（正常台账里 caller 那条没有 `self` 字段）。"
         )
-    if (root / C.GATE_WORKFLOW_PATH).is_file():
-        return None  # 文件在 ⇒ 补条目即可（`_set_ledger_gate_ref` 有那条分支），能做成
+    path = root / C.GATE_WORKFLOW_PATH
+    if path.is_file():
+        # 文件在 ⇒ 通常「补条目」就能做成。**但**（B2-4）：ref **没变**、而盘上内容又与
+        # 本次期望不同时，那是「一个被手改过、台账里又没登记的 caller」——以哪个为准工具猜不出来，
+        # 而按「期望」写下去就是**静默覆盖用户内容**（plain `init` 对同款状态是响亮退 1）。
+        if manifest.get("gate_ref") == gate_ref:
+            try:
+                current = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None  # 读不出：交给下面那两条判定去报（别在这里猜）
+            if current != caller_workflow(gate_ref):
+                return (
+                    f"无法按 --gate-ref 补台账：{C.GATE_WORKFLOW_PATH} 被手改过，"
+                    f"而 {C.INIT_MANIFEST_PATH} 里没有它的条目、请求的 ref 又与台账相同——"
+                    "以哪一边为准工具猜不出来。请人工确认后重跑"
+                    "（想让工具按 ref 重写它，请明确给一个**不同**的 ref）。"
+                )
+        return None
     if any(
         isinstance(entry, dict)
         and entry.get("path") == C.GATE_WORKFLOW_PATH
@@ -251,11 +280,10 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
     ):
         # 有条目（且不是自称 `self` 的那条）：文件缺失时漂移分支会**响亮地**报，
         # 不必在这里拦。
-        # ⚠️ 口径与另两处一致（`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`
-        # 都跳过自称 `self` 的条目）——**但本函数里那个 `not entry.get("self")` 当前不可达**：
-        # 上面的「被标 self ⇒ 拒绝」分支已经把它们全拦下了（building 审阅 B1-3 指出）。
-        # 保留它是**纵深防御**（两个分支的判据若将来被改动，口径不会悄悄分叉），
-        # 不是「少了它会出 bug」——此处措辞按事实写。
+        # ⚠️ 口径与另两处一致：`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`
+        # 都跳过自称 `self` 的条目。本函数里那个 `not entry.get("self")` 是**纵深防御**
+        # （上面的「被标 self ⇒ 拒绝」分支已先拦下它们）——但**不是**「不可达」：
+        # B2-1 的回归正是「少了口径一致就会插重复条目」，所以它按**同口径**写，而不是省掉。
         return None
     return (
         f"无法按 --gate-ref 改 caller：{C.GATE_WORKFLOW_PATH} 既不在盘上、"
@@ -574,8 +602,9 @@ def _already_initialized(
             + (
                 # building 审阅的 B1-7：显式 `--gate-ref` 那条轴已经做成时，别把这句
                 # 「要更换 policy 请先 uninit」原样甩给用户——`uninit` 会把 caller 与台账**一起删**。
-                "⚠️ 但**别照下句做**：本行的冲突与你那条显式 `--gate-ref` 无关，"
-                "而 `uninit` 会把 caller 与台账一起删掉。policy 那条轴要单独解决。"
+                "⚠️ 这一行冲突与你那条显式 `--gate-ref` 无关；**不要**为此去跑 `uninit`——"
+                "它会把 caller 与台账一起删掉。policy 那条轴请**单独**解决"
+                "（同时再给一次 `--policy <你的 seed>` 即可）。"
                 if handled
                 else "要更换 policy 请先 `uninit`"
             )
