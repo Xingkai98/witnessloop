@@ -165,6 +165,13 @@ def sync_caller_gate_ref(
         return None  # 坏台账交给 `_already_initialized` 报（它有一手诊断）
     if not isinstance(manifest, dict) or manifest.get("gate_ref") == gate_ref:
         return None
+    # ⚠️ `created_files` **必须已经是数组**，否则一律**拒绝重写**（对抗轮 R5 的 P1）：
+    # 旧实现会把它静默重建成 `[]`，于是台账里 policy 等条目**被丢掉**、却报 EXIT=0 成功；
+    # 之后 `uninit` 还会说「已回滚」而 policy 与台账**留在盘上**——与它自称的
+    # 「避免留下半删状态」相反，也与本函数对「JSON 坏台账」的 fail-closed 处置相反。
+    # 这里只做「不写」，诊断交给 `_already_initialized`（一处文案）。
+    if not isinstance(manifest.get("created_files"), list):
+        return None
     path = root / C.GATE_WORKFLOW_PATH
     if not path.is_file():
         return None
@@ -185,11 +192,10 @@ def _set_ledger_gate_ref(manifest: dict, gate_ref: str, digest: str) -> None:
     """就地改台账：``gate_ref`` + caller 条目的 ``sha256``。
 
     条目缺失就补一条，且**插在 `self` 条目之前**（台账自己的那条约定俗成排最后）。
+    ⚠️ 调用方（`sync_caller_gate_ref`）已保证 `created_files` **是数组**——这里**不再**
+    兜「不是数组」的情形：那会静默重建、丢条目（对抗轮 R5 的 P1）。
     """
-    entries = manifest.get("created_files")
-    if not isinstance(entries, list):
-        entries = []
-        manifest["created_files"] = entries
+    entries = manifest["created_files"]
     for entry in entries:
         if (
             isinstance(entry, dict)
@@ -389,6 +395,19 @@ def _already_initialized(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         print(f"init：{C.INIT_MANIFEST_PATH} 无法解析：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
+
+    entries = manifest.get("created_files")
+    if not isinstance(entries, list):
+        # 结构非法（不是数组 / 键缺失）⇒ **受控地**报一条诊断并退 1，**不**崩。
+        # 早先这里直接迭代它：dict 会迭代出**字符串键**，`entry.get(...)` 抛 AttributeError，
+        # 一路冒到进程入口（退 1，但只有一句「内部错误」）；字符串同理逐字符迭代。
+        # ⇒ 与 JSON 坏台账同一种处置：fail-closed、**受控**、而且**绝不**顺手重建（那会丢条目，
+        # 对抗轮 R5 的 P1）。
+        print(
+            f"init：{C.INIT_MANIFEST_PATH} 结构非法（created_files 不是数组）：无法核对台账漂移。",
+            file=sys.stderr,
+        )
         return C.EXIT_FAIL
 
     drift: list[tuple[str, str | None, str]] = []

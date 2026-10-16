@@ -97,6 +97,9 @@ jobs:
             echo "::warning::witnessloop 包 ref 解析失败，退到 $REF —— $FAILED"
           fi
 
+          # ⚠️ `$GITHUB_OUTPUT` 刻意**不**兜底（对抗轮 R5 的观察）：它未定义时脚本当场退 2，
+          # 那是**响亮**的失败；兜了反而会退化成 `uvx --from git+…@`（装默认分支）——
+          # 一条与「包版本钉没钉住」毫无相似之处的**静默错版**。
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
           echo "::notice::witnessloop 包 ref = $REF（来源：$WHY）"
 

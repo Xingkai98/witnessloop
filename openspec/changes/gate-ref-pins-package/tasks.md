@@ -101,7 +101,14 @@
       不能只查文档（对抗轮 R4 的 N3：上一轮的自查只点名 `docs/` 与 `README.md`，结果漏了
       `design.md` 的 §4 R6 表、`tests/` 的 docstring、`docs/gate.md §7.1` 三处）。
       历史引文、错误信息复现那类**保留**；机制描述一律写成「兜底 ref（= `DEFAULT_GATE_REF` 的 ref 部分）」。
-      建议直接用：`grep -rn "退 \`v1\`\|退回 \`v1\`\|退 v1\|吃 \`v1\`" src/ tests/ docs/ README.md .github/`。
+      **自查面还要包含 `openspec/`**（R5 实测：上一轮漏网的三处之一就在 change 文档里），
+      并**用「已知会漏的形态」试一下这条 grep 真的抓得到**（R5 拿四种形态试，四种全漏——
+      单一字面 grep 抓不住「兜底落点被写成固定 tag」的所有变体）。
+      可用的起手式（**抓到之后逐条人判**：历史引文/错误信息复现保留，机制描述要改）：
+      ```bash
+      grep -rn "v1" --include=*.md --include=*.py --include=*.yml src/ tests/ docs/ README.md .github/ \
+        openspec/changes/gate-ref-pins-package/
+      ```
       ⚠️ 它是 `src/**` 改动 ⇒ 走本仓自己的门禁（change 证据）。**做法**：本 change **先不归档**
       （见 5.2），这一步挂在**本 change 目录**下、按既有流程重建全部 manifest。
       ⚠️ **重建 manifest 必须绑在「最后一条非证据提交」上**（R3 的 M3，见下）：

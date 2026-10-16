@@ -326,3 +326,32 @@ def test_ledger_without_a_caller_entry_is_repaired(repo: Path, cli):
     assert "幂等" in cli("init", "--root", str(repo))[1]
     assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
     assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+
+
+def test_a_malformed_ledger_is_loud_and_never_rebuilt(repo: Path, cli):
+    """对抗轮 R5 的 P1：`created_files` 不是数组时，**不许**静默重建（那会丢条目）。
+
+    旧行为（新代码引入的）：把 `created_files` 重建成 `[]` ⇒ 台账里 policy 等条目**消失**、
+    却报 EXIT=0 成功；随后 `uninit` 说「已回滚」而 policy.json 与台账**留在盘上**——
+    与 `uninitcmd` 自称的「避免留下半删状态」相反，也与本函数对「JSON 坏台账」的 fail-closed 相反。
+    新行为：**受控失败**（一条诊断 + 退 1），caller 与台账**一个字节都不动**。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = {"path": "not-a-list"}  # 结构非法（dict）
+    raw = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    (repo / C.INIT_MANIFEST_PATH).write_text(raw, encoding="utf-8")
+    caller_before = (repo / C.GATE_WORKFLOW_PATH).read_bytes()
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "结构非法" in err, "要说清是台账结构的问题，不能只报一句内部错误"
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before  # 没重写
+    assert (repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8") == raw  # 没重建
+    # plain init 也走同一条受控路径（不崩、不丢条目）
+    code, _, err = cli("init", "--root", str(repo))
+    assert code == C.EXIT_FAIL
+    assert (repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8") == raw
