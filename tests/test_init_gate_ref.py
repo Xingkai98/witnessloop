@@ -21,7 +21,11 @@ from witnessloop.hashing import sha256_bytes
 
 from conftest import git
 
-NEW_REF = "Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0"
+#: **刻意取一个不可能成为出厂默认的 ref**（对抗轮 R3 的 M1）：这组用例的前提是
+#: 「换成一个**不同**的 ref」，若它与 `C.DEFAULT_GATE_REF` 撞值，`sync_caller_gate_ref`
+#: 会判「台账里记的就是这个」而直接 no-op，整套用例的前提就整条塌掉——
+#: 而默认值在 post-merge 步骤里是要挪的（`tasks.md §6.1` 会把它挪到 `@v1.7.0`）。
+NEW_REF = f"{C.REPO_SLUG}/.github/workflows/gate.yml@v9.9.9"
 OLD_REF = C.DEFAULT_GATE_REF
 
 
@@ -37,6 +41,11 @@ def _caller_entry(manifest: dict) -> dict:
         for entry in manifest["created_files"]
         if entry["path"] == C.GATE_WORKFLOW_PATH
     )
+
+
+def test_new_ref_does_not_collide_with_the_factory_default():
+    """把「前提」本身钉成一条测试——否则 post-merge 挪默认值时它会**静默**塌掉。"""
+    assert NEW_REF != C.DEFAULT_GATE_REF
 
 
 def _init(repo: Path, cli, *extra: str) -> None:

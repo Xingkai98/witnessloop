@@ -191,12 +191,17 @@ witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.
 
 # 已接入：升级**两步，顺序不能反**
 uv tool install --force git+https://github.com/Xingkai98/witnessloop@v1.7.0   # ① 先升 CLI
+witnessloop check --root . 2>/dev/null | head -1                              # ①′ 自证：看这一行
 witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0   # ② 再换 ref
 ```
 
 ⚠️ **第 ① 步不能省**：重写 caller 的语义是**新版包**才有的。用旧 CLI 跑第 ② 步会得到
 EXIT=1 与一句把人指向 **policy** 的「检测到冲突…要更换 policy 请先 `uninit`」——
 **误导**（要换的不是 policy，是 CLI 太旧）；看到它**别去删 policy**。
+
+⚠️ **①′ 是唯一能确认 CLI 换没换成的办法**：`--version` 判不出来（版本号恒为 `0.1.0`、与 tag 无关），
+`init` 也不自报。`check` 的第一行是唯一出口——它打 `requested_revision=<你刚升的 ref>`；
+旧的 `@v1` 包**没有这一行**，所以「有没有这一行」本身就是新旧判据。
 
 ⚠️ **`v1.7.0` 发布之前，请仍然钉 `@v1`**：这个 tag 是随本 change 的 `(post-merge)` 步骤建的，
 在它出现之前指过去会钉到一个**不存在的 ref**。

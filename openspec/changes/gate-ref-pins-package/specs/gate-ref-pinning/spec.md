@@ -15,12 +15,13 @@
 包版本就跟着落在**那个 ref 解析出的那份 gate.yml 的 commit** 上。
 
 - 接受判据：解析所依赖的 `job.workflow_repository` SHALL 等于 `constants.REPO_SLUG`
-  （`Xingkai98/witnessloop`）——否则退回 `v1`（fail-closed）。
+  （`Xingkai98/witnessloop`）——否则退回**兜底 ref**（fail-closed；见下条 Scenario 的定性）。
 - `job.workflow_ref` SHALL 只作**兜底**（`job.workflow_sha` 缺失时）：仅接受 `refs/heads/<分支名>`
   与 `refs/tags/<tag名>` 两种形态。
 - ⚠️ **能力边界（如实登记、不宣称覆盖）**：`job.*` 在 **GitHub Enterprise Server 上不可用**；
   同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到
-  fail-closed 退 `v1`，区别是**日志里有 `::warning::`**（不静默）。见 `design.md §4 R6`。
+  fail-closed 退**本仓当前默认 ref**（`constants.DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`），
+  区别是**日志里有 `::warning::`**（不静默）。见 `design.md §4 R6`。
 
 ### Scenario: 改一处、两处跟着变
 - **Given** 一个已接入的仓，caller 是 `uses: …/gate.yml@<旧 ref>`
@@ -41,7 +42,8 @@
   `…@refs/pull/30/merge`（PR 合并 ref，**不是稳定的可安装 ref**——⚠️ 只此定性，
   **不**声称它必然安装失败：该 ref 通常能被 git fetch 到，uv 侧行为**未实测**）
 - **When** 运行门禁
-- **Then** SHALL **fail-closed 到既有默认**（`v1`）**并打 `::warning::` 说明**，SHALL NOT 静默改变行为
+- **Then** SHALL **fail-closed 到既有默认**（= `constants.DEFAULT_GATE_REF` 的 **ref 部分**；
+  今天 = `v1`，随出厂默认一起挪，**不写死某个 tag**）**并打 `::warning::` 说明**，SHALL NOT 静默改变行为
 
 ## Requirement: 实际使用的 ref SHALL 在 CI 日志里可见
 

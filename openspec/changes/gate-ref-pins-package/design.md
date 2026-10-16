@@ -44,7 +44,9 @@
    （R2 的 D2 要求写死这一点：实测 `uvx` 对 `@refs/heads/main` 与 `@main` **都能装**，
    所以这是**取舍**不是必须——剥掉后日志与人眼更直白，代价是丢掉「同名 branch 与 tag」的消歧
    （该场景**未实测**）；两种形态任选其一都行，此处选**剥**）；
-4. 以上都拿不到 ⇒ **fail-closed 到 `v1`** 并打 `::warning::`（不静默）。
+4. 以上都拿不到 ⇒ **fail-closed 到兜底 ref** 并打 `::warning::`（不静默）。
+   兜底 ref SHALL 与 `constants.DEFAULT_GATE_REF` 的 ref 部分**同源**（今天 = `v1`，随出厂默认一起挪）
+   —— 见下面 Q1 的裁定。
 
 ```yaml
 inputs:
@@ -222,7 +224,7 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 1. **解析面（gate.yml 的解析 step，从 YAML 抽出后真跑 bash）**：覆盖
    `job.workflow_sha` 主路径 / 显式 `with:` 覆盖 / repository 不匹配 / sha 缺失走 `workflow_ref` 兜底
    （`refs/heads/*` 与 `refs/tags/*`）/ 两样都缺 / `job.workflow_ref` 是 `refs/pull/N/merge` 畸形
-   ⇒ 后者**fail-closed 退 `v1` 且打 warning**。用 `GITHUB_OUTPUT` 捕获解析结果。
+   ⇒ 后者**fail-closed 退兜底 ref（`DEFAULT_GATE_REF` 的 ref 部分）且打 warning**。用 `GITHUB_OUTPUT` 捕获解析结果。
 2. **生成面**：`init --gate-ref <ref>` 生成的 caller 里 `uses:` 逐字等于该 ref（(B′) 下 `caller_workflow()`
    字节**不变**，故这条是回归性质的守卫）。
 3. **升级路径**：既有形态的 caller（无 `with:`）+ 显式 `--gate-ref <新>` ⇒ **重写 caller + 同步台账
@@ -288,6 +290,43 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 作用域守卫**没有**打破「新仓已存在 caller ⇒ 冲突且整体不落盘」；`check` 自报从不因取不到元数据而失败；
 D4 的两条实跑事实逐条成立。R2 还**独立复算确认了 K5 是 R1 自己错**。
 
+### R3（报告见 `reviews/grill-adversarial-r3.md`）
+
+独立零记忆对抗者判定**不收敛**：**K1–K8 与 L1–L6 逐条实核「确实落进正文/实现」**（判据②满足），
+但**本轮新证伪 4 条**（判据①不满足），编号 **M1–M4**。**已逐条落库**：
+
+| # | R3 发现 | 落点 |
+|---|---|---|
+| M1 | `tasks.md §6.1` 的字面量族**还缺第 5 处**：`tests/test_init_gate_ref.py` 的 `NEW_REF` 与 6.1 之后的新默认值**撞值** ⇒ 5 条用例的前提静默塌掉 | `NEW_REF` 改成不可能等于默认的 `…@v9.9.9` + 新增 `test_new_ref_does_not_collide_with_the_factory_default` **钉住这条前提**；`tasks.md 6.1` 的清单补上这一条并订正条数。**实跑验证**：模拟执行 6.1 的四处改动 ⇒ `673 passed`（改前 `5 failed`） |
+| M2 | 多轮对抗报告 ⇒ **孤儿报告**；而 `manifest build` 落盘名是 `<stage>.manifest.json` ⇒ 同 stage **静默覆盖**；`docs/gate.md §3` 的指引会照抄出错 | `docs/gate.md §3` 写明「每份报告各配一份 manifest」+ 覆盖陷阱 + 两条可选落法（额外 stage 名 / `reviews/` 之外，先例 `archive-arrival-recognition/rounds/`）；`tasks.md` 5.2 与 0.4 各补一步 |
+| M3 | `tasks.md` 里「revision 绑定允许**本 PR 自己的变更**落在 `head_sha` 之后」与机制**相反**（实测：改非证据文件 ⇒ 每份 manifest 报 stale） | `tasks.md 6.1` 改成「`head_sha` 之后**只允许证据文件**」+ 写明正确顺序（先落代码 → 提交 → 再重建 manifest） |
+| M4 | 「先升 CLI」**无法自证**：`--version` 对两个包同值、`init` 不自报 | `docs/gate.md §1.2` 与 `README.md` 的 recipe 补 ①′：`witnessloop check --root . 2>/dev/null \| head -1` ⇒ `requested_revision=<刚升的 ref>`（旧包**没有**这一行，故「有没有这一行」本身就是新旧判据） |
+
+**R3 的低危观察**：E1（验收命令的 `grep -n` 行号前缀会让「逐字」比对差一个前缀）已改成 `grep -h`；
+E3（`guard` 与 `check` 共用判定、但**包 ref 自报不共用**）在 `docs/gate.md §8` 补一句；
+E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**已登记**（不算缺口）。
+
+### R3 的两条 Open Question 与本文的裁定（**作者裁定，非用户拍板**）
+
+> 用户已明确「不要向用户提问」⇒ 这两条由作者按对抗轮自己的倾向与机制事实裁定，
+> 并**写明可回退面**（都很小，且都留了机械钉子）。
+
+- **Q1 fail-closed 的落点要不要跟着 `DEFAULT_GATE_REF` 漂移？→ 裁定：跟（同源）。**
+  理由：① 兜底语义是「退到**本仓当前默认**」，让它与 `DEFAULT_GATE_REF` 分家会引入**第二个**「默认」概念，
+  正是本 change 要消灭的那类分裂；② 钉死 `v1` 会让 GHES / 同 owner fork 的接入方**永远**吃 `v1` 时代的包
+  ——那恰恰是本 change 的题眼（静默吃旧包），只是换了个触发条件。③ 代价（「兜底的 tag 会随发布变」）
+  可以由「兜底永远等于**那份 gate.yml 写就时**的默认值」自然地限定住。
+  **落点**：`gate.yml` 的 `WL_FALLBACK_REF` 与 `DEFAULT_GATE_REF` 的 ref 部分**同源**（由
+  `test_resolve_constants_match_the_single_source` 钉住）；全局把「退 `v1`」的措辞改成「退**兜底 ref**
+  （= `DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`）」——`spec.md`、`design.md`、`docs/gate.md §7.1`、
+  `gate.yml` 注释、`tasks.md` 已逐处改完。**回退面**：改一个 env 字面量 + 一条断言 + 三处措辞。
+- **Q2 多轮对抗报告怎么绑定？→ 裁定：报告留在 `reviews/`（用户指定），多出的轮次各用不同的 stage 名。**
+  理由：① 用户的产物路径就是 `reviews/grill-adversarial*.md`；② R3 实测「额外 stage 名 ⇒ 0 条孤儿、
+  必备 stage 判定照旧满足」；③ 另一条路（放到 `reviews/` 之外，先例 `archive-arrival-recognition/rounds/`）
+  同样可行且**不需要**额外 stage，本 change **登记为可选**但不混用。
+  **落点**：`docs/gate.md §3` 的约定 + `tasks.md` 5.2 的动作清单。**回退面**：移动文件 + 改
+  `design.md` 里的引用路径。
+
 ### R2 的一条 Open Question 与本 change 的处置
 
 - R2 的 Q1（`--gate-ref` + 冲突 `--policy` 该「先写后判」还是「两轴一起不落盘」）：
@@ -305,7 +344,7 @@ D4 的两条实跑事实逐条成立。R2 还**独立复算确认了 K5 是 R1 �
 
 | 问题 | 定案 | 依据 |
 |---|---|---|
-| Q1 修法形态 | **(B′)**：包 ref = `job.workflow_sha`（兜底 `job.workflow_ref`），`REPO_SLUG` 判据，fail-closed 退 `v1` | 跨仓真 CI 探针（§2 D1 原始输出） |
+| Q1 修法形态 | **(B′)**：包 ref = `job.workflow_sha`（兜底 `job.workflow_ref`），`REPO_SLUG` 判据，fail-closed 退**兜底 ref**（`DEFAULT_GATE_REF` 的 ref 部分） | 跨仓真 CI 探针（§2 D1 原始输出）+ 官方 contexts 文档 |
 | `check` 能不能自己打印「我在用哪个 git ref」？ | **能**（读 PEP 610 `vcs_info`），**且裁定纳入**（尽力而为、取不到不失败） | `uvx` 真装实测（§2 D3）；Q4 裁定 |
 | 要不要动 `v1` tag？ | **不动** | issue #30 的期望；tag 是别人依赖的发布物（Q3 裁定） |
 | 要不要顺手修 #31？ | **不** | 正交（D5） |

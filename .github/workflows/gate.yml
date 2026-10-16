@@ -36,7 +36,8 @@ jobs:
       #   ② `job.workflow_repository == REPO_SLUG` 且 `job.workflow_sha` 非空 ⇒ 用那个 sha
       #      —— `job.*` 在 called workflow 里指**被复用的那个 workflow 文件**；
       #   ③ 否则用 `job.workflow_ref` 的 `@` 之后那段，只收 `refs/heads/*` 与 `refs/tags/*`；
-      #   ④ 全不行 ⇒ **fail-closed 退 `v1`** 并打 `::warning::`（不静默）。
+      #   ④ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
+      #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1`）并打 `::warning::`。
       #
       # ⚠️ **不能用 `github.workflow_ref` / `github.workflow_sha`**：跨仓真 CI 探针（run
       # 38853369550）实测它们指 **caller**（接入方自己那份）⇒ 会拿接入方的 ref 去
@@ -67,7 +68,7 @@ jobs:
 
           # ⚠️ 一律用 `${VAR:-}` 读：本脚本 `set -eu`，而未定义的变量会让它**当场退出**
           # （GitHub 侧上游取不到时会渲染成空串、env 仍然存在，但这不构成可依赖的保证）。
-          # 解析器宁可 fail-closed 退 `v1` 并告警，也不能因为一个没定义的变量而红在一个
+          # 解析器宁可 fail-closed 退兜底 ref 并告警，也不能因为一个没定义的变量而红在一个
           # 与「包版本」毫无相似之处的地方。
           if [ -n "${WL_INPUT_REF:-}" ]; then
             REF="$WL_INPUT_REF"

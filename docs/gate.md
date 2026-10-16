@@ -87,6 +87,18 @@ ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
    （`init-manifest.json` 里该条目的 `sha256` 与 `gate_ref`），其余文件照旧只增不改；
    之后 plain `init` 回到幂等、`uninit` 仍可用。
 
+⚠️ **第 ① 步之后怎么确认它真的生效**（对抗轮 R3 的 M4）：**`--version` 判不出来**——
+`__version__` 恒为 `0.1.0`、与 tag 无关（见 §7.1），`init` 也不自报。
+唯一可复算的出口是 `check` 的第一行：
+
+```bash
+witnessloop check --root . 2>/dev/null | head -1
+# check：本包来源（自报，尽力而为）：requested_revision=<你刚升的 ref>，commit_id=<sha>
+```
+
+（该行在**未接入**的目录里也打——它在 `check` 做任何 git 操作**之前**。旧的 `@v1` 包**没有**这一行，
+所以「有没有这一行」本身就是一条新旧判据。）
+
 ⚠️ **为什么 ① 不能省**（对抗轮 R2 实测）：重写语义是**新版包**才有的；用旧 CLI
 （例如 `@v1`）跑第 ② 步会得到
 
@@ -202,6 +214,16 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
   witnessloop manifest build --change <id> --stage grill-adversarial \
     --report reviews/grill-adversarial.md …     # → reviews/grill-adversarial.manifest.json
   ```
+
+  ⚠️ **落盘名是 `reviews/<stage>.manifest.json` ⇒ 同一个 stage 只能有一份 manifest**
+  （后一次 `manifest build` 会**覆盖**前一份，而孤儿判定随之换成另一组——
+  change `gate-ref-pins-package` 的对抗轮 R3 在模拟仓里实测过）。于是：
+  - **每一份报告各配一份 manifest**（数量对齐，不是「每个 stage 一份」）；
+  - **多出来的轮次报告**（`grill-adversarial-r2.md` / `-r3.md` …）要么各用一个**不同的 stage 名**
+    （如 `--stage grill-adversarial-r2`；`check` 只要求三个**必备** stage 各存在，不排斥额外 stage，
+    实测 0 条孤儿），要么放到 `reviews/` **之外**（孤儿判据的扫描面是 `reviews/**/*.md`；
+    本仓已有先例：`openspec/changes/archive-arrival-recognition/rounds/`）。
+  - 两种做法都在用；**同一次 change 里别混**。
 
   判定**只做文件名交叉引用**，**不解析报告正文**。两侧都按**解析后**的路径比对
   （`resolve()` 之后再比），所以 `./`、`//`、`..`、反斜杠字面名、符号链接都不会
@@ -500,6 +522,9 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 
 **一侧判定、两处接线**——同一个纯函数 `evidence.py`，`check`（事后 / CI）与 `guard`（事前 / 本地）共用
 （分两份实现必然漂移：本仓已因 `check` / `manifest build` 各写一套踩过坑，故共用 `constants.HASHED_ARTIFACTS`）。
+
+⚠️ **「共用」只指 grill 证据的正文判定**：§1.2 那条「本包来源（自报，尽力而为）」**只有 `check` 打**——
+`guard` 与 `manifest build` 都不打（那两处不关心跑的是哪个包）。别拿 `guard` 的输出当「自报没生效」。
 
 **判据**（`src/witnessloop/evidence.py`）：`## Confirmed Decisions` **顶层 bullet（含其续行）≥ 3 条**、
 **每条块内含 `来源:`**；`## Open Questions`（**逐字标题**）**必须存在**、其每条的 `Q<n>` 都要在
