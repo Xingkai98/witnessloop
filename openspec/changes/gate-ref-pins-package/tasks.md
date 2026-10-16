@@ -13,7 +13,7 @@
 - [x] 0.2 把停轮问题逐条抛给用户（各附具体例子与推荐）。
 - [x] 0.3 答复逐条记进 `reviews/grill-design.md` 的 `## User Confirmation`（Q1–Q5，无「按推荐」类占位）；
       `design.md §8` 同步为「裁定」，两份文件的 **Q 集合 = {Q1…Q5}** 逐条一致。
-- [ ] 0.4 对抗轮（独立零记忆，**无轮数上限、收敛才停**）→ `reviews/grill-adversarial*.md`
+- [x] 0.4 对抗轮（独立零记忆，**无轮数上限、收敛才停**）→ `reviews/grill-adversarial*.md`
       （**裁定 Q2（多轮报告的落点）**：报告留在 `reviews/`，多出来的轮次**各用一个不同的 stage 名**
       ——`grill-adversarial-r2` / `-r3`…… 见 `design.md §7.9` 的 Q2 与 `docs/gate.md §3`。
       另一条路是放到 `reviews/` 之外（先例 `archive-arrival-recognition/rounds/`），**本 change 不混用**）。
@@ -66,7 +66,8 @@
 
 ## 5. 收尾
 
-- [ ] 5.1 实现后独立审阅闭环 → `reviews/building-review.md`。
+- [x] 5.1 实现后独立审阅闭环 → `reviews/building-review.md`（**B1–B5 五轮**；
+      B5 判**通过**）。后续轮次的报告按 M2 的约定各用不同 stage 名。
 - [ ] 5.2 归档 / 回链 issue #30。
       ⚠️ **归档之前**先把 manifest 补齐（对抗轮 R3 的 M2）：本 change 的 `reviews/` 会有
       **多份** `.md`（`grill-design` / `grill-adversarial`（R1）/ `-r2`…`-r11` / `building-review` —— 

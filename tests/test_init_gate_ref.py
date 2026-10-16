@@ -627,6 +627,9 @@ def test_the_repair_branch_says_it_only_filled_the_ledger(repo: Path, cli):
     assert code == C.EXIT_PASS, err
     assert "补齐" in out and "ref 未变" in out
     assert "改成" not in out
+    # B5-2：dry-run 那条 print 的**正文**同样要钉住（它是 B4-3 的对称项；
+    # 此前把它整行删掉 702 条全绿）。
+    assert f"[dry-run] 将补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目" in out
 
     code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
     assert code == C.EXIT_PASS, err
