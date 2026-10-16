@@ -268,7 +268,9 @@ def run(args: argparse.Namespace) -> int:
         if tests_write is not None:
             if args.dry_run:
                 print(f"init：[dry-run] 将写入测试执行点 {C.ADOPTER_TESTS_PATH}")
-                note = "[dry-run] 未落盘，其余文件无改动"
+                # ⚠️ 只说「未落盘」，**不**加「其余文件无改动」：`--gate-ref` 那条轴可能同时
+                # 在改 caller（下面 `rewritten`）——两句叠起来会自相矛盾（对抗轮 R4 的观察）。
+                note = "[dry-run] 未落盘"
             else:
                 # 写在前、其余判定照旧参与退出码（Z1/O2）：后续若报冲突，**不回滚**这次写入，
                 # 但也绝不静默——这一行当场点名文件。
@@ -279,7 +281,8 @@ def run(args: argparse.Namespace) -> int:
                     else "此前不存在"
                 )
                 print(f"init：已写入测试执行点 {C.ADOPTER_TESTS_PATH}（{why}）")
-                note = "其余文件无改动，未 commit"
+                # 同样不自称「其余文件无改动」——见上。
+                note = "已写入测试执行点，未 commit"
         # 显式 `--gate-ref` 的覆盖语义（Q2 裁定 (a)）。**只**在这个已接入分支里生效：
         # 未接入的仓走下面的「只增不改」——否则会静默覆盖新仓里外来的 caller
         # （`tests/test_init.py` 的「新仓目标文件已存在 ⇒ 冲突且整体不落盘」就是钉它的）。

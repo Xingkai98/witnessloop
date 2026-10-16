@@ -273,3 +273,37 @@ def test_dry_run_must_not_claim_it_wrote_anything(repo: Path, cli, tmp_path):
         initcmd.caller_workflow(NEW_REF)
     )
     assert _ledger(repo)["gate_ref"] == OLD_REF
+
+
+def test_ledger_without_a_caller_entry_is_repaired(repo: Path, cli):
+    """spec 的 Scenario「台账里没有 caller 条目」的**行为级钉子**（对抗轮 R4 的观察：
+    `initcmd._set_ledger_gate_ref` 的「补条目」分支此前**没有任何测试覆盖**）。
+
+    语义：显式 `--gate-ref` ⇒ 同步 `gate_ref` **并补上**该条目（`sha256` = 新内容），
+    且插在台账自己的 `self` 条目**之前**（台账自己那条约定俗成排最后，`uninit` 依赖这个顺序）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    after = _ledger(repo)
+    assert after["gate_ref"] == NEW_REF
+    paths = [entry["path"] for entry in after["created_files"]]
+    assert paths[-1] == C.INIT_MANIFEST_PATH, f"self 条目必须排最后，实得 {paths}"
+    assert paths.count(C.GATE_WORKFLOW_PATH) == 1
+    expected = initcmd.caller_workflow(NEW_REF)
+    assert _caller_entry(after)["sha256"] == sha256_bytes(expected.encode("utf-8"))
+    # 补出来的条目不是「死账」：随后 plain init 幂等、uninit 仍能回滚它。
+    assert "幂等" in cli("init", "--root", str(repo))[1]
+    assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
