@@ -317,6 +317,26 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 | N2 | `init --gate-ref X --test-command C` 的收尾话自相矛盾（前半「其余文件无改动」后半「caller 与台账已改成 X」） | `initcmd` 的 note 不再自称「其余文件无改动」——两条轴都可能动过，各自只陈述自己那一件事 |
 | N3 | R3-Q1 自称「退 `v1` 措辞已逐处改完」**是假的**：仍漏 `docs/gate.md`（§7.1）、`design.md`（§4 R6 表）、`tests/test_gate_workflow.py`（docstring）三处；且 `tasks.md §6.1` 的自查面只点名 `docs/` 与 `README.md`，**照它执行查不出** | 三处已改；`tasks.md §6.1` 的自查面扩到 **`src/` + `tests/`（含 docstring）+ `docs/` + `README.md` + `.github/`** 并附可直接跑的 grep。全仓活面复查现为**零命中** |
 
+### R5（报告见 `reviews/grill-adversarial-r5.md`）
+
+独立零记忆对抗者判定**不收敛**：**K1–K8 / L1–L6 / M1–M4 / N1–N3 逐条实核全部落库**（判据②满足），
+本轮用「**变异 → 跑全量**」新证伪 3 条（判据①不满足）。**已逐条落库**：
+
+| # | R5 发现 | 落点 |
+|---|---|---|
+| 1 | `handled` 那句的 dry-run 分叉**只钉了一半**：把两条分支合成同一常量 ⇒ 674 条全绿，而真跑会**一边改写 caller+台账、一边说「未落盘」** | `tests/test_init_gate_ref.py` 改成**两面都钉**（`"已落盘" in err` **且** `"未落盘" not in err`）。变异复核：合成后现在**红** |
+| 2 | R4 的 N2 修复**零钉子**（退回旧文案 ⇒ 674 全绿） | 新增 `test_rewrite_and_a_tests_write_do_not_contradict_each_other`。变异复核：退回旧文案现在**红** |
+| 3 = **P1** | `_set_ledger_gate_ref` 对「`created_files` **不是数组**」**静默重建**成 `[]` ⇒ 台账里 policy 等条目**被丢掉**却报 EXIT=0；随后 `uninit` 说「已回滚」而 policy 与台账**留在盘上**——与 `uninitcmd` 自称的「避免留下半删状态」相反，也与同一函数对「JSON 坏台账」的 fail-closed 相反 | 收紧成 fail-closed：① `sync_caller_gate_ref` **先判**、不是数组就**不写**；② `_set_ledger_gate_ref` **不再**兜这个情形；③ `_already_initialized` 补一条**受控**诊断并退 1（顺带堵上「dict 迭代出字符串键 ⇒ `AttributeError` 冒到入口」的**既有**崩溃面）。钉子：`test_a_malformed_ledger_is_loud_and_never_rebuilt` |
+
+**R5 的题面项结论**（**不**计入必须修改项）：`installed_vcs_ref` 的宽 `except` **不吞**
+`BaseException`（实测 `KeyboardInterrupt` / `SystemExit` 照常传播）——已在 `checkcmd` 与
+`docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
+`uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
+
+**R5 的低危观察**：`tasks.md §6.1` 的自查 grep 抓不住变体、面也不含 `openspec/` ——
+已把面扩到 `openspec/changes/gate-ref-pins-package/`，并把单一字面 grep 降级为「起手式」，
+写明**必须用已知会漏的形态试过**、抓完**逐条人判**。
+
 **R4 的事故（已独立核查、净残留为零）**：R4 在 `/tmp/adv4/repoX` 里 `git commit` 时
 **打进了真仓**（`da3db40`，四份 manifest、`reviewer_run_id` 为编造值），随后自行
 `git reset --mixed af57236`。核查：该提交**不可达**、本 change 目录下 `*.manifest.json` **零命中**、
