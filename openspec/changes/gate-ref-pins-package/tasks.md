@@ -126,24 +126,34 @@
       `protected_path_write` 解释事件**（`policy.py` 的 `INVARIANT_PROTECTED_PATHS` 含该 glob；
       「不变集 + `A` 免事件」只对**新增**成立；R3 实测确认）。这一步的事件要一并写进
       `workflow-events.jsonl`。
-- [ ] 6.2 **再**建 tag（**必须等**本步改动合入 `main` 之后再建：tag 要指向含它的 `main` 提交；
+- [x] 6.2 **再**建 tag（**必须等**本步改动合入 `main` 之后再建：tag 要指向含它的 `main` 提交；
       ⚠️ 并且**别把本仓 caller 的迁移与它放进同一个 PR**——那会让本 PR 的 head 引用一个还不存在的 tag，
       workflow 解析失败（0 job）、门禁根本跑不起来。**实测踩过**，见 PR #33 的 CI。） **`v1.7.0`**，指向**含 6.1 改动**的最新 `main` 提交。
-- [ ] 6.3 同步安装文档的字面量：**`README.md` 里把 `@v1` 当「当前值」写的每一处**都要改
+- [x] 6.3 同步安装文档的字面量：**`README.md` 里把 `@v1` 当「当前值」写的每一处**都要改
       （R9 的 W4：早先只点名了 `README.md:20` 的 `uv tool install …@v1`，漏了
       「怎么钉版本 / 怎么升级」那段里的 `# ⚠️ v1.7.0 发布前请用 @v1` 与
       `# 旧的 @v1 包没有这一行`——6.2 之后它们会变成**错的建议**）。
       ⚠️ **按语义找、别按行号找**：行号会漂，用
       `grep -n "@v1" README.md docs/gate.md` 逐条人判（历史引文/错误信息复现保留）。
       它是 `docs` 面、不需要 change 证据，但**必须与 6.2 同一个提交**，否则 tag 里的安装指引是旧的。
-- [ ] 6.4 完成 3.5 的本仓自身迁移（caller + 台账 + 解释事件）。
-- [ ] 6.5 **发布说明**里写清这是一次**全局**行为变化（design §4 R2），且**要点名两类仓**
+- [x] 6.4 完成 3.5 的本仓自身迁移：**用工具自己**跑
+      `init --root . --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0 --policy <当前 policy 的副本>`
+      ⇒ **EXIT=0**、caller 重写、台账 `gate_ref` 与 caller 条目的 `sha256` 同步（复核：台账记录的 sha 与盘上逐字节一致）。
+      **解释事件共 19 条**（`workflow-events.jsonl`）：1 条给 `.witnessloop/init-manifest.json`（`M` 在不变集里），
+      **18 条给 `reviews/*.manifest.json`**——重打 manifest 是**修改**不变集里的文件，`artifact_path` 不接受通配。
+- [x] 6.5 **发布说明**里写清这是一次**全局**行为变化（design §4 R2），且**要点名两类仓**
+      （已发布：GitHub Release [`v1.7.0`](https://github.com/Xingkai98/witnessloop/releases/tag/v1.7.0) 的正文里有专门一节「受影响的仓有**两类**」，
+      含回退路径；`docs/gate.md §1.2` 的「发布面」段同一口径）
       （R2 的 L6：原稿只说了一类，把全局面说小了）：
       ① 把 `uses:` 指到含新 `gate.yml` 的 ref 的仓——**在它们动手的那一刻**切换；
       ② `uses:` 写成**分支形态**（如 `@main`）的仓——**在本 PR 合并那一刻**就零动作切换了包来源。
       回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`。
 - [ ] 6.6 ⚠️ **不动 `v1` tag**（它是别人依赖的发布物）。
-- [ ] 6.7 **验收命令**（可复算；对抗轮 R3 的 M2：`--dry-run` **打不出 caller 的内容**
+- [x] 6.7 **验收命令**（可复算；对抗轮 R3 的 M2：`--dry-run` **打不出 caller 的内容**
+      ✅ **已真跑**（真 `uvx` 从 GitHub 装 `@v1.7.0`）：生成的 caller 逐字是
+      `    uses: Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0`；台账 `gate_ref` 同值；
+      `check` 自报行 ⇒ `requested_revision=v1.7.0，commit_id=c9b281167ad20b63e4832ad9ab8510964a2adc60`。
+      原命令说明：
       ——它只列文件名，所以要看内容必须真落盘到一个 scratch 目录）：
       ```bash
       rm -rf /tmp/wl-v17 && mkdir -p /tmp/wl-v17

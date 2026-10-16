@@ -17,7 +17,7 @@
 ## 用法
 
 ```bash
-uv tool install git+https://github.com/Xingkai98/witnessloop@v1
+uv tool install git+https://github.com/Xingkai98/witnessloop@v1.7.0
 # ⚠️ 这个 ref 与 CI 里装包用的 ref **是同一件事**（issue #30 / change gate-ref-pins-package）：
 #    钉旧了，本地 CLI 与 CI 里的门禁都跑旧行为。升级就把 ref 指到新 tag（见「怎么钉版本」）。
 
@@ -122,10 +122,11 @@ witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`�
 > 起随 `@v1` 发布。本地 CLI 还旧时，自己接入跑源码版（`uv run witnessloop …`）即可。
 >
 > ⚠️ **关于「`@v1` 是滚动大版本」这句旧说法**（change `gate-ref-pins-package` / issue #30 起**不再成立**）：
-> `@v1` 现在**停在 `v1.6.0`**（`ae99256`），本 change 刻意**不动 `v1` tag**——它是别人依赖的
+> `@v1` **停在 `v1.6.0`**（`ae99256`），该 change 刻意**不动 `v1` tag**——它是别人依赖的
 > 发布物，移动它会让所有钉 `@v1` 的仓在**没人做任何动作**的情况下换掉门禁本体与包。
-> 新能力改由**新 tag**（`v1.7.0` 起）发布：升级 = 把 ref 指过去一处，包版本跟着走
-> （见下「怎么钉版本 / 怎么升级」）。别再按「`@v1` 会跟着 `main` 滚」理解版本稳定性。
+> 新能力由**新 tag `v1.7.0`** 发布（含「钉一个 ref 同时决定 workflow 文件与**包版本**」）：
+> 升级 = 把 ref 指过去一处，包版本跟着走（见下「怎么钉版本 / 怎么升级」）。
+> 别再按「`@v1` 会跟着 `main` 滚」理解版本稳定性。
 
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
 
@@ -180,11 +181,10 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 
 ### 怎么钉版本 / 怎么升级
 
-> ⚠️ **前提：本仓已发布含这个能力的 ref（`v1.7.0` 起）。** 在它出现之前，本节的两步**都不成立**：
+> ⚠️ **前提：用含这个能力的 ref（`v1.7.0` 起）。** 钉 `@v1` 的老仓要**先**按下面两步升级——
 > `v1` 那份 `gate.yml` 里没有「包 ref 由 workflow 自己推导」的解析 step（`git show v1:…` 可核），
 > 而 `@v1` 的旧 CLI 也没有「显式 `--gate-ref` ⇒ 重写 caller + 同步台账」这条语义
-> （跑它只会得到一句指向 policy 的冲突，见 [docs/gate.md §1.2](docs/gate.md)）。
-> ⇒ 现在仍请钉 `@v1`；等 `v1.7.0` 出来再按下面两步升级。
+> （拿它跑第 ② 步只会得到一句指向 policy 的冲突，见 [docs/gate.md §1.2](docs/gate.md)）。
 
 caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「跑哪个 witnessloop 包」：
 `gate.yml` 把包 ref 解析成 `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit），
@@ -192,7 +192,7 @@ caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「
 [docs/gate.md §1.2](docs/gate.md)；GHES / fork 等能力边界见其 §7）。
 
 ```bash
-# 新接入：直接钉你要的 ref（⚠️ v1.7.0 发布前请用 @v1，见下）
+# 新接入：直接钉你要的 ref（`init` 的出厂默认现在就是它）
 witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
 
 # 已接入：升级**两步，顺序不能反**
@@ -209,8 +209,8 @@ EXIT=1 与一句把人指向 **policy** 的「检测到冲突…要更换 policy
 `init` 也不自报。`check` 的第一行是唯一出口——它打 `requested_revision=<你刚升的 ref>`；
 旧的 `@v1` 包**没有这一行**，所以「有没有这一行」本身就是新旧判据。
 
-⚠️ **`v1.7.0` 发布之前，请仍然钉 `@v1`**：这个 tag 是随本 change 的 `(post-merge)` 步骤建的，
-在它出现之前指过去会钉到一个**不存在的 ref**。
+⚠️ **还钉着 `@v1` 的仓必须自己动手升级**：`v1` 不会跟着走（见上「本仓自身接入」那段），
+升完 CLI 再跑第 ② 步即可；不升就一直吃 `v1` 时代的包与门禁。
 
 ⚠️ **升级 PR 会被自己的门禁拦一次**：`init --gate-ref` 会改写 `.witnessloop/init-manifest.json`，
 它在**不变集**里 ⇒ `M` 需要一条 `protected_path_write` **解释事件**（写进某个**既有** change 目录的
