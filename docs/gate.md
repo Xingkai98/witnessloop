@@ -11,7 +11,7 @@
 ```
 .witnessloop/policy.json          # 受保护路径 + 必需 artifact + 证据格式
 .witnessloop/init-manifest.json   # 创建清单（含 sha256 台账）+ init 前 base ref
-.github/workflows/witnessloop.yml # 极薄 caller：uses: <owner>/witnessloop/.../gate.yml@v1
+.github/workflows/witnessloop.yml # 极薄 caller：uses: <owner>/witnessloop/.../gate.yml@<ref>
 .github/witnessloop-tests.txt     # 测试执行点：一行命令，门禁在与 check 同一个 job 里跑它
 ```
 
@@ -58,6 +58,104 @@ openspec/changes/<change-id>/
   `Policy.from_doc` 兜底——两处各造一套判定会引入漂移面。`--policy` **允许指向仓外路径**
   （定制 seed 不入库，见 README「本仓自身接入」）。
 - 已接入后再 `init --policy <与已落地不同>` → **报冲突**并以非零退出（**不**静默忽略）。
+
+### 1.2 钉住 ref：一个入口、两处一致（change `gate-ref-pins-package` / issue #30）
+
+caller 里的 `uses: …gate.yml@<ref>` **同时**决定两件事：
+
+1. 跑哪一份 reusable workflow 文件；
+2. 跑哪个 **witnessloop 包** —— `gate.yml` 在**第一个 step** 里把包 ref 解析成
+   **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit），
+   显式 `with: witnessloop-ref:` 仍可覆盖。
+
+⇒ 接入方 SHALL NOT 需要分别维护两个 ref：**改 `uses:` 那一处，包版本跟着走**。
+这条依赖的上下文是 `job.*` 而**不是** `github.*`——跨仓真 CI 探针实测
+`github.workflow_sha` 是**接入方自己**的 commit，用它会在 witnessloop 仓取一个不存在的
+ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
+
+**本次跑的是哪个 ref**：`gate.yml` 的解析 step 会打一行 `::notice::`（含 ref **与来源**）；
+`check` 自己也会打一行 `本包来源（自报，尽力而为）`——后者读 PEP 610 `direct_url.json` 的
+`vcs_info`，能多给一个**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
+它**取不到就写 `<未知>`，且不影响任何判定**（本地 editable / 源码直跑没有 `vcs_info`）。
+⚠️ 这一行**由新版包起才有**（旧包跑 `check` 的输出里没有它）——别拿旧包的输出当「功能没生效」。
+
+**升级动作（单一、显式）——两步，顺序不能反**：
+
+1. **先把 CLI 升上去**：`uv tool install --force git+https://github.com/Xingkai98/witnessloop@<新 ref>`
+   （或 `uv run witnessloop …` 跑源码版）；
+2. 再 `witnessloop init --gate-ref <同一个新 ref>` ⇒ **重写 caller + 同步台账**
+   （`init-manifest.json` 里该条目的 `sha256` 与 `gate_ref`），其余文件照旧只增不改；
+   之后 plain `init` 回到幂等、`uninit` 仍可用。
+
+⚠️ **第 ① 步之后怎么确认它真的生效**（对抗轮 R3 的 M4）：**`--version` 判不出来**——
+`__version__` 恒为 `0.1.0`、与 tag 无关（见 §7.1），`init` 也不自报。
+唯一可复算的出口是 `check` 的第一行：
+
+```bash
+witnessloop check --root . 2>/dev/null | head -1
+# check：本包来源（自报，尽力而为）：requested_revision=<你刚升的 ref>，commit_id=<sha>
+```
+
+（该行在**未接入**的目录里也打——它在 `check` 做任何 git 操作**之前**。旧的 `@v1` 包**没有**这一行，
+所以「有没有这一行」本身就是一条新旧判据。）
+
+⚠️ **为什么 ① 不能省**（对抗轮 R2 实测）：重写语义是**新版包**才有的；用旧 CLI
+（例如 `@v1`）跑第 ② 步会得到
+
+```
+init：检测到冲突（已接入，但本次指定的内容与已落地不同；只增不改，拒绝覆盖。要更换 policy 请先 `uninit`）
+```
+
+**EXIT=1**，而文案把人指向 **policy**——**误导**：要换的不是 policy，是这个 CLI 太旧。
+看到这条又来路不明时，**别去删 policy**，先确认 CLI 版本。
+
+⚠️ **同一条冲突还有一个「不是旧 CLI」的成因**（对抗轮 R9 的 W2 / R10 的 X1，**实跑**）：
+**定制过 policy 的仓**（`init --policy <seed>` 接入的，例如**本仓自己**）跑这个动作也会退 1，
+且随后 plain `init` **不**报「幂等，无改动」——它撞的是**另一条轴**：`desired_files()` 用的是
+**出厂政策**，而盘上是你那份定制政策，两者不同 ⇒ 判冲突。此时：
+
+- 那句「**要更换 policy 请先 `uninit`**」**不可照做**——`uninit` 会把 `policy.json`、caller
+  **与台账一起删掉**，而定制 seed 按本仓惯例**不入库**（`README` 的「本仓自身接入」），
+  删掉就恢复不回来。
+  ⚠️ 走这个动作时，`init` 的冲突文案**本身**也会换成不劝 `uninit` 的那一版
+  （「这一行冲突与你那条显式 `--gate-ref` 无关；**不要**为此去跑 `uninit`……」）——
+  上面引的那句是**不带** `--gate-ref` 时的形态；
+- 正确做法：**同时把 policy 带上**——`init --gate-ref <新 ref> --policy <你的 seed>`
+  （两条轴一起给，policy 那条就不再冲突；caller 与台账照旧先写且不回滚）；
+- ⇒ 上面那句「之后 plain `init` 回到幂等、`uninit` 仍可用」**只对 policy 与出厂默认一致的仓成立**；
+  定制 policy 的仓**即使升级成功**，plain `init` 也照旧退 1（那是**既有**行为，与本 change 无关）。
+
+⚠️ 不带 `--gate-ref` 的 plain `init` **不**会顺手改 caller（只增不改照旧）；
+⚠️ 手改 caller 会让「磁盘 ≠ 台账」——plain `init` 报「被改动过」、`uninit` 拒删；
+`uninit` 的出口仍在（回滚该文件即可），但**别手改**，用这个动作。
+⚠️ **组合语义**：同时给 `--gate-ref <新>` 与一份**冲突的** `--policy` ⇒ caller 与台账
+**先写且不回滚**，policy 那条轴照旧让退出码非零；输出会**点明**这一点（同 `--test-command` 的
+「写在前、其余判定照旧参与退出码」先例，见 `specs/gate-ref-pinning/spec.md` 的对应 Scenario）。
+
+⚠️ **升级 PR 会被自己的门禁拦一次，先备好解释事件**（对抗轮 R8 的 V2，**实跑复现**）：
+`init --gate-ref` 会改写 `.witnessloop/init-manifest.json`，而它在**不变集**里 ⇒
+`A`（新增）免事件、**`M`（修改）要**。照上面两步做完提交，`check` 会报：
+
+```
+.witnessloop/init-manifest.json：受保护路径被写入，但没有结构化解释事件
+```
+
+**补救**：把那条事件写进**某个既有 change 目录**的 `workflow-events.jsonl`
+（`event_type=protected_path_write`、`artifact_path` 指向 `.witnessloop/init-manifest.json`、
+`reason`/`approved_by` 非空）。⚠️ **别为此新建一个「只有事件文件」的 change 目录**——
+新目录会触发 change 目录契约（必需件 + 审阅证据），实跑复现：**1 条红会变成 7 条红**。
+本仓自己那次迁移（`tasks.md §6.4`）走的就是「把事件写进本 change 目录」这条路。
+⚠️ 若该 PR **顺带**有别的 change 目录，直接写进它即可——`check` 读的是仓内**所有**
+`<changes_root>/*/workflow-events.jsonl`，不要求事件与改动落在同一个目录。
+
+⚠️ **`--gate-ref` 做不成时会响亮拒绝**（对抗轮 R8 的 V1）：若目标文件既不在盘上、台账里
+也没有它的条目，`init` **不会**报「幂等，无改动」，而是退 1 并说明原因——那一态既躲开了
+漂移判定（它只遍历台账条目），又走不到未接入分支（台账在），旧行为会**静默丢掉**你要的换 ref。
+
+**发布面**：这是一次**全局**行为变化，但**受影响的仓有两类**（别只想到第一类）：
+① 把 `uses:` 指到含新 `gate.yml` 的 ref 的仓——在**它们动手的那一刻**切换包来源解析；
+② `uses:` 写成**分支形态**（如 `…gate.yml@main`）的仓——**在合并那一刻**就**零动作**切换了
+包来源（没人动过任何文件）。回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`。
 
 ## 2. `policy.json`
 
@@ -130,8 +228,12 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
      这类符号 ref 会被拒——字段名叫 `*_sha` 就该是 sha），且**能解析成本仓的一个提交**
      （乱填 `"0"*40` 同样被拒）；
   2. `head_sha` 必须是本次被检 head 的**祖先**（含相等）；
-  3. 从 `head_sha` 到本次被检 head 之间，只允许出现**证据文件**与**本 PR 自己的
-     变更**，出现别的即判「**审阅的是旧 revision**」。两个过滤条件缺一不可：
+  3. 从 `head_sha` 到本次被检 head 之间，**只允许出现证据文件**——出现别的即判
+     「**审阅的是旧 revision**」。等价说法：`head_sha` 必须是**最后一个非证据 revision**
+     （`contract._check_git_span` 的 docstring 就是这么写的）。
+     ⚠️ **「本 PR 自己的变更」并不豁免**（对抗轮 R3 实测：改了非证据文件 ⇒ 每份 manifest
+     各报一条 `…之后又改动了非证据文件：…`）⇒ 正确顺序是「**先提交内容，再单独提交证据**」。
+     两个过滤条件缺一不可：
      - **只算本 PR 改过的文件**（`base...head` 的变更集）。被检 head 可能是
        merge commit（`pull_request` 事件下 `actions/checkout` 默认检出 test-merge），
        base 侧顺带进来的改动不算本 PR 漂移。
@@ -152,6 +254,16 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
   witnessloop manifest build --change <id> --stage grill-adversarial \
     --report reviews/grill-adversarial.md …     # → reviews/grill-adversarial.manifest.json
   ```
+
+  ⚠️ **落盘名是 `reviews/<stage>.manifest.json` ⇒ 同一个 stage 只能有一份 manifest**
+  （后一次 `manifest build` 会**覆盖**前一份，而孤儿判定随之换成另一组——
+  change `gate-ref-pins-package` 的对抗轮 R3 在模拟仓里实测过）。于是：
+  - **每一份报告各配一份 manifest**（数量对齐，不是「每个 stage 一份」）；
+  - **多出来的轮次报告**（`grill-adversarial-r2.md` / `-r3.md` …）要么各用一个**不同的 stage 名**
+    （如 `--stage grill-adversarial-r2`；`check` 只要求三个**必备** stage 各存在，不排斥额外 stage，
+    实测 0 条孤儿），要么放到 `reviews/` **之外**（孤儿判据的扫描面是 `reviews/**/*.md`；
+    本仓已有先例：`openspec/changes/archive-arrival-recognition/rounds/`）。
+  - 两种做法都在用；**同一次 change 里别混**。
 
   判定**只做文件名交叉引用**，**不解析报告正文**。两侧都按**解析后**的路径比对
   （`resolve()` 之后再比），所以 `./`、`//`、`..`、反斜杠字面名、符号链接都不会
@@ -423,10 +535,47 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 `tests/test_acceptance.py::test_f2_handwritten_allow_event_is_not_blocked`
 把它钉成了契约）。真正的锚是远端 branch protection + required check。
 
+### 7.1 「钉住的 ref」这条链上的边界（change `gate-ref-pins-package`）
+
+- **caller 文件本身不受任何保护**（用户裁定：**只登记、不加机械门**）。实测用工具自己的
+  匹配器跑本仓 policy：
+  ```
+  .github/workflows/witnessloop.yml：protected=False invariant=False require_change=False
+  ```
+  ⇒ 一个 PR 可以把 caller 的 `uses:` 改成**别的仓**的 workflow，`check` **不会**报 finding。
+  ⚠️ 这条要紧的原因是：required check 的名字 `gate / check` 的前半来自 **caller 里的 job 名**
+  （`gate:`），只要那份 substitute 定义一个叫 `check` 的 job 就仍能满足 required check
+  （⚠️ 后一句是**推演**：「替换后的 workflow 能否满足 required check」**未跑 CI 验证**）。
+  本 change **刻意不修**它：把 caller 纳入不变集会影响**所有**既有接入方，且「谁来决定
+  钉哪个 ref」是**平台面**的取舍（branch protection / 组织策略），值得单独一个 change。
+- **包 ref 的解析在 GHES / fork 面上取不到**：`job.workflow_repository` 等 `job.*`
+  在 **GitHub Enterprise Server 上不可用**，同 owner 的 **fork** 也能匹配上
+  `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回**兜底 ref**
+  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1`）——
+  ⚠️ 诚实地说：**GHES 接入方的包版本会一直停在这份 gate.yml 写就时的出厂默认**
+  （今天 = `v1`；`DEFAULT_GATE_REF` 挪了它就跟着挪——它**不随接入方的 `uses:` ref 走**），
+  区别只在日志里有一行 `::warning::`（不静默）。
+  未验证面：自建 runner 上的 uv 版本差异、`pip install git+…` 是否同样落 PEP 610 的
+  `vcs_info`（只实测了 uv 0.13.1 的 `uvx`）。
+- **`check` 自报的是「包」不是「门禁判定逻辑」**：它读的是本进程安装元数据，
+  与 `gate.yml` 实际传给 `uvx` 的 ref 是**两次独立**的读取（后者进 `::notice::`）。
+  两者不一致时（如本地手动跑 `check`）以各自那行为准。
+- **`__version__` 不能用来判断「跑的是哪版」**：它恒为 `0.1.0`、**与 tag 无关**
+  （`src/witnessloop/__init__.py`），`--version` 对任何 ref 装出来的包都打同一个值。
+  ⇒ 要判断版本，用 §1.2 那条 `check` 自报行（它读的是 **VCS 元数据**，不是版本号）。
+  把版本号与 tag 绑起来属**发布纪律**，本 change 明确**不做**（非目标）。
+- **自报是「尽力而为」**：元数据取不到（本地 editable / 源码直跑 / 非 VCS 安装）时打 `<未知>`，
+  且**不改变退出码**。实现处是一个**宽 `except Exception`**——按**规格**兜而不是按成因枚举
+  （漏一个成因 = 把一条信息行升格成 `check` 崩溃退 1）；它**不吞** `BaseException`
+  （`KeyboardInterrupt` / `SystemExit` 照常传播）。
+
 ## 8. grill 证据的正文校验（`check`）与本地守卫（`guard`）
 
 **一侧判定、两处接线**——同一个纯函数 `evidence.py`，`check`（事后 / CI）与 `guard`（事前 / 本地）共用
 （分两份实现必然漂移：本仓已因 `check` / `manifest build` 各写一套踩过坑，故共用 `constants.HASHED_ARTIFACTS`）。
+
+⚠️ **「共用」只指 grill 证据的正文判定**：§1.2 那条「本包来源（自报，尽力而为）」**只有 `check` 打**——
+`guard` 与 `manifest build` 都不打（那两处不关心跑的是哪个包）。别拿 `guard` 的输出当「自报没生效」。
 
 **判据**（`src/witnessloop/evidence.py`）：`## Confirmed Decisions` **顶层 bullet（含其续行）≥ 3 条**、
 **每条块内含 `来源:`**；`## Open Questions`（**逐字标题**）**必须存在**、其每条的 `Q<n>` 都要在

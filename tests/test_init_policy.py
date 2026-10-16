@@ -153,11 +153,24 @@ def test_rerun_without_gate_ref_after_custom_is_idempotent(repo: Path, cli, read
     assert read_json(repo / C.INIT_MANIFEST_PATH)["gate_ref"] == custom
 
 
-def test_rerun_with_explicit_different_gate_ref_conflicts(repo: Path, cli):
-    # 显式传**不同**的 --gate-ref 是「要求换内容」→ 冲突（与 --policy 同语义）。
+def test_rerun_with_explicit_different_gate_ref_rewrites_the_caller(repo: Path, cli):
+    """⚠️ **语义已反转**（change `gate-ref-pins-package` / Q2 裁定 (a)）。
+
+    原先断言「显式传**不同**的 --gate-ref ⇒ 冲突退 1」（与 `--policy` 同语义）。
+    现在 `--gate-ref` 是**唯一**的换 ref 入口，而「只增不改」会让它永远撞冲突 ⇒
+    接入方没有可用的升级动作。裁定改为：**对已接入的仓**，显式 `--gate-ref` ⇒
+    重写 caller **+ 同步台账**（`sha256` 与 `gate_ref`），其余文件照旧只增不改。
+
+    ⚠️ `--policy` 那条**没有**反转（`test_init_policy_after_initialized_with_different_policy_conflicts`
+    仍断言冲突）：policy 是**接入方自己的**内容，caller 是**工具生成的产物**——
+    前者不能让工具擅自覆盖，后者必须能跟着 ref 走。两条都保留，正是这个分别的钉子。
+
+    作用域/台账同步/幂等/uninit 的完整覆盖在 `tests/test_init_gate_ref.py`。
+    """
     cli("init", "--root", str(repo))
-    code, _, err = cli(
-        "init", "--root", str(repo), "--gate-ref", "acme/wl/.github/workflows/gate.yml@v9"
-    )
-    assert code == C.EXIT_FAIL
-    assert "冲突" in err
+    new_ref = "acme/wl/.github/workflows/gate.yml@v9"
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", new_ref)
+
+    assert code == C.EXIT_PASS, err
+    assert f"uses: {new_ref}" in (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8")

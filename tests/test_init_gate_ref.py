@@ -1,0 +1,727 @@
+"""Q2 裁定 (a)：**已接入**的仓上显式 `init --gate-ref <新>` ⇒ 重写 caller + 同步台账。
+
+背景（issue #30）：`--gate-ref` 只影响 workflow 文件的 ref，包版本另有一处来源；
+接入方要换 ref 时，`init` 的「只增不改」会判冲突 ⇒ 必须有一个**单一、显式**的动作。
+
+三条硬约束（grill M2，均已实测）：
+1. 动作 = 重写 caller **+ 同步台账该条目的 `sha256` 与 `gate_ref`** ——只改 caller 会让
+   「磁盘 ≠ 台账」：plain `init` 走漂移分支退 1、`uninit` 拒删退 1。
+2. **作用域限定「已接入分支」**（`init-manifest.json` 存在）——否则会静默覆盖新仓里
+   外来的 caller，推翻 `tests/test_init.py` 的「新仓目标文件已存在 ⇒ 冲突且整体不落盘」。
+3. 其余文件（policy）照旧**只增不改**，plain `init` 的幂等与 `uninit` 的回滚都不受影响。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from witnessloop import constants as C
+from witnessloop import initcmd
+from witnessloop.hashing import sha256_bytes
+
+from conftest import git
+
+#: **刻意取一个不可能成为出厂默认的 ref**（对抗轮 R3 的 M1）：这组用例的前提是
+#: 「换成一个**不同**的 ref」，若它与 `C.DEFAULT_GATE_REF` 撞值，`sync_caller_gate_ref`
+#: 会判「台账里记的就是这个」而直接 no-op，整套用例的前提就整条塌掉——
+#: 而默认值在 post-merge 步骤里是要挪的（`tasks.md §6.1` 会把它挪到 `@v1.7.0`）。
+NEW_REF = f"{C.REPO_SLUG}/.github/workflows/gate.yml@v9.9.9"
+OLD_REF = C.DEFAULT_GATE_REF
+
+
+def _ledger(repo: Path) -> dict:
+    import json
+
+    return json.loads((repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8"))
+
+
+def _caller_entry(manifest: dict) -> dict:
+    return next(
+        entry
+        for entry in manifest["created_files"]
+        if entry["path"] == C.GATE_WORKFLOW_PATH
+    )
+
+
+def test_new_ref_does_not_collide_with_the_factory_default():
+    """把「前提」本身钉成一条测试——否则 post-merge 挪默认值时它会**静默**塌掉。"""
+    assert NEW_REF != C.DEFAULT_GATE_REF
+
+
+def _init(repo: Path, cli, *extra: str) -> None:
+    code, _, err = cli("init", "--root", str(repo), *extra)
+    assert code == C.EXIT_PASS, err
+
+
+# ---------------------------------------------------------------- 主路径
+
+def test_explicit_different_ref_rewrites_caller_and_syncs_the_ledger(repo: Path, cli):
+    _init(repo, cli)
+    assert _ledger(repo)["gate_ref"] == OLD_REF
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    expected = initcmd.caller_workflow(NEW_REF)
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") == expected
+    manifest = _ledger(repo)
+    assert manifest["gate_ref"] == NEW_REF
+    assert _caller_entry(manifest)["sha256"] == sha256_bytes(expected.encode("utf-8"))
+    # 不能谎称「幂等，无改动」——它确实改了东西（工具不撒谎）。
+    assert "幂等" not in out
+    assert C.GATE_WORKFLOW_PATH in out
+    # ⚠️ 也不能把**结果说反**（building 审阅 B3-1：判据曾经在写台账之后求值 ⇒ 恒假 ⇒
+    # 真换了 ref 却报「已补齐…（ref 本来就是 <新 ref>，未改）」）。这条在此之前**零覆盖**。
+    assert "已重写" in out and "改成" in out
+    assert "补齐" not in out and "ref 未变" not in out
+
+
+def test_rewrite_and_a_tests_write_do_not_contradict_each_other(repo: Path, cli):
+    """两条轴（测试执行点 / caller）同时动过时，收尾话**不得**自称「其余文件无改动」。
+
+    对抗轮 R4 的 N2 报的就是这句自相矛盾；这里把修好的语义钉住——只陈述自己那一件事。
+    """
+    _init(repo, cli, "--test-command", "true")
+
+    code, out, err = cli(
+        "init", "--root", str(repo), "--test-command", "false", "--gate-ref", NEW_REF
+    )
+
+    assert code == C.EXIT_PASS, err
+    assert "其余文件无改动" not in out
+    assert "已写入测试执行点" in out and C.GATE_WORKFLOW_PATH in out
+
+
+def test_rewrite_leaves_the_policy_untouched(repo: Path, cli):
+    _init(repo, cli)
+    before = (repo / C.POLICY_PATH).read_bytes()
+
+    cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert (repo / C.POLICY_PATH).read_bytes() == before
+
+
+def test_plain_init_is_idempotent_after_the_rewrite(repo: Path, cli):
+    """终态必须是**不动点**：重写之后 plain `init` 得回到「幂等，无改动」。"""
+    _init(repo, cli)
+    cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    code, out, err = cli("init", "--root", str(repo))
+
+    assert code == C.EXIT_PASS, err
+    assert "幂等" in out
+
+
+def test_uninit_still_works_after_the_rewrite(repo: Path, cli):
+    """只重写 caller 而不同步台账会**卸载不掉**（`uninit` 拒删）——这条是那件事的钉子。"""
+    _init(repo, cli)
+    cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    code, out, err = cli("uninit", "--root", str(repo))
+
+    assert code == C.EXIT_PASS, err
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+    assert not (repo / C.INIT_MANIFEST_PATH).exists()
+
+
+def test_rewrite_rescues_a_hand_edited_caller(repo: Path, cli):
+    """K3 的分叉态（人把 caller 手改成新 ref、台账没跟）也要能被这个动作救回来。"""
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_text(
+        initcmd.caller_workflow(NEW_REF), encoding="utf-8"
+    )
+    # 先确认这确实是个分叉态：plain init 退 1
+    code, _, _ = cli("init", "--root", str(repo))
+    assert code == C.EXIT_FAIL
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert _ledger(repo)["gate_ref"] == NEW_REF
+    assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
+
+
+# ---------------------------------------------------------------- 不越界
+
+def test_same_ref_is_a_noop(repo: Path, cli):
+    _init(repo, cli)
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "幂等" in out
+
+
+def test_plain_init_still_refuses_a_hand_edited_caller(repo: Path, cli):
+    """漂移判定照旧——「显式 --gate-ref」不是一条给手改兜底的后门。"""
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_text("name: tampered\n", encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo))
+
+    assert code == C.EXIT_FAIL
+    assert "被改动过" in err
+
+
+def test_missing_caller_is_not_resurrected(repo: Path, cli):
+    """盘上没有 caller ⇒ **不**凭空复活它（只增不改）；让漂移分支响亮地报。"""
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+    assert _ledger(repo)["gate_ref"] == OLD_REF  # 没同步（没动就没同步）
+    assert err  # 有诊断，不静默
+
+
+def test_foreign_caller_in_a_new_repo_still_conflicts(repo: Path, cli):
+    """作用域：**未接入**的仓里已存在内容不同的 caller ⇒ 冲突且整体不落盘（照旧）。
+
+    这条与重写动作是一对：少了作用域限制，重写语义会把这个外来文件静默覆盖。
+    """
+    target = repo / C.GATE_WORKFLOW_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("name: someone-elses-gate\n", encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "冲突" in err
+    assert target.read_text(encoding="utf-8") == "name: someone-elses-gate\n"
+    assert not (repo / C.INIT_MANIFEST_PATH).exists()
+    assert not (repo / C.POLICY_PATH).exists()
+
+
+def test_uninitialized_repo_writes_the_requested_ref(repo: Path, cli):
+    """未接入（正常路径）：`--gate-ref` 照旧写进 caller（这条是回归，不是新行为）。"""
+    _init(repo, cli, "--gate-ref", NEW_REF)
+
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") == (
+        initcmd.caller_workflow(NEW_REF)
+    )
+    assert _ledger(repo)["gate_ref"] == NEW_REF
+
+
+# ---------------------------------------------------------------- dry-run
+
+def test_dry_run_previews_without_writing(repo: Path, cli):
+    _init(repo, cli)
+    caller_before = (repo / C.GATE_WORKFLOW_PATH).read_bytes()
+    manifest_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+    status_before = git(repo, "status", "--porcelain")
+
+    code, out, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "[dry-run]" in out
+    # R8 的 V4：spec 的 Scenario 明写「SHALL 不 说『幂等，无改动』」——这条轴此前零断言。
+    assert "幂等" not in out
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == manifest_before
+    assert git(repo, "status", "--porcelain") == status_before
+
+
+def test_dry_run_does_not_report_a_conflict_it_would_have_fixed(repo: Path, cli):
+    """`--dry-run --gate-ref <新>` 不该报冲突——那个「冲突」正是这个动作要消掉的那条。
+
+    （不修这条的话，dry-run 会对一个将要被自己改掉的文件报红，用户无从判断。）
+    """
+    _init(repo, cli)
+
+    code, _, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "冲突" not in err
+
+
+def test_explicit_gate_ref_plus_conflicting_policy_writes_then_reports(repo: Path, cli, tmp_path):
+    """组合语义**写死**（对抗轮 R2 的 L4）：caller + 台账**先写**，其余判定照常参与退出码，
+    失败**不回滚**——与 `--test-command` 的既有先例同口径（`initcmd` 的 Z1/O2 注释）。
+
+    并且**必须**在报错里说明那一半已经落盘：否则用户会以为什么都没发生，
+    转头去删 policy（对抗轮 R2 实测：旧 CLI 上正是这条误导文案）。
+    """
+    import json
+
+    _init(repo, cli)
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps({"changes_root": "custom/root"}), encoding="utf-8")
+
+    code, _, err = cli(
+        "init", "--root", str(repo), "--gate-ref", NEW_REF, "--policy", str(seed)
+    )
+
+    assert code == C.EXIT_FAIL
+    assert "冲突" in err  # policy 那条轴照旧参与退出码
+    # 显式 --gate-ref 那一半**确实做成了**（不是「整体不落盘」——那是未接入分支的语义）
+    assert f"uses: {NEW_REF}" in (
+        repo / C.GATE_WORKFLOW_PATH
+    ).read_text(encoding="utf-8")
+    assert _ledger(repo)["gate_ref"] == NEW_REF
+    # 报错里点明「已落盘、不回滚」——这是 L4 的实质。
+    # ⚠️ **两面都要钉**（对抗轮 R5 实测：只钉「不回滚」时，把 dry-run 与非 dry-run 两句
+    # 改成同一个常量，674 条全绿，而真跑时会一边改写 caller+台账、一边说「未落盘」）：
+    assert "已落盘" in err
+    assert "未落盘" not in err
+
+
+def test_dry_run_must_not_claim_it_wrote_anything(repo: Path, cli, tmp_path):
+    """对抗轮 R3 的 M4：`--dry-run` 下**什么都没落盘** ⇒ 那句话不得说「已落盘」。
+
+    这条与上一条是一对：上一条钉「真跑时要点明已落盘、不回滚」，这一条钉
+    「dry-run 时**不许**这么说」——两句都由同一个参数喂，很容易被写成一个常量而撒谎。
+    """
+    import json
+
+    _init(repo, cli)
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps({"changes_root": "custom/root"}), encoding="utf-8")
+
+    code, _, err = cli(
+        "init",
+        "--root",
+        str(repo),
+        "--dry-run",
+        "--gate-ref",
+        NEW_REF,
+        "--policy",
+        str(seed),
+    )
+
+    assert code == C.EXIT_FAIL  # policy 那条轴照旧参与退出码
+    assert "冲突" in err
+    assert "已落盘" not in err, "dry-run 里什么都没写，不得声称已落盘"
+    assert "未落盘" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") != (
+        initcmd.caller_workflow(NEW_REF)
+    )
+    assert _ledger(repo)["gate_ref"] == OLD_REF
+
+
+def test_ledger_without_a_caller_entry_is_repaired(repo: Path, cli):
+    """spec 的 Scenario「台账里没有 caller 条目」的**行为级钉子**（对抗轮 R4 的观察：
+    `initcmd._set_ledger_gate_ref` 的「补条目」分支此前**没有任何测试覆盖**）。
+
+    语义：显式 `--gate-ref` ⇒ 同步 `gate_ref` **并补上**该条目（`sha256` = 新内容），
+    且插在台账自己的 `self` 条目**之前**（台账自己那条约定俗成排最后，`uninit` 依赖这个顺序）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    after = _ledger(repo)
+    assert after["gate_ref"] == NEW_REF
+    paths = [entry["path"] for entry in after["created_files"]]
+    assert paths[-1] == C.INIT_MANIFEST_PATH, f"self 条目必须排最后，实得 {paths}"
+    assert paths.count(C.GATE_WORKFLOW_PATH) == 1
+    expected = initcmd.caller_workflow(NEW_REF)
+    assert _caller_entry(after)["sha256"] == sha256_bytes(expected.encode("utf-8"))
+    # 补出来的条目不是「死账」：随后 plain init 幂等、uninit 仍能回滚它。
+    assert "幂等" in cli("init", "--root", str(repo))[1]
+    assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+
+
+def test_a_malformed_ledger_is_loud_and_never_rebuilt(repo: Path, cli):
+    """对抗轮 R5 的 P1：`created_files` 不是数组时，**不许**静默重建（那会丢条目）。
+
+    旧行为（新代码引入的）：把 `created_files` 重建成 `[]` ⇒ 台账里 policy 等条目**消失**、
+    却报 EXIT=0 成功；随后 `uninit` 说「已回滚」而 policy.json 与台账**留在盘上**——
+    与 `uninitcmd` 自称的「避免留下半删状态」相反，也与本函数对「JSON 坏台账」的 fail-closed 相反。
+    新行为：**受控失败**（一条诊断 + 退 1），caller 与台账**一个字节都不动**。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = {"path": "not-a-list"}  # 结构非法（dict）
+    raw = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    (repo / C.INIT_MANIFEST_PATH).write_text(raw, encoding="utf-8")
+    caller_before = (repo / C.GATE_WORKFLOW_PATH).read_bytes()
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "结构非法" in err, "要说清是台账结构的问题，不能只报一句内部错误"
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before  # 没重写
+    assert (repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8") == raw  # 没重建
+    # plain init 也走同一条受控路径（不崩、不丢条目）
+    code, _, err = cli("init", "--root", str(repo))
+    assert code == C.EXIT_FAIL
+    assert (repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8") == raw
+
+
+def test_an_unparseable_ledger_is_loud_and_untouched(repo: Path, cli):
+    """`sync_caller_gate_ref` 的「台账坏 JSON」分支：**不写**，让 `_already_initialized` 报。
+
+    这条分支此前没有钉子（对抗轮 R6 的变异面之一）：把它误改成「照写」，用户会得到一个
+    半改的台账 + 一条别处的红。
+    """
+    _init(repo, cli)
+    (repo / C.INIT_MANIFEST_PATH).write_text("{ 不是 JSON", encoding="utf-8")
+    caller_before = (repo / C.GATE_WORKFLOW_PATH).read_bytes()
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "无法解析" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before
+
+
+def test_no_caller_entry_and_no_file_refuses_loudly(repo: Path, cli):
+    """对抗轮 R8 的 V1（**行为缺陷**）：台账里没有 caller 条目、盘上也没有这个文件时，
+    旧行为是**静默 no-op + 打印「幂等，无改动」**——用户要的换 ref 被悄悄丢掉。
+
+    这一态躲开了两条既有判定：漂移判定只遍历**台账条目**（看不见它）、
+    未接入分支又要台账不存在（从而不走）。⇒ 必须在这里 fail-closed 地拒绝。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL, "做不成的显式请求不得报成功"
+    assert "幂等" not in out, "更不得谎称「幂等，无改动」"
+    assert C.GATE_WORKFLOW_PATH in err and "条目" in err
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before  # 一个字节都没动
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()  # 也没复活它
+
+
+def test_a_self_flagged_caller_entry_does_not_hide_the_refusal(repo: Path, cli):
+    """R9 的 W3：`caller_retarget_refusal` 的条目扫描必须与另两处**同口径**跳过 `self` 条目。
+
+    少了 `not entry.get("self")`：手工把 caller 那条标成 `self: true` 且文件不在时，
+    V1 的静默 no-op 会**原样复现**（打印「幂等，无改动」、EXIT=0、`gate_ref` 停在旧值）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "幂等" not in out
+    assert "self: true" in err, "要说清是台账那条被标了 self，不能只报一句笼统的话"
+
+
+def test_a_refused_retarget_writes_nothing_at_all(repo: Path, cli):
+    """R10 的 O1：拒绝必须发生在**任何写入之前**。
+
+    旧位置在 `--test-command` 那条轴之后 ⇒ 「退 1 但测试执行点已经被写了」，
+    与「做不成 ⇒ 不写任何东西」自相矛盾。
+    """
+    import json
+
+    _init(repo, cli, "--test-command", "true")
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+    tests_before = (repo / C.ADOPTER_TESTS_PATH).read_bytes()
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, _, err = cli(
+        "init", "--root", str(repo), "--test-command", "false", "--gate-ref", NEW_REF
+    )
+
+    assert code == C.EXIT_FAIL
+    assert "无法按 --gate-ref" in err
+    assert (repo / C.ADOPTER_TESTS_PATH).read_bytes() == tests_before  # 也没写它
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_dry_run_and_the_real_run_agree_on_a_hand_edited_caller(repo: Path, cli):
+    """对抗轮 R11 的 Y1：**dry-run 与真跑必须对同一状态给出同一结论**。
+
+    旧行为分叉：caller 被手改（磁盘 ≠ 台账）时，真跑 `EXIT=0`（这个动作**就是来救这一态的**），
+    dry-run `EXIT=1`（漂移报红）。根因是 `ignore` 只滤了「本次期望 vs 已落地」，
+    没滤「磁盘 vs 台账」那条。⇒ 两条路径都该是「会被修好」。
+    """
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_text("name: tampered\n", encoding="utf-8")
+
+    dry, _, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+    real, _, err2 = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert dry == C.EXIT_PASS, err
+    assert real == C.EXIT_PASS, err2
+    # 而且真跑之后是干净的不动点
+    assert "幂等" in cli("init", "--root", str(repo))[1]
+
+
+def test_a_self_flagged_caller_entry_with_the_file_present_is_refused(repo: Path, cli):
+    """对抗轮 R11 的 Y2：那条被标 `self` 的 caller 条目**文件还在**时也要拦。
+
+    否则 `_set_ledger_gate_ref` 落进 `else` 再插一条同路径条目 ⇒ 台账里同一路径出现两次
+    ⇒ 随后 `uninit` 二次 `unlink` 抛 `FileNotFoundError`（「内部错误」+ 已打印「已回滚」+ 台账留在盘上）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "self: true" in err
+    assert "幂等" not in out
+    # 台账**没有**被插出重复条目
+    after = json.loads((repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8"))
+    paths = [entry["path"] for entry in after["created_files"]]
+    assert paths.count(C.GATE_WORKFLOW_PATH) == 1
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_same_ref_but_a_missing_caller_entry_repairs_the_ledger(repo: Path, cli):
+    """building 审阅的 B1-5：ref 相同**但台账缺 caller 条目**时不能 no-op。
+
+    旧行为：静默 no-op（打印「幂等」）——于是那个台账一直是坏的，而 `uninit` 因为在台账里
+    找不到 caller 那条、**不会删它** ⇒ 半回滚（台账与 caller 各留一半）。本动作正好能补齐。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "幂等" not in out  # 它确实改了台账
+    after = _ledger(repo)
+    assert [e["path"] for e in after["created_files"]].count(C.GATE_WORKFLOW_PATH) == 1
+    assert after["gate_ref"] == OLD_REF
+    # 而且现在 uninit 能整批回滚（不再半删）
+    assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+    assert not (repo / C.POLICY_PATH).exists()
+
+
+def test_the_drift_branch_also_says_the_caller_half_landed(repo: Path, cli):
+    """building 审阅的 B1-2：漂移分支同样可能「caller 那半已真落盘」，也要把那句话印出来。
+
+    （此前 `handled` 只在**冲突**分支打印 ⇒ 用户在这个分支只看到「被改动过」，
+    会以为显式 `--gate-ref` 那半也没做成。）
+    """
+    _init(repo, cli)
+    # 手改 **policy**（不是 caller）⇒ 命中漂移分支，而 caller 那半会被显式 --gate-ref 真重写
+    (repo / C.POLICY_PATH).write_text('{"schema": "tampered"}\n', encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "被改动过" in err  # 漂移分支
+    assert "已落盘、不回滚" in err  # 且点明了 caller 那半已经做成
+
+
+def test_same_ref_with_a_self_flagged_entry_is_refused_not_duplicated(repo: Path, cli):
+    """building 审阅 B2-1（**我上一轮引入的回归**）：ref 相同 + caller 那条被标 `self`。
+
+    旧（回归版）行为：台账结构判据排在「ref 是否相同」之后 ⇒ 这一态绕过全部拒绝、
+    落进 `_set_ledger_gate_ref` 的 `else` 插出**两条同路径**条目 ⇒ `uninit` 二次 unlink
+    抛 `FileNotFoundError`（半回滚）。现行为：**拒绝**（与文件在不在无关）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "self: true" in err
+    assert "幂等" not in out
+    after = json.loads((repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8"))
+    assert [e["path"] for e in after["created_files"]].count(C.GATE_WORKFLOW_PATH) == 1
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_a_hand_edited_caller_with_no_ledger_entry_is_not_silently_clobbered(repo: Path, cli):
+    """B2-4：ref **没变** + 台账缺条目 + 盘上 caller 被手改 ⇒ 拒绝，别静默覆盖用户内容。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).write_text("name: my-own-gate\n", encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "被手改过" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") == "name: my-own-gate\n"
+
+
+def test_the_repair_branch_says_it_only_filled_the_ledger(repo: Path, cli):
+    """B2-5/B2-6：补齐态（ref 未变）的两句文案都不得说成「改成 <同一个 ref>」。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", OLD_REF)
+    assert code == C.EXIT_PASS, err
+    assert "补齐" in out and "ref 未变" in out
+    assert "改成" not in out
+    # B5-2：dry-run 那条 print 的**正文**同样要钉住（它是 B4-3 的对称项；
+    # 此前把它整行删掉 702 条全绿）。
+    assert f"[dry-run] 将补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目" in out
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+    assert code == C.EXIT_PASS, err
+    assert "补齐" in out and "ref 未变" in out
+
+
+def test_a_dry_run_ref_change_says_it_will_rewrite_not_backfill(repo: Path, cli):
+    """B3-3：dry-run 侧的「将重写」文案同样零覆盖（与上一条是同一对）。"""
+    _init(repo, cli)
+
+    code, out, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "将重写" in out and NEW_REF in out
+    assert "补齐" not in out
+
+
+def test_an_unreadable_caller_is_not_silently_overwritten(repo: Path, cli):
+    """B3-2：盘上 caller 读不出（非 UTF-8 字节）时**不能**放行——放行 = 静默覆盖。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).write_bytes(b"\xff\xfe not utf-8 \xff")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "无法解码" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == b"\xff\xfe not utf-8 \xff"
+
+
+def test_an_undecodable_caller_does_not_fork_dry_run_from_the_real_run(repo: Path, cli):
+    """building 审阅 B4-1：`ignore` 必须在**进 `conflicting_files` 之前**生效。
+
+    否则「caller 不可解码 + 显式换 ref」会**真跑退 0、dry-run 退 1**——违反本 change 自立的
+    R11-Y1 不变量（dry-run 与真跑对同一状态必须同结论）。
+    """
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_bytes(b"\xff\xfe not utf-8 \xff")
+
+    dry, _, derr = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+    real, _, rerr = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert dry == real == C.EXIT_PASS, (derr, rerr)
+    assert NEW_REF in (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8")
+
+
+def test_the_backfill_branch_prints_its_own_line(repo: Path, cli):
+    """B4-3：补齐态（ref 未变）**真跑**那句 print 此前零覆盖。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert f"已补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目" in out
+
+
+def test_the_v1_refusal_also_fires_for_a_same_ref_request(repo: Path, cli):
+    """B4-3 的另一半：`absent|absent|same`（无条目 + 无文件 + ref 相同）也要**退 1**。
+
+    （这一格是本 change 新增语义顺带堵上的——V1 的静默 no-op 在 ref 相同时也存在。）
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "幂等" not in out
+    assert "无法按 --gate-ref" in err

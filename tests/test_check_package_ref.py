@@ -1,0 +1,214 @@
+"""Q4 裁定 (a)：`check` 自报它实际跑的包 ref —— **尽力而为**。
+
+R1 的 K1 实测证伪了原稿的「包无法自报 ref」：`uvx --from "git+…"` 装出的 dist-info 带
+PEP 610 的 `direct_url.json`，其 `vcs_info` 有 `requested_revision` 与 `commit_id`。
+
+两条边界（裁定原文）：
+- **尽力而为、取不到不失败**：本地 editable / 源码直跑没有 `vcs_info` ⇒ 打 `<未知>`，
+  **退出码不变**（报不出 ref 不是一条红）。
+- 它比 gate.yml 的 `::notice::` **严格更强**：那个只能打出**请求的 ref**，
+  这个还能打出**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from witnessloop import checkcmd
+from witnessloop import constants as C
+
+from helpers import init_wired
+
+#: R1 实测抓到的**真实**载荷（uv 0.13.1，`uvx --from git+…@v1`）。
+REAL_DIRECT_URL = (
+    '{"url":"https://github.com/Xingkai98/witnessloop",'
+    '"vcs_info":{"vcs":"git",'
+    '"commit_id":"ae992565ee2162e5b272af471e9adf895e7f83fb",'
+    '"requested_revision":"v1"}}'
+)
+
+
+def test_parses_the_real_payload():
+    revision, commit = checkcmd.vcs_info_from_direct_url(REAL_DIRECT_URL)
+
+    assert revision == "v1"
+    assert commit == "ae992565ee2162e5b272af471e9adf895e7f83fb"
+
+
+def test_absent_or_unusable_metadata_is_not_an_error():
+    """尽力而为：这些输入全都只能得到 `(None, None)`，**不得抛**。"""
+    for raw in (
+        None,
+        "",
+        "not json",
+        "[]",  # 根不是对象
+        "{}",  # 没有 vcs_info（editable 安装就是这个形状）
+        '{"vcs_info": null}',
+        '{"vcs_info": []}',
+        '{"vcs_info": {"commit_id": null, "requested_revision": null}}',
+        '{"vcs_info": {"commit_id": 42, "requested_revision": []}}',
+    ):
+        assert checkcmd.vcs_info_from_direct_url(raw) == (None, None), raw
+
+
+def test_child_fields_can_be_present_independently():
+    assert checkcmd.vcs_info_from_direct_url('{"vcs_info":{"commit_id":"abc"}}') == (
+        None,
+        "abc",
+    )
+    assert checkcmd.vcs_info_from_direct_url(
+        '{"vcs_info":{"requested_revision":"main"}}'
+    ) == ("main", None)
+
+
+# ---------------------------------------------------------------- 端到端
+
+def test_check_prints_the_line_even_from_source(gated: Path, cli):
+    """本仓测试是**源码直跑**（没有 `direct_url.json` 的 `vcs_info`）⇒ 打 `<未知>`。
+
+    这正是「取不到不失败」那条：这一行必须在，且 `check` 的判定不受它影响。
+    """
+    (gated / "note.txt").write_text("x\n", encoding="utf-8")
+
+    code, out, _ = cli("check", "--root", str(gated), "--base", "main", "--head", "HEAD")
+
+    assert "requested_revision=" in out
+    assert "commit_id=" in out
+    # 源码直跑 ⇒ 两值都取不到，但**不因此**改变退出码（这里红的是别的东西，
+    # 与「报不出 ref」无关——断言这一行本身没引入判决即可）。
+    assert "<未知>" in out or "ae9925" in out
+    assert code in (C.EXIT_PASS, C.EXIT_FAIL)
+
+
+def test_not_onboarded_still_reports_the_package_source(repo: Path, cli):
+    code, out, _ = cli("check", "--root", str(repo), "--base", "main", "--head", "HEAD")
+
+    assert code == C.EXIT_NOT_ONBOARDED
+    assert "requested_revision=" in out
+
+
+def test_installed_vcs_ref_is_a_pair():
+    """真实环境里读一次（不 mock）：只要不抛、返回二元组即可。"""
+    pair = checkcmd.installed_vcs_ref()
+
+    assert isinstance(pair, tuple) and len(pair) == 2
+    for value in pair:
+        assert value is None or isinstance(value, str)
+
+
+def test_wired_repo_check_line_survives_a_green_run(repo: Path, cli):
+    """全绿的一次 `check` 里那一行照样在（它不属于任何 finding）。"""
+    init_wired(repo, cli)
+    from conftest import commit_all, git
+
+    commit_all(repo, "接入")
+    git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "note.txt").write_text("x\n", encoding="utf-8")
+    commit_all(repo, "改动")
+
+    code, out, _ = cli("check", "--root", str(repo), "--base", "main", "--head", "HEAD")
+
+    assert "requested_revision=" in out
+    assert "check：通过 ✓" in out
+    assert code == C.EXIT_PASS
+
+
+def test_a_broken_metadata_source_never_escapes(monkeypatch):
+    """规格面：**任何**取不到的成因都必须收敛到「取不到」，SHALL NOT 改变退出码。
+
+    审计（对抗轮 R2 的 D3）指出 `distribution()` 在 sys.path 上有别的包的坏 dist-info 时
+    会抛 `zipfile.BadZipFile`（不属任何常规元组）⇒ 若按成因枚举，`check` 会崩、入口退 1，
+    把一条**信息行**升格成红。⇒ 实现按**规格**兜（宽 except，见那里的注释），这里钉住它。
+    （BadZipFile 本身**未复现**，是推演；但「抛什么都得吞掉」这条规格可以真测。）
+    """
+    import zipfile
+
+    def _boom(name):
+        raise zipfile.BadZipFile("坏 dist-info")
+
+    monkeypatch.setattr("importlib.metadata.distribution", _boom)
+
+    assert checkcmd.installed_vcs_ref() == (None, None)
+
+    def _boom2(name):
+        raise RuntimeError("意外成因")
+
+    monkeypatch.setattr("importlib.metadata.distribution", _boom2)
+
+    assert checkcmd.installed_vcs_ref() == (None, None)
+
+
+def test_empty_string_fields_are_treated_as_absent():
+    """空串必须归到「取不到」——空串直接进 `uvx` 会变成「装默认分支」（静默跑错版本）。
+
+    （`_text` 的两条判定各自都要有钉子：`isinstance(str)` 与 `and value`。）
+    """
+    assert checkcmd.vcs_info_from_direct_url(
+        '{"vcs_info":{"requested_revision":"","commit_id":""}}'
+    ) == (None, None)
+    assert checkcmd.vcs_info_from_direct_url(
+        '{"vcs_info":{"requested_revision":"v1","commit_id":""}}'
+    ) == ("v1", None)
+
+
+def test_the_report_line_binds_each_value_to_the_right_label(monkeypatch, capsys):
+    """U3（对抗轮 R7，最硬的一条）：把自报行的两值**对调** ⇒ 全量零红。
+
+    后果不是学术的：真 CI 里（真 `uvx` 装包）两值**都非空**，对调后 `requested_revision` 打出的是
+    **commit sha** —— 用户照 `docs/gate.md §1.2` 的 ①′ 那条 recipe 去核对，会**误判「CLI 没升成」**。
+    （测试环境恒为源码直跑 ⇒ 两值都是 `<未知>`，所以这个错位在测试里从不显形——必须用注入来钉。）
+    """
+    monkeypatch.setattr(checkcmd, "installed_vcs_ref", lambda: ("REF-X", "COMMIT-Y"))
+
+    checkcmd._report_package_source()
+
+    out = capsys.readouterr().out
+    assert "requested_revision=REF-X" in out
+    assert "commit_id=COMMIT-Y" in out
+
+
+def test_the_report_line_is_the_first_thing_check_prints(repo: Path, cli):
+    """U4（对抗轮 R7）：在自报行**之前**插一行 stdout ⇒ 全量零红。
+
+    而 ①′ recipe 的承重前提正是「自报行是 `check` 输出的**第一行**」（`| head -1`）——
+    `gate.yml` 侧有同款钉子，`check` 侧此前没有。
+    """
+    code, out, _ = cli("check", "--root", str(repo), "--base", "main", "--head", "HEAD")
+
+    assert code == C.EXIT_NOT_ONBOARDED
+    assert out.splitlines()[0].startswith("check：本包来源")
+
+
+def test_installed_vcs_ref_reads_a_real_dist_info(tmp_path: Path, monkeypatch):
+    """building 审阅的 B1-1：自报链**最后一环**（真的从 dist-info 读出来）此前零覆盖——
+    以前只测了「纯函数解析」与「注入后的打印」两段，中间的 `installed_vcs_ref()` 是空的。
+
+    这里造一个**真** dist-info 放上 `sys.path`（等价于 `uvx` 装出来的形态），断言它读得到。
+    """
+    import json
+    import sys
+
+    dist = tmp_path / "witnessloop-0.1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: witnessloop\nVersion: 0.1.0\n", encoding="utf-8"
+    )
+    (dist / "direct_url.json").write_text(
+        json.dumps(
+            {
+                "url": "https://github.com/Xingkai98/witnessloop",
+                "vcs_info": {
+                    "vcs": "git",
+                    "commit_id": "ae992565ee2162e5b272af471e9adf895e7f83fb",
+                    "requested_revision": "v1.7.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    assert checkcmd.installed_vcs_ref() == (
+        "v1.7.0",
+        "ae992565ee2162e5b272af471e9adf895e7f83fb",
+    )

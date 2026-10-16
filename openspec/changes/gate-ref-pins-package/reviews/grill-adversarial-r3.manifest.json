@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "gate-ref-pins-package",
+  "stage": "grill-adversarial-r3",
+  "reviewer_run_id": "grill-adversarial-r3-reviewer-gate-ref-pins-package-0b5314e151ed",
+  "author_run_id": "grill-adversarial-r3-author-gate-ref-pins-package-0b5314e151ed",
+  "base_sha": "eaca56898c2caf456f46eec00f76a35fc446d9aa",
+  "head_sha": "0b5314e151ed2f0ef0e34d56c302d3d437c13434",
+  "tasks_hash": "aceb8c01efa93751fa29c0fa2c84f242576cfeef0a326632b6e93a1af1585696",
+  "spec_hash": "0bba0a6dd25da83a5004e5fbc3fbda0b11d4047795f25e0203a7672f22746c69",
+  "diff_hash": "a97f9c801e46f80228d3028d33f0f5ff0b60ab3d79fdbcce48874f85da90e213",
+  "report_hash": "e7acd58297761905f32b45cc8187e3de600cabc4b3e96fce74e515772e434e5e",
+  "report_path": "reviews/grill-adversarial-r3.md"
+}

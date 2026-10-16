@@ -260,3 +260,40 @@ def test_docs_do_not_call_the_tests_path_a_default(relpath: str):
         f"{relpath} 仍把命令文件路径写成「{STALE_TESTS_PATH_DEFAULT_CLAIM}」"
         "——它不是可覆写的默认值，是 constants 里的常量（没有第二个取值）"
     )
+
+
+#: 「caller 不受保护」这条边界的登记点（change gate-ref-pins-package 的 spec 第 5 条 Requirement）。
+#: 它此前只靠人读——而它恰恰是**能力边界**，属于「必须诚实转述」那一类（本仓对文档的既有态度：
+#: 边界要能被机械钉住，别退化成散文）。
+def test_gate_documents_the_unprotected_caller_boundary():
+    text = (REPO_ROOT / "docs/gate.md").read_text(encoding="utf-8")
+
+    assert ".github/workflows/witnessloop.yml" in text
+    assert "protected=False" in text and "invariant=False" in text
+    # 「刻意不修」这个态度必须写出来——只写「不受保护」会被读成待办。
+    assert "刻意不修" in text
+
+
+def test_gate_documents_the_ref_pinning_upgrade_path():
+    """§1.2 是「怎么钉版本 / 怎么升级」的权威：两条命令与「先升 CLI」都要在。"""
+    text = (REPO_ROOT / "docs/gate.md").read_text(encoding="utf-8")
+
+    assert "init --gate-ref" in text
+    assert "job.workflow_sha" in text
+    assert "先把 CLI 升上去" in text
+
+
+def test_gate_recipe_puts_the_cli_upgrade_before_the_ref_change():
+    """对抗轮 R6 实测：把 recipe 的两步**调换顺序**（先换 ref、后升 CLI）⇒ 全量测试**零红**。
+
+    而文档明写「两步，**顺序不能反**」——那条断言此前只活在文字里。这里把它钉住：
+    `docs/gate.md §1.2` 里「先把 CLI 升上去」必须**早于**那条 `init --gate-ref` 命令；
+    README 的升级 recipe 同理（升级代码块内 `uv tool install` 在 `init --gate-ref` 之前）。
+    """
+    gate = (REPO_ROOT / "docs/gate.md").read_text(encoding="utf-8")
+    assert gate.index("先把 CLI 升上去") < gate.index("witnessloop init --gate-ref")
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    upgrade = readme.split("# 已接入：升级**两步，顺序不能反**", 1)[1]
+    block = upgrade[: upgrade.index("```")]  # 只取该代码块内部
+    assert block.index("uv tool install") < block.index("init --gate-ref")

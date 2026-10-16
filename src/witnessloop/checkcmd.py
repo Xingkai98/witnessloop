@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -26,8 +27,76 @@ from witnessloop import paths as pathutil
 from witnessloop import policy as policy_mod
 
 
+def vcs_info_from_direct_url(raw: str | None) -> tuple[str | None, str | None]:
+    """PEP 610 `direct_url.json` → `(requested_revision, commit_id)`；不可用 ⇒ `(None, None)`。
+
+    **纯函数 + 绝不抛**：`check` 自报包 ref 是「尽力而为」（change gate-ref-pins-package / Q4 裁定），
+    所以任何畸形输入（不是 JSON、根不是对象、没有 `vcs_info`、字段类型不对）都归到
+    「取不到」，**不是**错误、更不是一条红。
+    """
+    try:
+        doc = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None, None
+    if not isinstance(doc, dict):
+        return None, None
+    info = doc.get("vcs_info")
+    if not isinstance(info, dict):
+        return None, None
+
+    def _text(key: str) -> str | None:
+        value = info.get(key)
+        # 非字符串 / 空串 ⇒ 当作没取到（空串直接进 `uvx` 会变成「装默认分支」）。
+        return value if isinstance(value, str) and value else None
+
+    return _text("requested_revision"), _text("commit_id")
+
+
+def installed_vcs_ref() -> tuple[str | None, str | None]:
+    """本进程所装的 witnessloop 包的 `(requested_revision, commit_id)`。
+
+    `gate.yml` 用 `uvx --from git+…` 装包时，uv/pip 会按 PEP 610 落 `direct_url.json`；
+    本地 editable / 源码直跑没有 `vcs_info` ⇒ `(None, None)`（**不失败**，见 Q4 裁定）。
+    """
+    try:
+        from importlib.metadata import distribution
+
+        raw = distribution("witnessloop").read_text("direct_url.json")
+    except Exception:
+        # ⚠️ 本仓少见的**宽** except，是**有意**的：这里是「尽力而为」的自报（Q4 裁定 /
+        # spec 的「SHALL NOT 因此改变退出码」），任何取不到的**成因**都必须收敛到
+        # 「取不到」这一态——漏一个就变成 `check` 崩溃退 1，把一条**信息行**升格成红。
+        # 已知的漏网成因就是 `zipfile.BadZipFile`（sys.path 上有别的包的坏 dist-info 时
+        # `distribution()` 会抛它，不在任何常规元组里；**未复现，来自审阅的推演**）。
+        # ⇒ 这里按**规格**兜，不按成因枚举。见 `tests/test_check_package_ref.py`。
+        #
+        # ⚠️ 兜的是 `Exception`、**不是** `BaseException`：`KeyboardInterrupt` 与 `SystemExit`
+        # 照常传播（Ctrl-C 不该被这条信息行吞掉）。
+        return None, None
+    return vcs_info_from_direct_url(raw)
+
+
+def _report_package_source() -> None:
+    """把「本次跑的是哪个 witnessloop」打进 stdout（Q4 裁定：尽力而为）。
+
+    比 `gate.yml` 那个 `::notice::` **严格更强**：那条只能打出**请求的 ref**，
+    这条还能打出**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
+    ⚠️ 取不到就打 `<未知>`，且**不影响任何判定**（不产生 finding、不改退出码）。
+    """
+    revision, commit = installed_vcs_ref()
+    print(
+        "check：本包来源（自报，尽力而为）："
+        f"requested_revision={revision or '<未知>'}，commit_id={commit or '<未知>'}",
+        flush=True,
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
+
+    # 第一件事就报「本次跑的是哪个包」：后面的任何分支（含未接入 / 求不出 base）
+    # 都不该把这一行吞掉（Q4 裁定）。
+    _report_package_source()
 
     # D1：无 policy → 报「未接入」并非零退出。门禁 fail-closed，不静默通过。
     try:
