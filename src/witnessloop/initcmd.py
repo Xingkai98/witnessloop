@@ -510,6 +510,10 @@ def _already_initialized(
     # ⇒ 两条路径必须同结论：那条轴已按显式意图处理过，就不再进漂移判定。
     drift = [item for item in drift if item[0] not in ignore]
     if drift:
+        if handled:
+            # P-2（对抗轮 R12）：漂移分支同样可能「caller 那半已经真落盘」——不写这句的话，
+            # 用户看到的失败信息会把那一半说成没做成。（与冲突分支同一句话，两个分支都印。）
+            print(f"init：注意——{handled}；下面报的是**别的**文件：", file=sys.stderr)
         print(
             "init：已接入，但 init 创建的文件被改动过（拒绝覆盖）：",
             file=sys.stderr,
