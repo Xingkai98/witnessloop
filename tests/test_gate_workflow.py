@@ -521,3 +521,29 @@ def test_repository_mismatch_does_not_fall_through_to_workflow_ref(tmp_path: Pat
     assert ref == _fallback_ref()
     assert ref != "main"
     assert "::warning::" in out
+
+
+def _install_step() -> dict:
+    matches = [s for s in _steps() if s.get("name") == "witnessloop check"]
+    assert len(matches) == 1, f"应恰好一个安装/运行步，实得 {len(matches)}"
+    return matches[0]
+
+
+def test_the_install_step_consumes_the_resolved_ref():
+    """**本 change 的最后一环**（对抗轮 R6 的 T1）：安装步必须吃解析 step 的**输出**。
+
+    把 `WL_REF` 改回 v1 时代的 `${{ inputs.witnessloop-ref }}`（= **逐字复现 issue #30 的原缺陷**）
+    在 R6 的攻击下 **680 条全绿**——因为此前全仓只测「解析 step 自己算得对不对」，
+    **没有一条**钉「算出来的东西真的被用上了」。而 `inputs` 的默认已是空串 ⇒
+    那样退化会让 URL 变成 `…@`（装默认分支）= **静默跑错版本**，正是本 change 要消灭的形态。
+    """
+    step = _install_step()
+    run = step["run"]
+
+    assert step["env"]["WL_REF"] == "${{ steps.wl-ref.outputs.ref }}"
+    # 反向也钉死：run 里不得再出现那个**输入**（否则两条 ref 来源又并存了）
+    assert "inputs.witnessloop-ref" not in run
+    assert "${{ inputs.witnessloop-ref }}" not in str(step["env"])
+    # uvx 用的是那个变量，而不是任何内联表达式
+    assert '"git+https://github.com/Xingkai98/witnessloop@$WL_REF"' in run
+    assert "${{" not in run
