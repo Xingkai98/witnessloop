@@ -1,44 +1,114 @@
 # gate-ref-pinning — 接入方钉住的 ref 必须同时决定「跑哪个包」
 
 > 本 change 的 capability 增量：把「接入方钉的 ref」当成**单一事实来源**，同时决定
-> reusable workflow 文件与 **witnessloop 包**的版本；并让 CI 日志看得见本次实际用的 ref。
-> ⚠️ 具体措辞（尤其是「默认值从哪里来」）**待 `design.md §8 Q1` 裁定**；本文件按本稿推荐 (B) 起草。
+> reusable workflow 文件与 **witnessloop 包**的版本；让「本次实际用的 ref」可见；并给出
+> 既有接入方**单一、显式**的升级动作。
+> **机制按用户 2026-10-16 的 Q1 裁定定为 (B′)**（`design.md §2 D1` 有跨仓真 CI 探针的原始输出）：
+> 包版本的**缺省**取自 **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit），
+> 显式 `with: witnessloop-ref:` 仍可覆盖。
 
-## Requirement: 接入方钉住的 ref SHALL 同时决定 workflow 文件与包版本
+## Requirement: 包版本的缺省 SHALL 取自「被复用的那个 workflow 文件的 commit」
 
-`init` 写出的 caller 与 reusable workflow SHALL 保证：**同一个 ref** 既决定 `uses:` 指向的 workflow，
-也决定 `uvx` 安装的 witnessloop 包版本。接入方 SHALL NOT 需要分别维护两个 ref。
+`gate.yml` SHALL 在调用方**未**显式传 `with: witnessloop-ref:` 时，用
+**`job.workflow_sha`**（该 reusable workflow 文件自己的 commit）作为 `uvx` 安装的 witnessloop 包版本；
+调用方因此 SHALL NOT 需要分别维护两个 ref —— 把 caller 的 `uses:` 指到某个 ref，
+包版本就跟着落在**那个 ref 解析出的那份 gate.yml 的 commit** 上。
 
-- 新接入方：`init --gate-ref <ref>` 之后，两处一致（可复算：看生成文件 + 看 CI 日志里解析到的 `witnessloop@<ref>`）。
-- ⚠️ **本句 SHALL 推迟到 `design.md §8 Q1` 裁定之后再定稿**（grill M3）：(B) 下包版本**仍然**由
-  `inputs.witnessloop-ref` 的**默认值**决定（只是取值被推导出来），(A) 下由 `with:` 决定——
-  下面两种写法**各自只对一种机制成立**，在 Q1 裁定前不得作为 Requirement：
-  - ~~(B) 版本：既有接入方零改动即满足~~（grill 实测已证伪：存量仓跑的是旧 gate.yml）
-  - ~~(A) 版本：包版本由 caller 里的 `with:` 决定~~
-  ⇒ 定稿时按裁定的机制保留其中一条，并相应改写本段。
+- 接受判据：解析所依赖的 `job.workflow_repository` SHALL 等于 `constants.REPO_SLUG`
+  （`Xingkai98/witnessloop`）——否则退回 `v1`（fail-closed）。
+- `job.workflow_ref` SHALL 只作**兜底**（`job.workflow_sha` 缺失时）：仅接受 `refs/heads/<分支名>`
+  与 `refs/tags/<tag名>` 两种形态。
+- ⚠️ **能力边界（如实登记、不宣称覆盖）**：`job.*` 在 **GitHub Enterprise Server 上不可用**；
+  同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到
+  fail-closed 退 `v1`，区别是**日志里有 `::warning::`**（不静默）。见 `design.md §4 R6`。
 
 ### Scenario: 改一处、两处跟着变
 - **Given** 一个已接入的仓，caller 是 `uses: …/gate.yml@<旧 ref>`
 - **When** 把该行改成 `@<新 ref>` 并推一次 PR
-- **Then** CI 日志里解析到的 witnessloop 包 ref SHALL 也是 `<新 ref>`（`gate / check` 用的是新包）
+- **Then** CI 日志里 SHALL 出现本次实际用的包 ref，且它就是**新 ref 那份 gate.yml 的 commit**
+  （`gate / check` 用的是新包）
 
-### Scenario: 畸形 / 解析不出的 ref
-- **Given** 无法从 workflow 自身解析出 ref（运行环境不提供该信息），或解析结果**不可接受**。具体畸形样本（grill M7）：
-  `owner/repo/x.yml`（缺 `@`）、`owner/repo/x.yml@`（`@` 后为空）、
-  `<别的 owner/repo>/x.yml@refs/heads/main`（`owner/repo` ≠ `constants.REPO_SLUG`）、
-  `…@refs/pull/30/merge`（PR 合并 ref，不是可安装的稳定 ref）
+### Scenario: 显式 `with:` 覆盖仍然有效
+- **Given** 一个 caller 写 `uses: …/gate.yml@<ref>` 且同时写 `with: witnessloop-ref: <另一个值>`
 - **When** 运行门禁
-- **Then** SHALL **fail-closed 到既有默认**（`v1`）**并打日志说明**，SHALL NOT 静默改变行为
+- **Then** SHALL 用 `<另一个值>` 装包（显式意图优先），且日志 SHALL 说明 ref 来自「调用方显式传入」
+
+### Scenario: 畸形 / 不可接受的输入
+- **Given** 满足任一条：`job.workflow_repository` 不等于 `constants.REPO_SLUG`（含**空值**，
+  如 GHES）、`job.workflow_sha` 为空且 `job.workflow_ref` 解析不出可安装的 ref。
+  具体畸形样本：`owner/repo/x.yml`（缺 `@`）、`owner/repo/x.yml@`（`@` 后为空）、
+  `<别的 owner/repo>/x.yml@refs/heads/main`（`owner/repo` ≠ `REPO_SLUG`）、
+  `…@refs/pull/30/merge`（PR 合并 ref，**不是稳定的可安装 ref**——⚠️ 只此定性，
+  **不**声称它必然安装失败：该 ref 通常能被 git fetch 到，uv 侧行为**未实测**）
+- **When** 运行门禁
+- **Then** SHALL **fail-closed 到既有默认**（`v1`）**并打 `::warning::` 说明**，SHALL NOT 静默改变行为
 
 ## Requirement: 实际使用的 ref SHALL 在 CI 日志里可见
 
-门禁 SHALL 在运行 `check` 之前把本次实际使用的 witnessloop ref **打进日志**（对所有 ref 形态成立：tag / 分支 / sha），
-使接入方不必靠猜。
-
-⚠️ **能力边界（SHALL 明写）**：witnessloop **包自身**无法报告「我是从哪个 git ref 构建的」
-（`uvx` 现场构建 wheel，`__version__` 与 tag 无关）⇒ 本要求只承诺**日志侧**可见性。
+门禁 SHALL 在运行 `check` **之前**把本次实际使用的 witnessloop ref **打进日志**（`::notice::`），
+**对所有 ref 形态成立**（tag / 分支 / **sha**），使接入方不必去 grep `uvx` 的构建输出。
+该 step SHALL 是 job 里的**第一个 step**——后续步骤失败时也要能看见它。
 
 ### Scenario: 日志里能直接读到 ref
 - **Given** 一次 PR 触发的 `gate / check`
 - **When** 看该 job 的日志
-- **Then** SHALL 有一行明确写出本次使用的 witnessloop ref（不需要 grep `uvx` 的构建输出）
+- **Then** SHALL 有一行明确写出本次使用的 witnessloop ref **及其来源**（显式传入 / `job.workflow_sha` /
+  兜底 / fail-closed）
+
+## Requirement: `check` SHALL 自报它实际跑的包 ref（尽力而为）
+
+`check` SHALL 打印**本进程所装的 witnessloop 包**的 VCS 元数据
+（PEP 610 `direct_url.json` 的 `vcs_info.requested_revision` 与 `commit_id`），
+使「包版本」不止在 CI 日志侧可见，也不止能看见**请求的 ref**、还能看见**解析出的 commit**。
+
+⚠️ **这是尽力而为**：元数据取不到（本地 editable 安装、源码直跑、非 VCS 安装）时
+SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
+⚠️ **与 `__version__` 的分工**：`__version__` 恒为 `0.1.0`、**与 tag 无关**
+（`src/witnessloop/__init__.py:22`），所以**版本号不能**用来判断跑的是哪版——
+本要求走的是 **VCS 元数据**这条链。
+（R1 K1 的实测订正：原稿写「包**无法**自报 ref / 构建产物里没有 ref 信息」是**假**的，
+`uvx` 装出的 dist-info 确实带 `vcs_info`。）
+
+### Scenario: 能取到元数据
+- **Given** `check` 由 `gate.yml` 通过 `uvx --from "git+…"` 安装后运行
+- **When** 看它的输出
+- **Then** SHALL 有 `requested_revision` 与 `commit_id` 两值
+
+### Scenario: 取不到元数据
+- **Given** witnessloop 以 editable / 源码方式运行（没有 `direct_url.json` 的 `vcs_info`）
+- **When** 看它的输出
+- **Then** SHALL 打印 `<未知>`，且**退出码不变**（不因为报不出 ref 而判红）
+
+## Requirement: 既有接入方 SHALL 有单一、显式的升级动作
+
+对**已接入**的仓，显式给 `init --gate-ref <新 ref>` SHALL **重写 caller + 同步台账**
+（`init-manifest.json` 里该条目的 `sha256` **与** `gate_ref`），其余文件照旧**只增不改**；
+执行后 plain `init` SHALL 回到幂等、`uninit` SHALL 仍可用（终态是**不动点**）。
+
+- **作用域**：该行为 SHALL 只作用于**已接入**分支（存在 `init-manifest.json` 时）——
+  未接入的仓里若已存在内容不同的 caller，仍 SHALL 判冲突并整体不落盘。
+- **诚实边界**：不修这条时，接入方并非「没有出口」（三条恢复路径实测可用，见 `design.md §2 D2`），
+  而是出口**难用**——本要求交付的是**好用**的那条。
+
+### Scenario: 显式换 ref 之后仍是干净的不动点
+- **Given** 一个已接入的仓（caller 无 `with:`）
+- **When** 跑 `witnessloop init --gate-ref <新 ref>`
+- **Then** SHALL 重写 caller、SHALL 同步台账的 `sha256` 与 `gate_ref`，EXIT=0；
+  且随后 plain `init` SHALL 报「幂等，无改动」、`uninit` SHALL 能正常回滚
+
+### Scenario: 不给 flag 时不动
+- **Given** 同一个已接入的仓
+- **When** 跑不带 `--gate-ref` 的 plain `init`
+- **Then** SHALL 保持「幂等，无改动」（**不**顺手改 caller），与今天一致
+
+## Requirement: caller 文件不受保护这条边界 SHALL 被如实登记
+
+`.github/workflows/witnessloop.yml`（caller）**不在** `protected_paths` / 不变集 / `require_change_for` 里
+（实测：`.github/workflows/witnessloop.yml：protected=False invariant=False require_change=False`）——
+即一个 PR 可以把 caller 的 `uses:` 改成**别的仓**的 workflow 而 `check` 不报 finding。
+本 change SHALL 把这条边界写进 `docs/gate.md §7 能力边界`，SHALL NOT 在本 change 内新增保护面。
+
+### Scenario: 边界可见
+- **Given** 读者查 `docs/gate.md` 的能力边界一节
+- **When** 读「caller 不受保护」那一条
+- **Then** SHALL 能读到：这条边界存在、后果是什么、以及本 change **刻意不修**它的理由

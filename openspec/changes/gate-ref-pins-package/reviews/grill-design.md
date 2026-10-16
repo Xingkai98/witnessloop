@@ -15,7 +15,7 @@
 4. **模拟 (A)**（把源码拷到 `/tmp/e1/src` 改 `caller_workflow` 加 `with:`，**仓内源码未动**）：对一个用**今日代码**接入的仓跑新码 plain `init` ⇒ 冲突 **EXIT=1**（diff 正是 `+ with: / + witnessloop-ref: "v1"`）；`init --gate-ref <与其台账相同的 ref>` ⇒ 仍 **EXIT=1**。
 5. **模拟 (a) 的朴素实现**（手改 caller 成新形态、**不同步台账 hash**）：之后 plain `init` ⇒ `init：已接入，但 init 创建的文件被改动过（拒绝覆盖）` **EXIT=1**；`uninit` ⇒ `uninit：以下文件被改动过，拒绝删除` + `整批未删除` **EXIT=1**。
 6. **模拟 (B) 的「改一处」升级**（`/tmp/e2`，只把 `uses:` 的 `@v1` 改成 `@v2`）：plain `init` **EXIT=1**（走的是**漂移**分支不是冲突分支）、`uninit` **EXIT=1**、`init --gate-ref @v2` **EXIT=1**。
-7. **v1 tag 现场**：`git rev-parse v1^{}` = `ae992565ee2162e5b272af471e9adf895e7f83fb`（= `v1.6.0`，与 issue #30 一致；`v1` 是 annotated tag，`git rev-parse v1` 给的是 tag 对象 `1d0032a`）；`git rev-list --count v1..HEAD` = **47**；`git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**（gate.yml 自 v1 起没动过）；`git show v1:.github/workflows/gate.yml` ⇒ `default: "v1"`；`git diff --stat v1..HEAD -- src/` ⇒ 6 files, +922/−96。
+7. **v1 tag 现场**：`git rev-parse v1^{}` = `ae992565ee2162e5b272af471e9adf895e7f83fb`（= `v1.6.0`，与 issue #30 一致；`v1` 是 annotated tag，`git rev-parse v1` 给的是 tag 对象 `1d0032a`）；`git rev-list --count v1..HEAD` = **47**（⚠️ **计数依赖测量哪个 ref**：同一命令在当时的 docs 分支上是 50、在 `origin/main` 上是 47 —— 对抗轮 R1 的 K5「实测 50」即由此而来，见下）；`git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**（gate.yml 自 v1 起没动过）；`git show v1:.github/workflows/gate.yml` ⇒ `default: "v1"`；`git diff --stat v1..HEAD -- src/` ⇒ 6 files, +922/−96。
 8. `grep -rn "witnessloop-ref\|with:" tests/` ⇒ **空**（没有测试钉「caller 不得有 `with:`」）；`grep -rn "gate.yml\|@v1\|DEFAULT_GATE_REF" templates/ plugin/` ⇒ **空**。
 9. `ls openspec/changes/*/workflow-events.jsonl` ⇒ **空**（本仓 11 个 change 无一带过解释事件文件）。
 10. `find ~/.cache/uv ~/.local/share/uv -name direct_url.json` ⇒ `.venv/…/witnessloop-0.1.0.dist-info/direct_url.json` = `{"url":"file://…","dir_info":{"editable":true}}`（uv 落 PEP 610 文件）；**未找到**任何 VCS 安装（`vcs_info`）的样本。
@@ -30,12 +30,16 @@
   来源: `src/witnessloop/initcmd.py:30-47,50-55,192-193,251`；`.github/workflows/gate.yml:19-23,57-59`；`src/witnessloop/cli.py:43-48`；`src/witnessloop/uninitcmd.py:35-37`；（对照 issue #30 的机制段逐条一致）。
 
 - **既有接入方实际执行的是 `v1` 那份 gate.yml —— 所以 (B) 的「既有接入方零动作即生效」不成立。** `git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**（该文件自 v1 起一字未改），而 `git show v1:.github/workflows/gate.yml` 的 `witnessloop-ref` 默认值就是 `"v1"`；v1 = `ae99256`（= v1.6.0），落后 HEAD **47 个提交**、`src/` 差 6 文件 +922/−96 行。⇒ 任何写进 `gate.yml` 的新默认值/新解析逻辑，**只有 caller 的 `uses:` 指到含该改动的新 ref 之后才会被执行**；「改 gate.yml 默认值 ⇒ 存量仓追溯生效」在机制上不成立。
-  来源: 命令输出 `git diff --stat v1..HEAD -- .github/workflows/gate.yml`（空）+ `git show v1:.github/workflows/gate.yml` → `default: "v1"` + `git rev-list --count v1..HEAD` → 47；`src/witnessloop/constants.py:11`（默认 ref 钉 `@v1`）。
+  来源: 命令输出 `git diff --stat v1..HEAD -- .github/workflows/gate.yml`（空）+ `git show v1:.github/workflows/gate.yml` → `default: "v1"` + `git rev-list --count v1..HEAD` → 47（**基准 = 当时的 HEAD**；对 `origin/main` 同样是 47）；`src/witnessloop/constants.py:11`（默认 ref 钉 `@v1`）。
 
 - **(A) 下既有接入方的 plain `init` 必退 1（实测），且 `--gate-ref` 现在救不了。** 对用今日代码接入的仓，用「caller 双写 `with:`」的代码跑 plain `init` ⇒ `init：检测到冲突（已接入，但本次指定的内容与已落地不同；只增不改，拒绝覆盖…）` **EXIT=1**；显式传**与其台账相同**的 `--gate-ref` 也 **EXIT=1**（冲突判定比的是「本次期望 vs 磁盘」，与 flag 是否显式无关）。
   来源: `/tmp/e1` 实测（源码拷到 `/tmp/e1/src` 后仅改 `caller_workflow`；仓内源码未动）+ `src/witnessloop/initcmd.py:338-351`（冲突分支）。
 
-- **把升级动作写成「只重写 caller、其余文件照旧」会造成永久死锁（实测）。** caller 被重写而**台账里的 sha256 没跟着改**时：① 之后任何 plain `init` 报 `init 创建的文件被改动过（拒绝覆盖）` 并退 1；② `uninit` 报 `以下文件被改动过，拒绝删除` + `整批未删除` 退 1 —— 接入方**再也卸载不掉**（这正是 change `adopter-test-gate` 记录过的「手改 `init` 产物 = 死锁」）。⇒ 升级动作必须**原子地**重写 caller **与**台账里该条目的 `sha256`（及 `gate_ref`），design §8 那句「其余文件照旧只增不改」是被证伪的那一版。
+- **把升级动作写成「只重写 caller、其余文件照旧」会造成一个响亮的分叉态（实测）。** caller 被重写而**台账里的 sha256 没跟着改**时：① 之后任何 plain `init` 报 `init 创建的文件被改动过（拒绝覆盖）` 并退 1；② `uninit` 报 `以下文件被改动过，拒绝删除` + `整批未删除` 退 1 —— 接入方**卸载不掉**（这正是 change `adopter-test-gate` 记录过的「手改 `init` 产物 = 死锁」）。⇒ 升级动作必须**原子地**重写 caller **与**台账里该条目的 `sha256`（及 `gate_ref`），design §8 那句「其余文件照旧只增不改」是被证伪的那一版。
+  ⚠️ **R1 K3 措辞订正**：本条原写「**永久**死锁 / **再也**卸载不掉」，**过强**——对抗轮实测三条恢复路径均可用
+  （① `git checkout -- <caller>` ⇒ `init` EXIT=0；② `rm <caller>` ⇒ `uninit` EXIT=0；③ 台账该条目 `sha256: null` + 同步 `gate_ref` ⇒ `init`/`uninit` 均 EXIT=0），
+  且 `check` **不读台账**（`grep -rn "INIT_MANIFEST" src/witnessloop/*.py`）⇒ 分叉期间门禁照常工作。
+  **准确的定性是「响亮、可恢复」**，不是「卡死」；design §2 D2 已按此改写。
   来源: `/tmp/e1` 实测输出 + `src/witnessloop/initcmd.py:293-331`（漂移分支：磁盘 vs 台账）+ `src/witnessloop/uninitcmd.py:58-62,71-89`；台账里确实记着 caller 的 sha（`.witnessloop/init-manifest.json:13-16`）。
 
 - **(B) 宣称的「改一处即可升级」在今天的代码下同样死锁（实测）。** 只把 caller 的 `uses:` 从 `@v1` 改成 `@v2`（不加 `with:`）：plain `init` **EXIT=1**（命中的是**漂移**分支，文案是「init 创建的文件被改动过」——**不是** design 说的「冲突」）、`uninit` **EXIT=1**、`init --gate-ref @v2` 也 **EXIT=1**。⇒ (B) 的两条升级路径（手改／显式 flag）**今天都不通**，而 design 只把这条残留挂在 (A) 名下（§8 第二问的 ⚠️）。
@@ -100,13 +104,23 @@
 
 ### ~~Q1 修法形态~~ —— **已由真 CI 实测定案（2026-10-16）：取 (B′＝`job.workflow_sha`)**
 
-- 探针（副本仓 `Xingkai98/asterwynd-wl-switch`，run 38852445945，同仓 reusable workflow）实测：
-  `PROBE JOB_WORKFLOW_SHA = 8c218a1e9a2b9d27c3a686755b2987bac6fbe186`、
-  `PROBE JOB_WORKFLOW_REF = …/probe-reusable.yml@refs/heads/master`；
-  而 `PROBE GH_WORKFLOW_REF = …/probe-caller.yml@refs/heads/master`（= **caller 自己**）、
-  `PROBE GH_JOB_WORKFLOW_SHA = <未定义或空>`。
-- ⇒ **`job.workflow_ref` / `job.workflow_sha` 唯一确定「被复用的那个 workflow 文件及其 sha」** ⇒ (B′) 可行 ✓。
-- ⚠️ 同仓形态实测；**跨仓（接入方调 witnessloop）未实测**，字段语义按文档一致。
+- **定案用的是跨仓探针**（副本仓 `Xingkai98/asterwynd-wl-switch` 里一个 `on: push`、分支 `probe/xrepo` 的 caller，
+  `uses: Xingkai98/witnessloop/.github/workflows/probe-ref.yml@probe/workflow-ref`，run `38853369550`）实测：
+  ```
+  job.workflow_ref          = Xingkai98/witnessloop/.github/workflows/probe-ref.yml@refs/heads/probe/workflow-ref
+  job.workflow_sha          = 6e2ec4dc7955d6d155987a667040b126acab983b   ← reusable 自己的 commit
+  job.workflow_repository   = Xingkai98/witnessloop
+  job.workflow_file_path    = .github/workflows/probe-ref.yml
+  github.workflow_ref       = Xingkai98/asterwynd-wl-switch/.github/workflows/probe-caller-xrepo.yml@refs/heads/probe/xrepo   ← caller
+  github.workflow_sha       = 2778bc24e13c8fdd18e18765c81eb0ff731e6568   ← 接入方自己的 commit
+  github.job_workflow_sha   = （空）
+  ```
+- ⇒ **`job.workflow_sha` 唯一确定「被复用的那个 workflow 文件及其 commit」** ⇒ (B′) 可行 ✓；
+  `github.workflow_sha` 是**接入方自己**的 ⇒ 用 `github.*` 会在 witnessloop 仓取一个不存在的 commit（全量硬红）。
+- 早一轮的**同仓**探针（run `38852445945`）给出同向结论，作为交叉验证留档。
+- ⚠️ 仍**未实测**的面（已在 `design.md §4 R6` 如实登记）：GHES 上 `job.*` 不可用 ⇒ 落到 fail-closed 退 `v1`；
+  同 owner 的 fork 能匹配上 `REPO_SLUG` 判据（判据必要不充分）。
+- 探针已全部清理（witnessloop 上的临时分支与文件已删、复查 404）；原始输出保存在 `design.md §2 D1`（即 K8 要的落点）。
 - 本问**不再占用用户时间**（详见 `design.md §2 D1` 与 §8 的已定案表）。
 
 ### Q2 升级动作：对**已接入**的仓，显式 `init --gate-ref <新 ref>` 应该「重写 caller（+台账）」还是「照旧拒绝、让人先 `uninit`」？
@@ -194,6 +208,11 @@
 
 ## User Confirmation
 
-<!-- 停轮之后由主 session 追加：逐条覆盖上面 `## Open Questions` 的 Q1/Q2/Q3，
-     形如 `- **Q1**: 用户答复：…；确认时间: YYYY-MM-DD`。
-     ⚠️ 答复落盘后必须**重建** grill manifest（report_hash 变了）。 -->
+> 停轮已于 **2026-10-16** 解除：用户对 `## Open Questions` 的 **Q1–Q5** 逐条拍板，答复如下（非「按推荐」类占位）。
+> ⚠️ 本节落盘后本报告的 `report_hash` 已变化 ⇒ grill manifest 必须**重建**（见 §风险 R6）。
+
+- **Q1**: 用户答复：取 **(B′)** —— 包版本用 reusable workflow **自己那个 sha**（`job.workflow_sha`）装包。已由跨仓真 CI 探针实测定案：`job.workflow_sha` = `6e2ec4dc7955d6d155987a667040b126acab983b`（reusable 自己的 commit）、`job.workflow_repository` = `Xingkai98/witnessloop`，而 `github.workflow_sha` = 接入方自己的 commit ⇒ 只有 `job.*` 唯一确定被复用的 workflow 文件。探针（分支与文件）已全部清理；原始输出写进 `design.md §2 D1`。；确认时间: 2026-10-16
+- **Q2**: 用户答复：选 **(a)** —— 显式给 `--gate-ref` 时「**重写 caller + 同步台账**」（台账该条目的 `sha256` 与 `gate_ref`），作用域限定「已接入分支」，其余文件照旧只增不改。；确认时间: 2026-10-16
+- **Q3**: 用户答复：选 **(a)** —— **发新 tag `v1.7.0` 并把 `DEFAULT_GATE_REF` 指过去**；⚠️ 本 change **不动 `v1` tag、也不创建 `v1.7.0`**（打 tag 与改默认值都是**合入之后**的事，写进 `tasks.md` 的 `(post-merge)`）。本 PR 内 `DEFAULT_GATE_REF` 保持 `@v1`。；确认时间: 2026-10-16
+- **Q4**: 用户答复：**纳入**（按作者推荐）—— `check` 自报自己实际跑的 ref（读 PEP 610 `direct_url.json` 的 `vcs_info.requested_revision`/`commit_id`），**尽力而为、取不到不失败**（打 `<未知>`）。；确认时间: 2026-10-16
+- **Q5**: 用户答复：**只登记文档、不加机械门**（按作者推荐）—— caller 文件不受保护这条边界写进 `docs/gate.md §7`，本 change 不新增保护面（纳入不变集会影响所有既有接入方，另开 change）。；确认时间: 2026-10-16

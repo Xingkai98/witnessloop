@@ -1,5 +1,8 @@
 # Design: gate-ref-pins-package
 
+> 状态：**停轮已解除**（用户 2026-10-16 裁定 Q1–Q5，见 §8 与 `reviews/grill-design.md` 的
+> `## User Confirmation`）。实现按本文件执行。
+
 ## 0. 一句话
 
 让「接入方钉住的 ref」成为**单一事实来源**，同时决定 reusable workflow 文件与 **witnessloop 包**的版本；
@@ -7,7 +10,7 @@
 
 ## 1. 现状（逐行实测）
 
-- `initcmd.caller_workflow(gate_ref)`（`src/witnessloop/initcmd.py:32-46`）生成：
+- `initcmd.caller_workflow(gate_ref)`（`src/witnessloop/initcmd.py:30-47`）生成：
   ```
   jobs:
     gate:
@@ -18,197 +21,263 @@
   随后 `uvx --from "git+https://github.com/Xingkai98/witnessloop@${{ inputs.witnessloop-ref }}"`（`:57-59`）。
   ⇒ 包版本**完全由调用方是否传 `with:` 决定**；不传就是 `v1`。
 - `--gate-ref` 只写进 caller 的 `uses:` 行 + 台账（`init-manifest.json` 的 `gate_ref` 字段，实测本仓台账里是
-  `…gate.yml@v1`）⇒ **与包版本没有任何联系**。
+  `…gate.yml@v1`）⇒ **与包版本没有任何联系**。消费点全集（grill 与 R1 各自独立 grep 复算）：
+  `cli.py:43-48` → `initcmd.py:192`（缺省解析）→ `:193`（desired）→ `:46`（`uses:`）→ `:251`（台账）
+  → `uninitcmd.py:36-37`（回滚 diff 的期望内容）。**没有第五处**。
 - `init` 的契约是**幂等 · 只增不改**：已接入的仓若目标文件与期望内容不同 ⇒ 冲突 ⇒ 退 1
-  （`src/witnessloop/initcmd.py:224-234` 的 `conflicting_files`）。**这条决定了本 change 的升级路径必须显式**。
+  （`src/witnessloop/initcmd.py:224-234` 与 `:338-351` 的 `conflicting_files`）。**这条决定了本 change 的升级路径必须显式**。
 - 本仓**自己**的 caller 也是旧形态（`.github/workflows/witnessloop.yml` 只有 `uses: …@v1`），
   台账里记着它的 sha256（`4861a80c…`）⇒ 本 change 落地时会**自撞**这条冲突判定（dogfood 面，见 D4）。
 
 ## 2. 决策
 
-### D1 单一事实来源：包版本 SHALL 取自「workflow 自己的 ref」
+### ✅ D1（**已由真 CI 实测定案，2026-10-16**）：取 **(B′)** —— 包版本取自 reusable workflow **自己的 sha**
 
-**选项**（本 change 的真实取舍，见 §8 Q1）：
+**决策细则**：`gate.yml` 把 `inputs.witnessloop-ref` 的 `default` 由字面量 `"v1"` 改成**空串**
+（= 「自动」，与「显式传值」可区分），并在**第一个 step** 里解析出**本次实际用的包 ref**：
 
-- **(A) caller 显式双写**：`init` 生成的 caller 同时写
-  `uses: …gate.yml@<ref>` 与 `with: { witnessloop-ref: "<同一个 ref>" }`。
-  优点：直白、可本地复算（看生成文件就知道两处一致）；缺点：**既有接入方不受益**（他们的 caller 没 `with:`），
-  且要改 `init` 的生成契约 ⇒ 撞「只增不改」的冲突判定（D2）。
-- **(B) 让默认值等于「workflow 自己的 ref」**：`gate.yml` 里把 `witnessloop-ref` 的默认值改成
-  **从解析出的 ref**（形如 `owner/repo/.github/workflows/gate.yml@<ref>`）。
-  ⚠️ **grill 实测订正（M1）**：**「存量仓零动作即生效」不成立**——
-  `git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**、`git show v1:.github/workflows/gate.yml`
-  的默认值就是 `"v1"`、且 `v1` 落后 47 个提交 ⇒ **存量仓跑的是 `v1` 那份 gate.yml，新默认逻辑根本不会执行**。
-  ⇒ (B) 的真实收益只有一条：**改完 `uses:` 那一处之后，包版本自动跟着一致**（不必再管第二个输入）；
-  存量仓仍必须先改 `uses:`（或过一次工具）。
-  缺点：依赖 `github.workflow_ref` 在 **called workflow** 里指向**被调用的那个 workflow 及其 ref**
-  —— 这条**本工作区无法验证**（要真 CI），见 §4 R1 与 §8 Q1。
+1. `inputs.witnessloop-ref` **非空** ⇒ 用它（**显式覆盖**，既有 `with:` 调用方不受影响）；
+2. 否则 `job.workflow_repository == constants.REPO_SLUG` **且** `job.workflow_sha` 非空
+   ⇒ 用 **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit）；
+3. 否则（repository 不匹配 / sha 为空）⇒ 尝试 `job.workflow_ref` 的 `@` 之后那段，
+   仅接受 `refs/heads/<分支名>` 与 `refs/tags/<tag名>` 两种形态；
+4. 以上都拿不到 ⇒ **fail-closed 到 `v1`** 并打 `::warning::`（不静默）。
+
+```yaml
+inputs:
+  witnessloop-ref:
+    description: "witnessloop 自身的 ref（钉版本）。留空 = 自动取本 reusable workflow 自己的 commit"
+    required: false
+    type: string
+    default: ""
+```
+
+**⚠️ 落点必须是 step，不能是 input 的 `default`**（M7①）：`on.workflow_call.inputs.<id>.default`
+的可用上下文是 `github, inputs, vars` 三个（`job` **不在其中**）⇒ `job.*` 只能写在 step 里。
+
+**接受判据是 `job.workflow_repository == REPO_SLUG`**（M7②）：`job.*` 在 called workflow 里指向
+**被复用的文件**，但同 owner 的 fork 会把 `REPO_SLUG` 匹配上——所以这条判据是**必要不充分**；
+不充分的那一半如实登记在 §4 R6（GHES / fork 面），本 change 不宣称覆盖。
+
+**真 CI 探针原始输出（**跨仓**形态，副本仓 `Xingkai98/asterwynd-wl-switch`，run `38853369550`）**：
+
+```
+job.workflow_ref          = Xingkai98/witnessloop/.github/workflows/probe-ref.yml@refs/heads/probe/workflow-ref
+job.workflow_sha          = 6e2ec4dc7955d6d155987a667040b126acab983b   ← reusable 自己的 commit
+job.workflow_repository   = Xingkai98/witnessloop
+job.workflow_file_path    = .github/workflows/probe-ref.yml
+github.workflow_ref       = Xingkai98/asterwynd-wl-switch/.github/workflows/probe-caller-xrepo.yml@refs/heads/probe/xrepo   ← caller
+github.workflow_sha       = 2778bc24e13c8fdd18e18765c81eb0ff731e6568   ← 接入方自己的 commit（不是 reusable 的）
+github.job_workflow_sha   = （空）
+```
+
+- caller（副本仓）那一侧：`on: push`、分支 `probe/xrepo`、
+  `uses: Xingkai98/witnessloop/.github/workflows/probe-ref.yml@probe/workflow-ref`（**跨仓**）。
+- ⇒ **`job.workflow_sha` 唯一确定 reusable 自己的 commit**（`github.workflow_sha` 是接入方自己的，
+  用它会在 witnessloop 仓取一个不存在的 commit ⇒ 全量硬红）。**故 (B′) 可行** ✓。
+- 对照的**早一轮**同仓探针（run `38852445945`）给出同向结论；该轮是**同仓**形态（caller 与 callee 同仓）。
+- **探针已全部清理**：witnessloop 上的临时分支与文件已删（复查 404）。本文档保存原始输出即其落点（K8）。
+
+前两轮「未跑成」的留档（探针分支 `probe/workflow-ref` / `c7aa037` 因副本仓 caller PR #5 的 base 冲突
+DIRTY ⇒ 无 merge commit ⇒ 任何 workflow 都不跑）**已被上面这轮真跑成的跨仓探针取代**，不再开问题。
+
+### D1 的选项对照（留档，供后来者理解为什么不是 (A)/(B)）
+
+- **(A) caller 显式双写**：`init` 生成的 caller 同时写 `uses: …@<ref>` 与 `with: {witnessloop-ref: "<同一个 ref>"}`。
+  优点：直白、可本地复算；缺点：**存量接入方仍要过一次工具**，且留下**第二个可写点**
+  （人能只改 `with:` 不改 `uses:` ⇒ 又回到两处不一致）。⇒ 降级为**显式覆盖**手段，不再是主机制。
+- **(B) 从 `github.workflow_ref` 解析**：**已证伪**——探针实测 `github.workflow_ref` 指 **caller**，
+  用它会把**接入方自己的 ref**当成包 ref（`uvx` 去 witnessloop 仓取一个不存在的 ref ⇒ 全量硬红）。
+  这里如实记录：**这一条是本 change 最重要的实测订正**。
 - **(C) 版本台账**（`init` 写一份版本文件、`check` 读它）：引入第二个事实来源，与「一次入口」相抵 ⇒ **不取**。
 
-### ✅ 已由**真 CI 实测定案（2026-10-16）**：取 **(B′)**
-
-**2026-10-16 真 CI 探针（同仓 reusable，push 触发）原始输出**（副本仓 `Xingkai98/asterwynd-wl-switch`，run 38852445945）：
-```
-PROBE JOB_WORKFLOW_REF        = Xingkai98/asterwynd-wl-switch/.github/workflows/probe-reusable.yml@refs/heads/master
-PROBE JOB_WORKFLOW_SHA        = 8c218a1e9a2b9d27c3a686755b2987bac6fbe186
-PROBE JOB_WORKFLOW_REPOSITORY = Xingkai98/asterwynd-wl-switch
-PROBE JOB_WORKFLOW_FILE_PATH  = .github/workflows/probe-reusable.yml
-PROBE GH_WORKFLOW_REF         = Xingkai98/asterwynd-wl-switch/.github/workflows/probe-caller.yml@refs/heads/master   ← caller 自己
-PROBE GH_WORKFLOW_SHA         = 8c218a1e9a2b9d27c3a686755b2987bac6fbe186
-PROBE GH_JOB_WORKFLOW_SHA     = <未定义或空>
-PROBE GH_REF                  = refs/heads/master
-```
-⇒ **`job.workflow_ref` / `job.workflow_sha` 指向「被复用的那个 workflow 文件」及其 ref/sha**（文档口径证真 ✓）；
-`github.workflow_ref` 指 **caller** ✓。⚠️ 本探针是**同仓**形态（caller 与 callee 同仓、ref 是分支）；
-**跨仓**（接入方调 witnessloop 的 `gate.yml@v1`）**未实测**，但字段语义按文档一致 ⇒ 用法同。
-
-**决策**：`gate.yml` 把 `witnessloop-ref` 的**默认值**改为由 **`job.workflow_sha`**（兜底 `job.workflow_ref` 的 ref 部分）推导，
-并把「`job.workflow_repository == constants.REPO_SLUG`」作为**接受判据**（不满足 ⇒ 退 `v1` 并打日志，M7）。
-**不再**推荐 (B)（`github.workflow_ref` = caller，用它会把 caller 的 ref 当包 ref ⇒ 全量硬红）；
-(A)（caller 双写 `with:`）降级为**显式覆盖**手段（D2 的升级动作仍走它）。
-
-### D2 既有接入方的升级路径 SHALL 是单一、显式、可复算的动作
+### D2 既有接入方的升级路径 SHALL 是单一、显式、可复算的动作 —— **裁定 (a)**
 
 `init` 的「只增不改」不许被本 change 打破（它是**唯一**的升级入口，`initcmd.py:9-13` 的教训：
-tests 文件就是为绕开这条冲突判定才走了独立路径）。因此：
+tests 文件就是为绕开这条冲突判定才走了独立路径）。故：
 
-- **在 (B) 下**：既有接入方**无需改任何文件**（他们的 `uses:` ref 即包版本）；要**升级**时改
-  `uses:` 的 ref（一处），或跑 `init --gate-ref <新 ref>`（显式 flag ⇒ 与 `--test-command` 同款「显式意图优先」）。
-  ⚠️ 但 `init --gate-ref <新>` 现在会**撞冲突**（caller 内容不同）⇒ 见 Q2。
-- **在 (A) 下**：必须有显式覆盖动作（推荐 `init --gate-ref <ref>` 改为「显式给定时**总是重写 caller**」，
-  与 `--test-command` 的既有先例一致：`constants.py:24-27`「显式意图优先，不得静默 no-op」）。
+- **升级动作（裁定 (a)）**：对**已接入**的仓，显式给 `--gate-ref` 时 ⇒ **重写 caller + 同步台账**
+  （`init-manifest.json` 里该条目的 `sha256` **与** `gate_ref`），其余文件照旧只增不改。
+  两条硬约束（grill M2，均已实测）：
+  1. **必须同步台账**：只重写 caller 会让「磁盘 ≠ 台账」——plain `init` 走**漂移**分支退 1、
+     `uninit` **拒删**退 1。
+  2. **作用域限定「已接入分支」**（`initcmd.py:205` 之后）：否则会**静默覆盖**新仓里外来的 caller，
+     推翻 `tests/test_init.py:128-141` 的保证。
+- **先例纠正（grill CD6）**：`--test-command`（`constants.py:19-27`）**不进台账**，口径与 caller **相反**，
+  **不能**援引；正确先例是 **`--policy`**（`initcmd.py:344-351` 的「显式给定时按新内容落地」一侧）——
+  两者都是「**工具自己生成的产物**」，台账可由工具一致地维护。
+- **死锁措辞降级（R1 K3）**：只重写 caller 的后果**不是**「永久死锁 / 再也卸载不掉」，
+  而是一个**响亮、可恢复的分叉态**——三条恢复路径均已实测：① `git checkout -- <caller>` ⇒
+  plain `init` EXIT=0；② `rm <caller>` ⇒ `uninit` EXIT=0（`uninitcmd.py:56-57` 对缺失文件 `continue`）；
+  ③ 台账该条目 `sha256: null` + 同步 `gate_ref` ⇒ `init`/`uninit` 均 EXIT=0。且
+  `grep -rn "INIT_MANIFEST" src/witnessloop/*.py` 证明 **`check` 不读台账** ⇒ 分叉期间门禁照常工作，
+  坏的只是 `init`/`uninit` 两个动词。
+- **已知工具外出口（R1 K7，登记 + 明确非目标）**：`initcmd.py:301` / `uninitcmd.py:59` 用的是
+  `entry.get("sha256") and …` ⇒ **任何 `sha256` 为 `null`/缺失的台账条目，两条判定都直接跳过**；
+  而 `build_manifest` 只对 `self` 条目写 `null`（`initcmd.py:104`）——即「`null` 的语义」是**约定**、
+  不是**强制**。本 change **不收紧**它（收紧会动 `uninit` 的既有判定语义，属另一个面），
+  但登记在此：它是升级路径的**第二条出口**，裁定 (a) 的理由是「出口**好用** vs **难用**」，不是「有没有出口」。
 
-### D3 「静默」SHALL 被消掉——但要如实说明边界
+### D3 「静默」SHALL 被消掉——并且**包能自报 ref**（R1 K1 订正）
 
-- `gate.yml` SHALL 在跑 `check` **之前**把本次的 ref **打进日志**（`echo`，含 `::notice::`），
+- `gate.yml` SHALL 在跑 `check` **之前**把本次的 ref **打进日志**（`::notice::`，见 D1 的 step），
   使 CI 日志直接可读；**对所有形态的 ref 都成立**（tag / 分支 / **sha**）。
-- ⚠️ **做不到的部分要明说**：`check` **无法**打印「自己在用哪个 git ref」——
-  包是 `uvx` 现场构建的 wheel，`src/witnessloop/__init__.py:22` 的 `__version__` 目前恒为 `"0.1.0"`
-  （**与 tag 无关**），构建产物里没有 ref 信息 ⇒ 只能靠 D3 第一段的**日志侧**可见性。
-  （把 `__version__` 与 tag 绑起来属**发布纪律**，与本 change 正交 ⇒ §3.5 非目标。）
+- **R1 K1 订正（原稿此处为假）**：原稿写「包自身**无法**报告自己在用哪个 ref / 构建产物里没有 ref 信息」——
+  **实测证伪**。`uvx --from "git+https://github.com/Xingkai98/witnessloop@v1"`（uv 0.13.1，
+  与 `gate.yml` 同一条 uvx 调用）装出的 dist-info 带 PEP 610 的 `direct_url.json`：
+  ```json
+  {"url":"https://github.com/Xingkai98/witnessloop",
+   "vcs_info":{"vcs":"git","commit_id":"ae992565ee2162e5b272af471e9adf895e7f83fb","requested_revision":"v1"}}
+  ```
+  ⇒ **`check` 可以自报 ref，且连 resolved commit 一起报**（比 `echo` 多一维：`echo` 只能打出**请求的 ref**，
+  打不出解析后的 commit，而 issue #30 的验收证据恰恰是 resolved sha）。
+- **裁定（Q4 = 作者推荐）**：**纳入**——`check` 打印自己实际跑的 ref，**尽力而为**：
+  读 `direct_url.json` 的 `vcs_info.requested_revision` / `commit_id`，取不到就打 `<未知>`，
+  **绝不因此失败**（本地 editable / 源码直跑没有它）。
+- **仍然成立的那半句**（不要一并删掉）：`__version__` 恒 `"0.1.0"`、**与 tag 无关**
+  （`src/witnessloop/__init__.py:22`、`pyproject.toml:3`、`uv.lock` 同值；`checkcmd.py` 全文无版本输出）
+  ⇒ **版本号**不能用来判断跑的是哪版，所以本 change 走的是 **VCS 元数据**这条链，不是版本号。
 
-### D4 本仓自己 SHALL 一起迁移（dogfood）
+### D4 本仓自己的迁移 SHALL 是**(post-merge) 后继动作**，不在本 PR 内
 
-本仓的 caller 与台账（`.github/workflows/witnessloop.yml`、`.witnessloop/init-manifest.json`）在实现时
-SHALL 一起更新到新形态。**grill 订正（M4）**，三件事必须写全：
+原稿（grill CD7 / M4）写过「同一个 diff 里跑一次 `init` 自证不冲突」，**该步骤在本 PR 内不可执行**：
 
-1. **自证命令**：`init --dry-run --policy <seed>`（plain `init` **今天本来就退 1**，与 caller 无关 ⇒ 不能拿它当自证）。
-2. **解释事件**：建 `openspec/changes/gate-ref-pins-package/workflow-events.jsonl` 并写一条 `protected_path_write`
-   （`artifact_path` 指向 `.witnessloop/init-manifest.json`、`reason` / `approved_by` 非空），
-   否则改台账这个 **`M`** 必红（`policy.py:18-23` 的不变集 + `checkcmd.py` 的保护写判定）。
-3. **时序**：迁移动作**拆成「合并 + 发布新 ref 之后」的后继动作**——同一个 diff 里**没有可指向的新 ref**
-   （新 gate.yml 只在合并后才存在）⇒ 这一步**不能**和实现同一个 PR。
+1. **迁移的目标 ref 在本 PR 内不存在**：本仓 caller 的 `uses:` 要指向一个**含新 gate.yml 的 ref**，
+   而这样的 ref 只有在本 change 合并之后才存在（出厂默认仍是 `@v1` = `ae99256`，
+   `git show v1:.github/workflows/gate.yml` 是**改动前**的文件、`git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**）。
+2. **自证命令今天本来就红，且与 caller 无关**（grill CD7 实测）：本仓 plain `init --dry-run` **今天已退 1**，
+   且 diff **只涉及 `.witnessloop/policy.json`**（`require_change_for` 与三个 stage 键）；
+   只有 `init --dry-run --policy <seed>` 才是「幂等，无改动」EXIT=0 —— 而 seed 是**仓外的临时文件、刻意不入库**
+   （`README.md:111-113`；`README.md:225` 明写本仓 `init` 早就跑不动）。
+3. ⇒ 迁移动作**拆成 post-merge 的后继动作**，与 Q3 的发布动作同批（见 §6 待办）：
+   更新本仓 caller + 台账，并在同一批里建 `openspec/changes/gate-ref-pins-package/workflow-events.jsonl`
+   写一条 `protected_path_write`（`artifact_path` 指向 `.witnessloop/init-manifest.json`、`reason`/`approved_by` 非空），
+   否则改台账这个 **`M`** 必红（`policy.py:18-23` 的不变集 + `checkcmd.py:312-335`）。
+   **本 PR 不动** `.github/workflows/witnessloop.yml` 与 `.witnessloop/init-manifest.json`。
 
 ### D5 非目标：与 #31 正交
 
 `D` 侧掉队（issue #31）不在此列；本 change 只动「跑哪个包」这条链。
 
+### D6 非目标：不收紧 `sha256: null`（K7）
+
+见 D2 末条。本 change 只在文档里登记这条既有语义，不改判定。
+
+### D7 caller 文件不受任何保护 —— **裁定：只登记文档，不加机械门**
+
+R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
+
+```
+.github/workflows/witnessloop.yml：protected=False invariant=False require_change=False
+```
+
+⇒ 一个 PR 可以把 caller 的 `uses:` 改成**自己 fork 的 gate.yml**，`check` 不会报一条 finding。
+**裁定（Q5 = 作者推荐）**：本 change **不**新增保护面（把 caller 纳入不变集会影响所有既有接入方，
+且 required check 的名字 `gate / check` 前半来自 caller 的 job 名——那是个**平台面**的取舍，
+值得单独一个 change），只把这条边界**写进 `docs/gate.md §7` 能力边界**。
+
 ## 3. 接线点（实现清单）
 
-1. `.github/workflows/gate.yml`：默认值改 `github.workflow_ref` 解析（(B)）/ 或加 `echo` 日志（两种情况都要）。
-2. `src/witnessloop/initcmd.py`：`caller_workflow()` 视 Q1 裁定改/不改；`--gate-ref` 的覆盖语义视 Q2 裁定。
-3. `src/witnessloop/constants.py`：若改生成契约，`DEFAULT_GATE_REF` 的注释要写清「ref 同时决定包版本」。
-4. 本仓自己的 caller + 台账（D4）。
-5. `docs/gate.md` / `README.md`：接入指引里「怎么钉版本 / 怎么升级」一段。
-   **grill M6 补两处必须一起改**：`README.md:20`（`uv tool install git+…@v1`——**CLI 的安装 ref 与包版本同源**，
-   直接影响「新接入方会不会吃到旧包」）与 `README.md:119-121`（「`@v1` 是滚动大版本」——必须表态它与
-   本 change 目标 3「不动 `v1` tag」的关系）。
+1. `.github/workflows/gate.yml`：
+   - `inputs.witnessloop-ref.default` 由 `"v1"` 改 `""`；
+   - **新增第一个 step**（`id: wl-ref`）：按 D1 解析 + `::notice::` 打日志 + 写 `$GITHUB_OUTPUT`；
+   - `uvx` 那一步改用 `${{ steps.wl-ref.outputs.ref }}`。
+2. `src/witnessloop/initcmd.py`：新增「已接入分支」里的显式 `--gate-ref` 重写 + 台账同步（D2）。
+3. `src/witnessloop/checkcmd.py`：`check` 自报本包 VCS ref（D3 / Q4）。
+4. `src/witnessloop/constants.py`：`DEFAULT_GATE_REF` **保持 `@v1`**（Q3 把「改默认值」列为 post-merge 事项），
+   但注释要写清「ref 同时决定包版本」与「显式 `--gate-ref` 会重写 caller + 台账」。
+5. 文档：`docs/gate.md`（§1 的 caller 行、**§7 能力边界**加 D7）、`README.md:20`（`uv tool install …@v1` ——
+   **CLI 的安装 ref 与包版本同源**）、`README.md:119-121`（「`@v1` 是滚动大版本」须与目标 3「不动 `v1` tag」表态）、
+   `README.md:170-177`（前置条件段的 `@v1`）、`docs/design.md:56,73`（K6 补的两处）。
+   `templates/` 与 `plugin/` **零命中**（grill #8 / R1 E7 各自 grep 复核）⇒ 不动。
 
 ## 4. 风险
 
 | # | 风险 | 处置 |
 |---|---|---|
-| R1 | `github.workflow_ref` 在 called workflow 里的**取值语义**未经验证（(B) 的基石） | 实现期**先在副本仓实测**；证伪则退 (A)（§8 Q1） |
-| R2 | **全局面不是「改默认值」这个动作，而是「新 ref 发布的那一刻」**（M1 订正）：接入方把 `uses:` 指到含新 gate.yml 的 ref 时，**所有**这样的仓同时切换包来源解析 | 发布说明里写明「这是一次**全局**行为变化」；并给回退路径（把 `uses:` 指回旧 ref） |
-| R3 | `init` 的冲突判定被本 change 撞红（既有接入方跑 plain `init` 会退 1） | D2：显式动作 + D4 本仓先迁 |
-| R4 | 把 `__version__`/tag 绑起来的需求被夹带进来 | §3.5 明写非目标 |
+| R1 | ~~`github.workflow_ref` 语义未验证~~ | **已消解**：跨仓真 CI 探针实测（§2 D1）⇒ 定案 (B′) |
+| R2 | **全局面是「新 ref 发布的那一刻」**（M1 订正）：接入方把 `uses:` 指到含新 gate.yml 的 ref 时，**所有**这样的仓同时切换包来源解析 | 发布说明里写明「这是一次**全局**行为变化」；并给回退路径（把 `uses:` 指回旧 ref，或显式 `with: witnessloop-ref:`） |
+| R3 | ~~升级路径把接入方卡死~~ | **已降级**：需一次显式动作，且三条恢复路径实测可用（D2/K3） |
+| R4 | 把 `__version__`/tag 绑起来的需求被夹带进来 | §3 非目标；D3 明写本 change 走 VCS 元数据而不是版本号 |
+| R5 | 本仓自撞（policy 轴本来就红 + 台账 `M` 的解释事件） | D4：迁移拆成 post-merge 动作并写全三件事 |
+| R6 | **`job.*` 在 GHES 上不可用**（R1 B6：文档明写 `not available on GitHub Enterprise Server`）；同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据 | 两条都**如实登记、不宣称覆盖**：GHES / fork 场景落到 fail-closed ⇒ 吃 `v1`，但**日志里有 `::warning::`**（不静默）；判定不充分的那一半留给后续 change |
+| R7 | `uninit` 的 diff 质量下降 | 新生成器对旧形态 caller 会打出「看起来要变成新形态」的 diff；**判定仍只看台账 hash**，回滚正确性不受影响（R1 E5 复核成立） |
+| R8 | `refs/pull/N/merge` 的定性措辞 | 只说「**不是稳定的可安装 ref**」；**不**声称它必然安装失败（R1 E3：该 ref 通常能被 git fetch 到，未实测 uv 行为） |
 
 ## 5. 测试策略（TDD）
 
-⚠️ **停轮门**：拿到用户对 §8 的答复之前**不写任何实现/测试代码**。以下为实现期的用例清单：
+1. **解析面（gate.yml 的解析 step，从 YAML 抽出后真跑 bash）**：覆盖
+   `job.workflow_sha` 主路径 / 显式 `with:` 覆盖 / repository 不匹配 / sha 缺失走 `workflow_ref` 兜底
+   （`refs/heads/*` 与 `refs/tags/*`）/ 两样都缺 / `job.workflow_ref` 是 `refs/pull/N/merge` 畸形
+   ⇒ 后者**fail-closed 退 `v1` 且打 warning**。用 `GITHUB_OUTPUT` 捕获解析结果。
+2. **生成面**：`init --gate-ref <ref>` 生成的 caller 里 `uses:` 逐字等于该 ref（(B′) 下 `caller_workflow()`
+   字节**不变**，故这条是回归性质的守卫）。
+3. **升级路径**：既有形态的 caller（无 `with:`）+ 显式 `--gate-ref <新>` ⇒ **重写 caller + 同步台账
+   （`sha256` 与 `gate_ref`）**、EXIT=0、随后 plain `init` 仍幂等、`uninit` 仍可用（终态是不动点）；
+   plain `init` 与「不带 flag 的 `--policy` 语义」**照旧**。
+4. **日志面**：`gate.yml` 里 ref 进 `::notice::` 的那一行（断言文件内容，不跑 CI）。
+5. **自报面**：`checkcmd` 读 `direct_url.json` 的最佳努力实现——有 `vcs_info` 时打出
+   `requested_revision`/`commit_id`，没有时打 `<未知>` 且**不影响退出码**。
+6. **回归**：`init` 幂等 / `uninit` 回滚 / 冲突判定 / 新仓目标文件已存在仍冲突（`tests/test_init.py:128-141`）/
+   tests 文件独立路径 —— 全部照旧。
 
-1. **生成面**：`init --gate-ref <ref>` 生成的 caller 里，**ref 与包版本同源**（(A)：文件里两处逐字相等；
-   (B)：文件里 `uses:@<ref>`，且 `gate.yml` 的默认解析给出同一 ref——以后者用**纯函数**解析 `workflow_ref` 字符串来测）。
-2. **解析面（纯函数）**：给 `owner/repo/path@refs/tags/v1` / `@refs/heads/main` / `@<sha>` 三种形态，
-   解析出的 ref 逐字正确；畸形输入 ⇒ **fail-closed**（退回 `v1` 并**打日志**，不静默）。
-3. **不匹配可见性**：`gate.yml` 的日志步骤里出现本次 ref（断言文件内容，不跑 CI）。
-4. **升级路径**：既有形态的 caller（无 `with:`）在 (B) 下**不需要改**（回归用例：plain `init` 在 (B) 下不产生冲突）；
-   在 (A) 下断言「显式 `--gate-ref` 会重写 caller、plain `init` 仍只增不改」。
-5. **回归**：`init` 的幂等 / `uninit` 回滚 / 冲突判定 / tests 文件独立路径**全部照旧**。
+## 7.9 对抗轮记录
 
-## 7.9 对抗轮（R1，报告见 `reviews/grill-adversarial.md`）
+### R1（报告见 `reviews/grill-adversarial.md`）
 
 独立零记忆对抗者判定**不收敛**：证伪 4 条（**全部针对本稿自己的断言**）+ 8 条必须修改项（K1–K8）。
-其中**已在本节落库**的关键订正：
+当时的处置方式是在本节记一张表（7dfe299），**但正文没有改**（K1 就因此漏在 `D3` 里到 545456c 都在）。
+**本次（停轮解除后）已把 K1–K8 逐条落进正文**：
 
-| # | R1 发现 | 处置 |
+| # | R1 发现 | 落点 |
 |---|---|---|
-| 1 | 「包无法自报 ref」「没有任何提示」**是假的**（`uvx` 装出的 dist-info 带 `vcs_info.commit_id` / `requested_revision`；空缓存时 uv 自己会打印构建行） | D3 改写；**新增 §8 Q4** |
-| 2 | 「升级路径**永久**死锁 / 再也卸载不掉」**过强**：三条恢复路径实测可用（`git checkout` 回退 / 删 caller 后 `uninit` EXIT=0 / 台账 `sha256: null`） | CD4/R3 措辞降级为「**需一次显式动作**」；Q2 从「有没有出口」变成「选哪条出口」 |
-| 3 | 找到**第四条**升级路径：台账该条目 `sha256` 置 `null` + 同步 `gate_ref` ⇒ plain `init` EXIT=0、`uninit` EXIT=0 | §8 Q2 的选项里增列 |
-| 4 | 「本 change 内只做 `init --dry-run --policy <seed>` 自证」在 (A) 下**会 EXIT=1**（caller 轴） | D4 的条件写清：自证**仅在 (B)/(B′) 且 caller 轴未变时**成立 |
-| 5 | `v1` 落后 **50** 个提交（本稿写 47） | 数字订正 |
-| 6 | M6 的同源文档清单漏 `docs/design.md:56,73` | 加进清单 |
-| 7 | **Q1 的基石（`job.workflow_*` 语义）运行期未验证** | **已补测**：真 CI 探针（同仓 reusable）证真 ⇒ Q1 定案 **(B′)**（§2 D1） |
+| K1 | 「包无法自报 ref」「构建产物里没有 ref 信息」**是假的**（PEP 610 `vcs_info` 实测存在） | §2 D3 改写 + §8 已定案表 + `spec.md` 的「能力边界」段重写；**Q4 裁 (a)：纳入自报** |
+| K2 | 「没有任何提示」**是假的**（空缓存 `uvx` 自己打印 resolved sha） | `proposal.md` 机制段改写 |
+| K3 | 「**永久**死锁 / 再也卸载不掉」**过强** | §2 D2 降级为「响亮、可恢复的分叉态」+ 三条恢复路径 |
+| K4 | 「本 change 内只做 `init --dry-run --policy <seed>` 自证」在 (A) 下会 EXIT=1 | §2 D4 改写：本 PR **不做**本仓迁移，自证条件与 post-merge 动作一并写清 |
+| K5 | 「`v1` 落后 47 个提交」**计数口径未标注**（R1 报 50） | **复算订正**：计数**取决于测量哪个 ref** —— `git rev-list --count v1..origin/main` = **47**，而在当时的 docs 分支上（多 3 个文档提交）测出来是 50。⇒ 改写成不依赖计数的表述（「落后数十个提交，`src/` 差 6 文件 +922/−96」），并在 `grill-design.md` 标注计数基准。**R1 的 K5 本身是测量口径造成的假差异。** |
+| K6 | 同源文档清单漏 `docs/design.md:56,73` | §3 接线点 5 |
+| K7 | 第四条升级路径（台账 `sha256: null`）未登记 | §2 D2 末条 + D6（登记为已知出口，**明确不收紧**） |
+| K8 | 探针文件/结果无落点 | §2 D1 写明「原始输出保存在本文档即落点，探针文件已全部清理」；`tasks.md` 3.0 同步 |
 
-## 8. 停轮问题（Open Questions —— 逐条附真实场景的具体例子与推荐）
+### R2（报告见 `reviews/grill-adversarial-r2.md`）
 
-> ⚠️ 每条都给「参数 / 输入输出 / 前后对比」，便于快速判断。能由代码定案的不在此列。
+见该报告的「收敛结论」。本节的落点按 R2 的必须修改项逐条回写。
 
-### 已由代码定案、移出队列
+## 8. 停轮问题（**Q1–Q5 已逐条裁定**，用户答复原文见 `reviews/grill-design.md` 的 `## User Confirmation`）
+
+> 本节的编号与 `reviews/grill-design.md` 的 `## Open Questions` **逐条一致（Q1–Q5）**。
+
+### 已由代码 / 实测 / 用户裁定、移出队列
 
 | 问题 | 定案 | 依据 |
 |---|---|---|
-| `check` 能不能自己打印「我在用哪个 git ref」？ | **不能**（只能靠 CI 日志侧） | `uvx` 现场构建 wheel、`__init__.py:22` 的 `__version__` 恒为 `0.1.0`、与 tag 无关（实测本仓台账里 `witnessloop_version` 也是 `0.1.0`）⇒ D3 如实写明 |
-| 要不要动 `v1` tag？ | **不动** | issue #30 的期望；tag 是别人依赖的发布物 |
+| Q1 修法形态 | **(B′)**：包 ref = `job.workflow_sha`（兜底 `job.workflow_ref`），`REPO_SLUG` 判据，fail-closed 退 `v1` | 跨仓真 CI 探针（§2 D1 原始输出） |
+| `check` 能不能自己打印「我在用哪个 git ref」？ | **能**（读 PEP 610 `vcs_info`），**且裁定纳入**（尽力而为、取不到不失败） | `uvx` 真装实测（§2 D3）；Q4 裁定 |
+| 要不要动 `v1` tag？ | **不动** | issue #30 的期望；tag 是别人依赖的发布物（Q3 裁定） |
 | 要不要顺手修 #31？ | **不** | 正交（D5） |
 
-### ~~Q1 修法形态~~ —— **已定案（见上表 + §2 D1 的探针原始输出）：取 (B′)**
+### Q1 修法形态 → **裁定 (B′)**（详见 §2 D1；跨仓探针原始输出在上）
 
-（原留档说明：`github.workflow_ref` 指 caller、`job.workflow_sha` 才指被复用的 workflow 文件；
-运行期已由真 CI 探针证真。）
+### Q2 升级动作 → **裁定 (a)**：显式 `--gate-ref` ⇒ 重写 caller **+ 同步台账**（详见 §2 D2）
 
+### Q3 收益在哪个 ref 上兑现 → **裁定 (a)**：发新 tag `v1.7.0` 并把 `DEFAULT_GATE_REF` 指过去
 
-- **(B)**（**本稿推荐**）：`gate.yml` 把 `witnessloop-ref` 的默认值改成从 `github.workflow_ref` 解析出的 ref。
-  - **具体例子**：接入方 A 的 caller 是 `uses: …/gate.yml@v1`（今天就长这样，**没改任何东西**）：
-    - 今天：包 = `v1`（= `ae99256`）⇒ 上游 #22/#25/#26/#28/#29 的修复**全部吃不到**；
-    - (B) 之后：包 = 同一个 `@v1`（**仍旧**）——但一旦 A 把 caller 改成 `@v2`（**改一处**），包**立刻**跟着变成 `v2` ✓。
-  - **具体例子 2（新接入方）**：`init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v2`
-    ⇒ (B) 下包也是 `v2`；(A) 下文件里会同时出现 `@v2` 与 `with: {witnessloop-ref: v2}`。
-- **(A)**：`init` 生成的 caller 双写（见 D1）。
-  - 代价：既有接入方**不受益**（要重跑 init 且要过一个显式动作）；且在「谁决定包版本」上留了**第二个可写点**
-    （人可以只改 `with:` 而不改 `uses:` ⇒ 又回到两处不一致）。
-- ⚠️ **运行期未验证（探针未跑成，如实记录）**：C1-a/R1 已从 GitHub `contexts` 文档取到**文档级证据**：
-  **`job.workflow_ref` / `job.workflow_sha` / `job.workflow_repository` / `job.workflow_file_path` 才指向
-  「被复用的那个 workflow 文件」**（文档原文：「for jobs in a reused workflow it refers to the reusable workflow file」，
-  且文档的 reusable-workflow 示例就是用 `job.workflow_repository` + `job.workflow_sha` **检出它自己的源**）；
-  `github.workflow_ref` 在该语境下**指 caller**。⇒ 形态上支持 **(B′)**。
-  但**运行期未测到**：探针分支 `probe/workflow-ref`（`c7aa037`）曾推上去、副本仓的 caller PR #5 因
-  **base 冲突（DIRTY ⇒ 无 merge commit ⇒ 任何 workflow 都不跑）** 而没跑出结果，**探针分支已按纪律删除**。
-  ⇒ ⇒ **Q1 仍未定案**：定案需要一次**能跑起来的**真 CI 探针（PR 不 DIRTY + 能跨仓调 reusable workflow）。
-- **推荐：(B) 为主 + (A) 兜底**（若实测证伪则整体退 (A)）。
+- **⚠️ 打 tag 与改默认值都是 `(post-merge)` 事项**：本 change **不动 `v1` tag、也不创建 `v1.7.0`**，
+  `constants.DEFAULT_GATE_REF` 在本 PR 内**保持 `@v1`**。
+- 理由（grill Q3 的三条具体例子）：不发新 ref ⇒ 新接入方拿到的仍是旧包（一号期望落空）；
+  **动 `v1` tag** ⇒ 存量仓会**同时**换 workflow + 换包（`README.md:119-121` 的「滚动大版本」承诺），
+  与目标 3 正面冲突且让人失去版本稳定性保证；**发新 tag + 改默认值** ⇒ 新接入方默认吃到新包，
+  存量仓仍自己把 `uses:` 指过去（配合 Q2 的动作）。
+- **发布说明 SHALL 写清这是一次全局行为变化**（§4 R2），并给出回退路径。
 
-### Q2 既有接入方的**升级动作**怎么写（(A) 下必需；(B) 下也有一个残留）？
+### Q4 `check` 要不要自报它跑的 ref → **裁定 (a)**：纳入，尽力而为、取不到不失败
 
-- **(a) `init --gate-ref <ref>` 显式给定时「重写 caller **+ 同步台账该条目的 `sha256` 与 `gate_ref`**」**（**本稿推荐**）：
-  - ⚠️ **必须同步台账（grill M2，已实测 `/tmp/e1`）**：只重写 caller 会**永久死锁**——
-    plain `init` 走「台账漂移」退 1，**`uninit` 也拒删退 1**（接入方再也卸载不掉）。
-  - ⚠️ **作用域限定「已接入分支」**（`initcmd.py:205` 之后）：否则会静默覆盖新仓里外来的 caller，
-    并推翻 `tests/test_init.py:128-141`。
-  - ⚠️ **先例换掉**：`--test-command`（`constants.py:19-27`）**不进台账**，口径与 caller **相反**；
-    正确先例是 **`--policy`**（`initcmd.py:344-351`：显式给定时按新内容落地并同步台账）。
-  - **具体例子**：接入方 B 今天跑 `witnessloop init --gate-ref …@v2`：今天 ⇒ **冲突退 1**（caller 内容与期望不同）；
-    (a) ⇒ 重写 caller、其余文件照旧只增不改（`init --dry-run` 仍可预览）。
-- **(b) 新增一个专门开关**（如 `init --upgrade-caller`）：语义更窄，但多一个概念、且与 `--gate-ref` 的意图重叠。
-- **(c) 什么都不做**，只写文档让接入方手工改 caller：
-  - **代价**：手改的文件下次 `init` 会被判「冲突」（因为台账里记的是旧 hash）⇒ 仍要一个动作。
-- **推荐：(a)**。
+- 依据：R1 K1 的实测（`vcs_info.requested_revision` / `commit_id` 真实存在），它比 gate.yml 的 `echo`
+  **严格更强**（多出 resolved commit 这一维）。
+- 代价（如实登记）：动了 `checkcmd.py` ⇒ 扩大本 change 的受管控面；本 change 接受。
 
-### Q3 本仓自己的 caller/台账要不要在**同一个 change** 里迁移？
+### Q5 caller 文件不受任何保护，要不要在本 change 表态 → **裁定**：只登记文档（`docs/gate.md §7`），不加机械门
 
-- **(a) 要**（**本稿推荐**）：本 change 落地时一并更新 `.github/workflows/witnessloop.yml` 与台账，
-  并在 PR 里跑一次 `init` 自证不冲突 —— 这同时是**升级路径的活样板**。
-- **(b) 不要**：本 change 只管工具，自己的仓下个 change 再迁。
-  - **代价**：本 change 合并后本仓 plain `init` 会**冲突退 1**（因为生成逻辑变了、盘上文件没变）
-    ⇒ 把问题推给下一个人，且与本 change 的 D4 自相矛盾。
-- **推荐：(a)**。
+- 依据：R1 B3 实测 `protected=False invariant=False require_change=False`；把 caller 纳入保护面
+  会同时改变所有既有接入方的判定（且 `gate / check` 的 required 名字面是平台面取舍）⇒ 另开 change。
