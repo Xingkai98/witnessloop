@@ -208,6 +208,23 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
     entries = manifest.get("created_files")
     if not isinstance(entries, list):
         return None  # 结构非法，同上
+    caller_entries = [
+        entry
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("path") == C.GATE_WORKFLOW_PATH
+    ]
+    if any(entry.get("self") for entry in caller_entries):
+        # Y2（对抗轮 R11）：`self: true` 是**自指条目**（台账自己那条）的专用标记。
+        # caller 那条被标成 self 是手工改出来的矛盾态：漂移循环会**跳过**它（于是看不见）、
+        # 更新它又会让 `_set_ledger_gate_ref` 落进 `else` 再插一条**同路径**的条目
+        # （⇒ 随后 `uninit` 二次 unlink 抛 `FileNotFoundError`，留下半回滚）。
+        # ⇒ 与「无条目 + 无文件」同一种处置：**响亮拒绝**，不猜用户想要什么。
+        return (
+            f"无法按 --gate-ref 改 caller：{C.INIT_MANIFEST_PATH} 里 caller 那条"
+            "被标成了 `self: true`——`self` 是**台账自己**那条的专用标记。"
+            "该台账像被手工改过：更新它会在同一路径下再插一条、删的时候会半回滚。"
+            "请人工核对台账后重跑（正常台账里 caller 那条没有 `self` 字段）。"
+        )
     if (root / C.GATE_WORKFLOW_PATH).is_file():
         return None  # 文件在 ⇒ 补条目即可（`_set_ledger_gate_ref` 有那条分支），能做成
     if any(
@@ -435,8 +452,10 @@ def _already_initialized(
     退出码照旧（其余冲突判定照常参与）。
 
     ``ignore``：**调用方已按显式意图处理过**的那几条轴（目前只有 Q2 (a) 的 caller）——
-    从「本次期望 vs 已落地」这条判定里排除掉。**不**影响「磁盘 vs 台账」那条（漂移判定照旧）：
-    显式 `--gate-ref` 是一条升级入口，不是给手改文件兜底的后门。
+    从「本次期望 vs 已落地」**与**「磁盘 vs 台账」**两条**判定里都排除掉（R11 的 Y1 把后者补上：
+    真跑会把它重写掉、`--dry-run` 什么都不写 ⇒ 只滤一条会让两条路径**对同一状态给出相反结论**）。
+    ``ignore`` **只**由「确实会重写 caller」的调用点传入：文件缺失、台账坏、结构非法、
+    caller 那条被标 `self` 等情形都**不**传（那些要么响亮拒绝、要么交给漂移判定报）。
 
     ``handled``：报冲突前先说的那句话（只有 ``ignore`` 非空时用得上）。**必须由调用方按
     「到底落盘了没有」写成不同的话**——`--dry-run` 下什么都没写，说「已落盘」就是撒谎
@@ -485,6 +504,11 @@ def _already_initialized(
             else:
                 drift.append((rel, current, desired.get(rel, "")))
 
+    # Y1（对抗轮 R11）：`ignore` 也要作用到**漂移循环**。否则「caller 被手改」这一态会分叉：
+    # 真跑走 `sync_caller_gate_ref` 把它重写掉 ⇒ EXIT=0；`--dry-run` 什么都没写 ⇒ 漂移报红 EXIT=1。
+    # 而「手改 caller」**正是**这个动作要救的态（见 `test_rewrite_rescues_a_hand_edited_caller`）
+    # ⇒ 两条路径必须同结论：那条轴已按显式意图处理过，就不再进漂移判定。
+    drift = [item for item in drift if item[0] not in ignore]
     if drift:
         print(
             "init：已接入，但 init 创建的文件被改动过（拒绝覆盖）：",

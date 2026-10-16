@@ -69,7 +69,8 @@
 - [ ] 5.1 实现后独立审阅闭环 → `reviews/building-review.md`。
 - [ ] 5.2 归档 / 回链 issue #30。
       ⚠️ **归档之前**先把 manifest 补齐（对抗轮 R3 的 M2）：本 change 的 `reviews/` 会有
-      **多份** `.md`（`grill-design` / `grill-adversarial` / `-r2` / `-r3` / `building-review`），
+      **多份** `.md`（`grill-design` / `grill-adversarial`（R1）/ `-r2`…`-r11` / `building-review` —— 
+      **按语义数，别按这里的清单数**：对抗轮跑到收敛为止，清单会继续长），
       而 `manifest build` 的落盘名是 `reviews/<stage>.manifest.json` ⇒ **同 stage 会静默覆盖**。
       ⇒ **每份报告各配一份 manifest**，多出来的对抗轮用**不同的 stage 名**
       （`--stage grill-adversarial-r2` / `-r3`；实测 0 条孤儿，必备 stage 判定照旧满足）。
@@ -86,7 +87,7 @@
 - [ ] 6.1 **先**改默认值：`DEFAULT_GATE_REF` 从 `…gate.yml@v1` 改成 `…gate.yml@v1.7.0`。
       它不是一处、而是一个**只改一处就会红**的字面量族（对抗轮 R3 的 M1 逐条实测）。
       **改完这四处之后 `pytest -q` 必须全绿**（本 change 已按此**实跑验证**过一次：
-      模拟执行下列改动 ⇒ 全绿；改之前是 `5 failed`）：
+      模拟执行下列改动 ⇒ 全绿；**不改**则至少一条红）：
       1. `src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF`；
       2. `.github/workflows/gate.yml` 的 `WL_FALLBACK_REF` 字面量——fail-closed 的落点
          **与 `DEFAULT_GATE_REF` 的 ref 部分同源**（由 *三条*钉住：

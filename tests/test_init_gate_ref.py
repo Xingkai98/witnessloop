@@ -427,7 +427,7 @@ def test_a_self_flagged_caller_entry_does_not_hide_the_refusal(repo: Path, cli):
 
     assert code == C.EXIT_FAIL
     assert "幂等" not in out
-    assert "条目" in err
+    assert "self: true" in err, "要说清是台账那条被标了 self，不能只报一句笼统的话"
 
 
 def test_a_refused_retarget_writes_nothing_at_all(repo: Path, cli):
@@ -457,4 +457,53 @@ def test_a_refused_retarget_writes_nothing_at_all(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "无法按 --gate-ref" in err
     assert (repo / C.ADOPTER_TESTS_PATH).read_bytes() == tests_before  # 也没写它
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_dry_run_and_the_real_run_agree_on_a_hand_edited_caller(repo: Path, cli):
+    """对抗轮 R11 的 Y1：**dry-run 与真跑必须对同一状态给出同一结论**。
+
+    旧行为分叉：caller 被手改（磁盘 ≠ 台账）时，真跑 `EXIT=0`（这个动作**就是来救这一态的**），
+    dry-run `EXIT=1`（漂移报红）。根因是 `ignore` 只滤了「本次期望 vs 已落地」，
+    没滤「磁盘 vs 台账」那条。⇒ 两条路径都该是「会被修好」。
+    """
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_text("name: tampered\n", encoding="utf-8")
+
+    dry, _, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+    real, _, err2 = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert dry == C.EXIT_PASS, err
+    assert real == C.EXIT_PASS, err2
+    # 而且真跑之后是干净的不动点
+    assert "幂等" in cli("init", "--root", str(repo))[1]
+
+
+def test_a_self_flagged_caller_entry_with_the_file_present_is_refused(repo: Path, cli):
+    """对抗轮 R11 的 Y2：那条被标 `self` 的 caller 条目**文件还在**时也要拦。
+
+    否则 `_set_ledger_gate_ref` 落进 `else` 再插一条同路径条目 ⇒ 台账里同一路径出现两次
+    ⇒ 随后 `uninit` 二次 `unlink` 抛 `FileNotFoundError`（「内部错误」+ 已打印「已回滚」+ 台账留在盘上）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "self: true" in err
+    assert "幂等" not in out
+    # 台账**没有**被插出重复条目
+    after = json.loads((repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8"))
+    paths = [entry["path"] for entry in after["created_files"]]
+    assert paths.count(C.GATE_WORKFLOW_PATH) == 1
     assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before

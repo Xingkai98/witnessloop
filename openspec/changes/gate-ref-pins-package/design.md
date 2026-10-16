@@ -347,76 +347,6 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 `docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
 `uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
 
-### R10（报告见 `reviews/grill-adversarial-r10.md`）
-
-独立零记忆对抗者判定**不收敛**，但两类判据的结论**不同**：**判据①满足**（「新行为缺陷 **0** 条」，
-题面四条攻击面实测均不通，12 个 Scenario 逐个点名全有行为级钉子）；**判据②不满足**——
-抓到**上一轮的「处置」写了一件没做的事**：
-
-| # | 类别 | 发现 | 落点 |
-|---|---|---|---|
-| X1 | **前轮必须修改项未真正落库** | R9 的 W2 在处置里自称「`docs/gate.md §1.2` 两种成因都写了」，而 `git show --stat 24582f1` **不含该文件** | 本次真正落库：§1.2 新增「同一条冲突还有一个『不是旧 CLI』的成因」整段——定制 policy 的仓也会退 1、「要更换 policy 请先 `uninit`」**不可照做**（会连 `policy.json` + caller + 台账一起删）、正确做法是同时带 `--policy`、并限定「干净不动点」的适用范围。**教训：处置里写「已落库」必须以落地提交的 `--stat` 为准** |
-| O1 | 低危（行为一致性） | 拒绝发生在 `--test-command` 那条轴**之后** ⇒ 「退 1 但已经写了测试执行点」，与 design 的「不写任何东西」不符 | 把 refusal 提到 `manifest_path.is_file()` 块的**最前面**；钉子 `test_a_refused_retarget_writes_nothing_at_all` |
-| O3 | 低危（规格漏项） | `spec.md` 里 `uninit` 的危害枚举漏了 `policy.json` | 补进该 Scenario |
-| O2 | 低危（登记不修） | W2 那条终态无独立钉子 | 接受——该终态**先于本 change 存在**（既有行为面） |
-
-⚠️ **X1 值得单独记一笔**：它是本 change 十轮对抗里**唯一一次「作者自述与事实不符」**，
-而抓住它的方法是**用 `git show --stat` 逐轮比对落点**——不是读处置、也不是读 §7.9 的表。
-
-### R9（报告见 `reviews/grill-adversarial-r9.md`）
-
-独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `3865007` 上 **`src/` 与 `gate.yml`
-行为层零新缺陷**，四条全在规格/文档/钉子层面，**已逐条落库**：
-
-| # | 类别 | 发现 | 落点 |
-|---|---|---|---|
-| W2 | **规格/文档** | 「干净不动点」Scenario 的 Then 对**定制 policy 的已接入仓**被实跑证伪（`--gate-ref` 退 1、随后 plain `init` 不报幂等）；文档把该症状**只**归因于「旧 CLI」，且那句「要更换 policy 请先 `uninit`」照做会连 caller + 台账一起删 | Scenario 补**前提**「policy 与出厂默认一致（或同时给 `--policy`）」+ 写明定制 policy 的仓不满足它；`docs/gate.md §1.2` 两种成因都写 |
-| W3 | 钉子级行为 | `caller_retarget_refusal` 的条目扫描缺 `not entry.get("self")`，与另两处**不同口径** ⇒ 手工把 caller 那条标 `self: true` 且文件不在时，V1 的静默 no-op 原样复现 | 补上该守卫（三处同口径）+ `test_a_self_flagged_caller_entry_does_not_hide_the_refusal`；变异复核：在未含守卫的树上**红** |
-| W1 | 规格机制归属错 | `spec.md` 与 `initcmd` 注释写「交给漂移判定响亮地报」——那一态漂移判定**看不见** | 两处措辞订正为「由 `caller_retarget_refusal` 变响亮」 |
-| W4 | 文档面 | `tasks.md 6.3` 只点名 `README.md:20`，漏了「怎么钉版本」那段里的 `@v1` 句子（6.2 之后变成**错的建议**） | 改成「**按语义找**、附 `grep -n "@v1" README.md docs/gate.md`」，写明行号会漂、历史引文保留 |
-
-**R9 的低危观察**：陈旧的「673 passed」已改成不依赖计数；另三条（`created_files` 元素非对象仍崩、
-`…@refs/heads/` 空后缀、`--gate-ref ""` 等价于不给）**登记不修**——前两条**先于本 change 存在**，
-第三条是本仓既有的参数解析口径。
-
-### R8（报告见 `reviews/grill-adversarial-r8.md`）
-
-独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `ab67ebd` 上找到 **2 条行为/文档缺陷 + 2 条缺钉子**，
-**全部已落库**（这是本 change 里最后一批非「缺钉子」类的发现）：
-
-| # | 类别 | 发现 | 落点 |
-|---|---|---|---|
-| V1 | **行为缺陷** | `init --gate-ref <新>` 在「台账无 caller 条目 **且** 盘上无文件」时**静默 no-op**（打印「幂等，无改动」、`gate_ref` 留在 `@v1`）——那一态躲开了漂移判定（只遍历台账条目）又走不到未接入分支（台账在） | 新增 `initcmd.caller_retarget_refusal()`：**先判可否做成**，做不成**响亮拒绝**（退 1、不写任何东西）；钉子 `test_no_caller_entry_and_no_file_refuses_loudly` |
-| V2 | **文档缺口** | 文档给的升级动作**照字面做会让接入方的 `check` 必红**：`init --gate-ref` 改写 `.witnessloop/init-manifest.json`，而它在**不变集**里 ⇒ `M` 需要 `protected_path_write` 解释事件。**已独立复现**（`check` 报一条「受保护路径被写入，但没有结构化解释事件」，EXIT=1） | `docs/gate.md §1.2` + `README.md` + `spec.md` 的升级 Requirement 新增「代价（SHALL 写进文档）」。⚠️ 复现时还发现更坏的一步：把事件放进**新建的**「只有事件文件」目录 ⇒ 触发 change 目录契约，红从 **1 条变 7 条**——一并写明 |
-| V3 | 缺钉子 | spec 列了**四类** ref 来源，notice 只钉了三类（「兜底」那类无断言） | `test_resolve_notice_names_the_source_of_the_ref` 补 `job.workflow_ref` 兜底那类 |
-| V4 | 缺钉子 | `--dry-run --gate-ref` 轴上「SHALL 不说『幂等，无改动』」零断言 | `test_dry_run_previews_without_writing` 补 `assert "幂等" not in out` |
-
-**⇒ 至此 `src/` 与 `gate.yml` 的行为面、以及接入方可见的文档面，都已被八轮独立对抗反复攻击过。**
-V1（静默 no-op）与 V2（升级即红）是这一轮最有价值的两条——它们都不是「缺一条断言」，
-而是**用户真的会踩到的行为/文档缺陷**。
-
-### R7（报告见 `reviews/grill-adversarial-r7.md`）
-
-独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `9bf5c8c` 上用「变异 → 跑全量 681」
-新证伪 **4 条**，**全部是「某个变异没有被任何钉子抓住」这一类**（代码行为本身正确），已逐条落库：
-
-| # | 变异 | 后果 | 落点 |
-|---|---|---|---|
-| U1 | 删掉 `::notice::` 的 `（来源：$WHY）` | spec 的 Then 明写 SHALL 写出「来源」 | `test_resolve_notice_names_the_source_of_the_ref`（三条分支的来源文案各自断言） |
-| U2 | 脚本把 `REF="$WL_FALLBACK_REF"` **硬编**成 `"v1"` | post-merge 改默认值时兜底不跟着走 | 行为侧 `test_resolve_reads_the_fallback_ref_from_its_env`（哨兵值）+ 文本侧 `test_resolve_script_reads_both_constants_from_the_environment` |
-| U3 | 自报行两值**对调** | **真 CI 后果**：两值都非空时 `requested_revision` 会打出 sha ⇒ 用户照 ①′ 误判「CLI 没升成」 | `test_the_report_line_binds_each_value_to_the_right_label`（注入已知二元组） |
-| U4 | 自报行**之前**插一行 stdout | ①′ 的承重前提（自报行是 `check` 的第一行）失效 | `test_the_report_line_is_the_first_thing_check_prints` |
-
-**R7 登记的两条过时证据句**已就地标注「测量时点」（`design.md` 的「diff 为空」与「6 文件 +922/−96」
-都是**本 change 之前**的数；本 change 自己改了 `gate.yml` / `src`）——结论不受影响，
-同时把正文里的具体数字去掉，只留「落后数十个提交」。
-
-**R7 试过但没找到可证伪项的四条**（`--gate-ref`+`--no-tests`、`--policy`+`--gate-ref` 的 doc 选择、
-重定向下自报丢不丢、`gate.yml` 的 `permissions`/`on`/job 名）：接受，不追。
-
-⇒ **R7 的发现全部落在「缺钉子」这一类**（无一条是行为缺陷）。这一点对判①的读法有意义：
-`src/` 与 `gate.yml` 的行为面已被前七轮反复攻击而未被推翻，剩下的面基本是「补一条断言」。
-
 ### R6（报告见 `reviews/grill-adversarial-r6.md`）
 
 独立零记忆对抗者判定**不收敛**（判据②满足；判据①不满足）。**这一轮的报告由两个互不消费的 R6 实例
@@ -449,6 +379,94 @@ V1（静默 no-op）与 V2（升级即红）是这一轮最有价值的两条—
 `git status` 只有 R4 的报告未跟踪、后续提交的 stat 不含 manifest、**从未 push**。
 ⚠️ 根因值得记：**worktree 的 `.git` 是指针文件，`cp -a` 会把它带过去**——在副本里 commit 等于在真仓 commit。
 这条**不是**本 change 的缺陷，不产生必须修改项；唯一痕迹是本地 reflog 里那条悬空记录。
+
+### R7（报告见 `reviews/grill-adversarial-r7.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `9bf5c8c` 上用「变异 → 跑全量 681」
+新证伪 **4 条**，**全部是「某个变异没有被任何钉子抓住」这一类**（代码行为本身正确），已逐条落库：
+
+| # | 变异 | 后果 | 落点 |
+|---|---|---|---|
+| U1 | 删掉 `::notice::` 的 `（来源：$WHY）` | spec 的 Then 明写 SHALL 写出「来源」 | `test_resolve_notice_names_the_source_of_the_ref`（三条分支的来源文案各自断言） |
+| U2 | 脚本把 `REF="$WL_FALLBACK_REF"` **硬编**成 `"v1"` | post-merge 改默认值时兜底不跟着走 | 行为侧 `test_resolve_reads_the_fallback_ref_from_its_env`（哨兵值）+ 文本侧 `test_resolve_script_reads_both_constants_from_the_environment` |
+| U3 | 自报行两值**对调** | **真 CI 后果**：两值都非空时 `requested_revision` 会打出 sha ⇒ 用户照 ①′ 误判「CLI 没升成」 | `test_the_report_line_binds_each_value_to_the_right_label`（注入已知二元组） |
+| U4 | 自报行**之前**插一行 stdout | ①′ 的承重前提（自报行是 `check` 的第一行）失效 | `test_the_report_line_is_the_first_thing_check_prints` |
+
+**R7 登记的两条过时证据句**已就地标注「测量时点」（`design.md` 的「diff 为空」与「6 文件 +922/−96」
+都是**本 change 之前**的数；本 change 自己改了 `gate.yml` / `src`）——结论不受影响，
+同时把正文里的具体数字去掉，只留「落后数十个提交」。
+
+**R7 试过但没找到可证伪项的四条**（`--gate-ref`+`--no-tests`、`--policy`+`--gate-ref` 的 doc 选择、
+重定向下自报丢不丢、`gate.yml` 的 `permissions`/`on`/job 名）：接受，不追。
+
+⇒ **R7 的发现全部落在「缺钉子」这一类**（无一条是行为缺陷）。这一点对判①的读法有意义：
+`src/` 与 `gate.yml` 的行为面已被前七轮反复攻击而未被推翻，剩下的面基本是「补一条断言」。
+
+### R8（报告见 `reviews/grill-adversarial-r8.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `ab67ebd` 上找到 **2 条行为/文档缺陷 + 2 条缺钉子**，
+**全部已落库**（这是本 change 里最后一批非「缺钉子」类的发现）：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| V1 | **行为缺陷** | `init --gate-ref <新>` 在「台账无 caller 条目 **且** 盘上无文件」时**静默 no-op**（打印「幂等，无改动」、`gate_ref` 留在 `@v1`）——那一态躲开了漂移判定（只遍历台账条目）又走不到未接入分支（台账在） | 新增 `initcmd.caller_retarget_refusal()`：**先判可否做成**，做不成**响亮拒绝**（退 1、不写任何东西）；钉子 `test_no_caller_entry_and_no_file_refuses_loudly` |
+| V2 | **文档缺口** | 文档给的升级动作**照字面做会让接入方的 `check` 必红**：`init --gate-ref` 改写 `.witnessloop/init-manifest.json`，而它在**不变集**里 ⇒ `M` 需要 `protected_path_write` 解释事件。**已独立复现**（`check` 报一条「受保护路径被写入，但没有结构化解释事件」，EXIT=1） | `docs/gate.md §1.2` + `README.md` + `spec.md` 的升级 Requirement 新增「代价（SHALL 写进文档）」。⚠️ 复现时还发现更坏的一步：把事件放进**新建的**「只有事件文件」目录 ⇒ 触发 change 目录契约，红从 **1 条变 7 条**——一并写明 |
+| V3 | 缺钉子 | spec 列了**四类** ref 来源，notice 只钉了三类（「兜底」那类无断言） | `test_resolve_notice_names_the_source_of_the_ref` 补 `job.workflow_ref` 兜底那类 |
+| V4 | 缺钉子 | `--dry-run --gate-ref` 轴上「SHALL 不说『幂等，无改动』」零断言 | `test_dry_run_previews_without_writing` 补 `assert "幂等" not in out` |
+
+**⇒ 至此 `src/` 与 `gate.yml` 的行为面、以及接入方可见的文档面，都已被八轮独立对抗反复攻击过。**
+V1（静默 no-op）与 V2（升级即红）是这一轮最有价值的两条——它们都不是「缺一条断言」，
+而是**用户真的会踩到的行为/文档缺陷**。
+
+### R9（报告见 `reviews/grill-adversarial-r9.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `3865007` 上 **`src/` 与 `gate.yml`
+行为层零新缺陷**，四条全在规格/文档/钉子层面，**已逐条落库**：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| W2 | **规格/文档** | 「干净不动点」Scenario 的 Then 对**定制 policy 的已接入仓**被实跑证伪（`--gate-ref` 退 1、随后 plain `init` 不报幂等）；文档把该症状**只**归因于「旧 CLI」，且那句「要更换 policy 请先 `uninit`」照做会连 caller + 台账一起删 | Scenario 补**前提**「policy 与出厂默认一致（或同时给 `--policy`）」+ 写明定制 policy 的仓不满足它；`docs/gate.md §1.2` 两种成因都写 |
+| W3 | 钉子级行为 | `caller_retarget_refusal` 的条目扫描缺 `not entry.get("self")`，与另两处**不同口径** ⇒ 手工把 caller 那条标 `self: true` 且文件不在时，V1 的静默 no-op 原样复现 | 补上该守卫（三处同口径）+ `test_a_self_flagged_caller_entry_does_not_hide_the_refusal`；变异复核：在未含守卫的树上**红** |
+| W1 | 规格机制归属错 | `spec.md` 与 `initcmd` 注释写「交给漂移判定响亮地报」——那一态漂移判定**看不见** | 两处措辞订正为「由 `caller_retarget_refusal` 变响亮」 |
+| W4 | 文档面 | `tasks.md 6.3` 只点名 `README.md:20`，漏了「怎么钉版本」那段里的 `@v1` 句子（6.2 之后变成**错的建议**） | 改成「**按语义找**、附 `grep -n "@v1" README.md docs/gate.md`」，写明行号会漂、历史引文保留 |
+
+**R9 的低危观察**：陈旧的「673 passed」已改成不依赖计数；另三条（`created_files` 元素非对象仍崩、
+`…@refs/heads/` 空后缀、`--gate-ref ""` 等价于不给）**登记不修**——前两条**先于本 change 存在**，
+第三条是本仓既有的参数解析口径。
+
+### R11（报告见 `reviews/grill-adversarial-r11.md`）
+
+独立零记忆对抗者判定**不收敛**：**判据②满足**（它用 `git show --stat` 逐轮比对落点，
+确认前十轮**没有第二例 X1 式「自称已落库而实际没落」**）、**判据①不满足**——
+本轮**新证伪 2 条，都是行为缺陷**（不是缺钉子），**已落库**：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| Y1 | **行为缺陷** | `--dry-run --gate-ref` 与真跑**对同一状态结论相反**：caller 被手改（磁盘 ≠ 台账）时真跑 `EXIT=0`（这个动作**就是来救这一态的**）、dry-run `EXIT=1`（漂移报红）。**改动前两者都退 1** ⇒ 分叉是本 change 引入的（`ignore` 只滤「本次期望 vs 已落地」，漏了「磁盘 vs 台账」） | `ignore` 同时作用到**漂移循环**（只由「确实会重写 caller」的调用点传入）；钉子 `test_dry_run_and_the_real_run_agree_on_a_hand_edited_caller` |
+| Y2 | **行为缺陷** | caller 条目被手工标 `self: true` **且文件在盘上**时，`_set_ledger_gate_ref` 落进 `else` 再插一条**同路径**条目 ⇒ 随后 `uninit` 二次 `unlink` 抛 `FileNotFoundError`（「内部错误」+ 已打印「已回滚」+ 台账留在盘上） | 把「caller 那条被标 `self`」纳入 `caller_retarget_refusal` 的**拒绝面**（两种文件状态都覆盖）；钉子 `test_a_self_flagged_caller_entry_with_the_file_present_is_refused` |
+
+**R11 的题面四项实测**：两次读台账的一致性——无新缺陷；`--dry-run` 下拒绝——恰当（与真跑同结论）；
+未接入仓路径——正确；`docs/gate.md §1.2` 新增那段（「同时给 `--policy` 两条轴就都不冲突」）——**实跑证真**。
+**它同时确认：12 个 Scenario 逐个有行为级钉子；无「缺一条钉子」类新项。**
+
+**顺带修的低危项**：`tasks.md` 的报告清单与陈旧计数（改成「按语义数 / 按语义找」）、
+本节的 R 小节顺序（此前被逐次插入弄成 R1–R5、R9、R10、R8、R7、R6，已按 R1→R10 重排）。
+
+### R10（报告见 `reviews/grill-adversarial-r10.md`）
+
+独立零记忆对抗者判定**不收敛**，但两类判据的结论**不同**：**判据①满足**（「新行为缺陷 **0** 条」，
+题面四条攻击面实测均不通，12 个 Scenario 逐个点名全有行为级钉子）；**判据②不满足**——
+抓到**上一轮的「处置」写了一件没做的事**：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| X1 | **前轮必须修改项未真正落库** | R9 的 W2 在处置里自称「`docs/gate.md §1.2` 两种成因都写了」，而 `git show --stat 24582f1` **不含该文件** | 本次真正落库：§1.2 新增「同一条冲突还有一个『不是旧 CLI』的成因」整段——定制 policy 的仓也会退 1、「要更换 policy 请先 `uninit`」**不可照做**（会连 `policy.json` + caller + 台账一起删）、正确做法是同时带 `--policy`、并限定「干净不动点」的适用范围。**教训：处置里写「已落库」必须以落地提交的 `--stat` 为准** |
+| O1 | 低危（行为一致性） | 拒绝发生在 `--test-command` 那条轴**之后** ⇒ 「退 1 但已经写了测试执行点」，与 design 的「不写任何东西」不符 | 把 refusal 提到 `manifest_path.is_file()` 块的**最前面**；钉子 `test_a_refused_retarget_writes_nothing_at_all` |
+| O3 | 低危（规格漏项） | `spec.md` 里 `uninit` 的危害枚举漏了 `policy.json` | 补进该 Scenario |
+| O2 | 低危（登记不修） | W2 那条终态无独立钉子 | 接受——该终态**先于本 change 存在**（既有行为面） |
+
+⚠️ **X1 值得单独记一笔**：它是本 change 十轮对抗里**唯一一次「作者自述与事实不符」**，
+而抓住它的方法是**用 `git show --stat` 逐轮比对落点**——不是读处置、也不是读 §7.9 的表。
 
 ### R3 的两条 Open Question 与本文的裁定（**作者裁定，非用户拍板**）
 
