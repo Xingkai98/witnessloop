@@ -190,7 +190,10 @@ def sync_caller_gate_ref(
     if not path.is_file():
         return None
 
-    # 补齐态 = ref 本来就对、这一趟只为补台账条目（B2-5）：两种文案都别把它说成「改成 <同一个 ref>」。
+    # 补齐态 = ref 本来就对、这一趟只为补台账条目（B2-5）。⚠️ 只在这里算**一次**：
+    # ① 它必须在 `_set_ledger_gate_ref` **之前**（B3-1：那一步会把 `manifest["gate_ref"]`
+    #    就地改成新值，之后再比恒等 ⇒ 真换了 ref 也会被报成「已补齐…未改」）；
+    # ② dry-run 与真跑共用同一个值（B4-2：两处各算一次，读起来像两个概念、其实是同一个）。
     changing_ref = manifest.get("gate_ref") != gate_ref
 
     if dry_run:
@@ -202,10 +205,6 @@ def sync_caller_gate_ref(
 
     content = caller_workflow(gate_ref)
     path.write_text(content, encoding="utf-8")
-    # ⚠️ `changing_ref` **必须在改台账之前**算好（building 审阅 B3-1）：`_set_ledger_gate_ref`
-    # 会把 `manifest["gate_ref"]` 就地改成新值，之后再比就**恒等** ⇒ 真换了 ref 也会被报成
-    # 「已补齐…（ref 本来就是 <新 ref>，未改）」——把用户看到的结果说反。
-    changing_ref = manifest.get("gate_ref") != gate_ref
     _set_ledger_gate_ref(manifest, gate_ref, sha256_bytes(content.encode("utf-8")))
     manifest_path.write_text(policy.dumps(manifest), encoding="utf-8")
     if changing_ref:
@@ -593,11 +592,15 @@ def _already_initialized(
     # 早先只看台账 hash，于是「已接入后再 init --policy <不同>」会被判幂等并 exit 0
     # ——用户的 policy 被悄悄忽略（change dogfood-bootstrap 对抗验证 CRQ-B / R2）。
     try:
-        conflicts = conflicting_files(root, desired)
+        # ⚠️ `ignore` 必须在**进来之前**就生效（building 审阅 B4-1）：`conflicting_files` 会**读**盘上
+        # 每个目标文件的内容，读不出就抛——若先抛后滤，被忽略的那条轴仍会把它变成一条红，
+        # 于是「caller 不可解码 + 显式换 ref」会**真跑绿、dry-run 红**（违反 R11-Y1 的不变量）。
+        conflicts = conflicting_files(
+            root, {rel: want for rel, want in desired.items() if rel not in ignore}
+        )
     except ValueError as exc:
         print(f"init：{exc}", file=sys.stderr)
         return C.EXIT_FAIL
-    conflicts = [item for item in conflicts if item[0] not in ignore]
     if conflicts:
         if handled:
             # 组合语义写死（R2 的 L4）：`--gate-ref` 那一半已经（或将）按显式意图处理，

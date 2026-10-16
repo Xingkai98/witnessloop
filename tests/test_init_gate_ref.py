@@ -663,3 +663,62 @@ def test_an_unreadable_caller_is_not_silently_overwritten(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "无法解码" in err
     assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == b"\xff\xfe not utf-8 \xff"
+
+
+def test_an_undecodable_caller_does_not_fork_dry_run_from_the_real_run(repo: Path, cli):
+    """building 审阅 B4-1：`ignore` 必须在**进 `conflicting_files` 之前**生效。
+
+    否则「caller 不可解码 + 显式换 ref」会**真跑退 0、dry-run 退 1**——违反本 change 自立的
+    R11-Y1 不变量（dry-run 与真跑对同一状态必须同结论）。
+    """
+    _init(repo, cli)
+    (repo / C.GATE_WORKFLOW_PATH).write_bytes(b"\xff\xfe not utf-8 \xff")
+
+    dry, _, derr = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+    real, _, rerr = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert dry == real == C.EXIT_PASS, (derr, rerr)
+    assert NEW_REF in (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8")
+
+
+def test_the_backfill_branch_prints_its_own_line(repo: Path, cli):
+    """B4-3：补齐态（ref 未变）**真跑**那句 print 此前零覆盖。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert f"已补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目" in out
+
+
+def test_the_v1_refusal_also_fires_for_a_same_ref_request(repo: Path, cli):
+    """B4-3 的另一半：`absent|absent|same`（无条目 + 无文件 + ref 相同）也要**退 1**。
+
+    （这一格是本 change 新增语义顺带堵上的——V1 的静默 no-op 在 ref 相同时也存在。）
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "幂等" not in out
+    assert "无法按 --gate-ref" in err
