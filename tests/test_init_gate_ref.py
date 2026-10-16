@@ -203,3 +203,31 @@ def test_dry_run_does_not_report_a_conflict_it_would_have_fixed(repo: Path, cli)
 
     assert code == C.EXIT_PASS, err
     assert "冲突" not in err
+
+
+def test_explicit_gate_ref_plus_conflicting_policy_writes_then_reports(repo: Path, cli, tmp_path):
+    """组合语义**写死**（对抗轮 R2 的 L4）：caller + 台账**先写**，其余判定照常参与退出码，
+    失败**不回滚**——与 `--test-command` 的既有先例同口径（`initcmd` 的 Z1/O2 注释）。
+
+    并且**必须**在报错里说明那一半已经落盘：否则用户会以为什么都没发生，
+    转头去删 policy（对抗轮 R2 实测：旧 CLI 上正是这条误导文案）。
+    """
+    import json
+
+    _init(repo, cli)
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps({"changes_root": "custom/root"}), encoding="utf-8")
+
+    code, _, err = cli(
+        "init", "--root", str(repo), "--gate-ref", NEW_REF, "--policy", str(seed)
+    )
+
+    assert code == C.EXIT_FAIL
+    assert "冲突" in err  # policy 那条轴照旧参与退出码
+    # 显式 --gate-ref 那一半**确实做成了**（不是「整体不落盘」——那是未接入分支的语义）
+    assert f"uses: {NEW_REF}" in (
+        repo / C.GATE_WORKFLOW_PATH
+    ).read_text(encoding="utf-8")
+    assert _ledger(repo)["gate_ref"] == NEW_REF
+    # 报错里点明「已落盘、不回滚」——这是 L4 的实质
+    assert "不回滚" in err

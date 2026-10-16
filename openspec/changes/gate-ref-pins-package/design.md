@@ -40,7 +40,10 @@
 2. 否则 `job.workflow_repository == constants.REPO_SLUG` **且** `job.workflow_sha` 非空
    ⇒ 用 **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit）；
 3. 否则（repository 不匹配 / sha 为空）⇒ 尝试 `job.workflow_ref` 的 `@` 之后那段，
-   仅接受 `refs/heads/<分支名>` 与 `refs/tags/<tag名>` 两种形态；
+   仅接受 `refs/heads/<分支名>` 与 `refs/tags/<tag名>` 两种形态，并**剥掉前缀**只留分支名/tag 名
+   （R2 的 D2 要求写死这一点：实测 `uvx` 对 `@refs/heads/main` 与 `@main` **都能装**，
+   所以这是**取舍**不是必须——剥掉后日志与人眼更直白，代价是丢掉「同名 branch 与 tag」的消歧
+   （该场景**未实测**）；两种形态任选其一都行，此处选**剥**）；
 4. 以上都拿不到 ⇒ **fail-closed 到 `v1`** 并打 `::warning::`（不静默）。
 
 ```yaml
@@ -76,7 +79,17 @@ github.job_workflow_sha   = （空）
 - ⇒ **`job.workflow_sha` 唯一确定 reusable 自己的 commit**（`github.workflow_sha` 是接入方自己的，
   用它会在 witnessloop 仓取一个不存在的 commit ⇒ 全量硬红）。**故 (B′) 可行** ✓。
 - 对照的**早一轮**同仓探针（run `38852445945`）给出同向结论；该轮是**同仓**形态（caller 与 callee 同仓）。
-- **探针已全部清理**：witnessloop 上的临时分支与文件已删（复查 404）。本文档保存原始输出即其落点（K8）。
+- **探针的清理**（R2 的 D4 订正措辞）：**远端已清理**——witnessloop 上的临时分支与文件已删
+  （复查 404）；**本地仍留** `probe/workflow-ref` 分支（`c7aa037`），那是 Q1 唯一可追溯的**本地物证**，
+  刻意不删。本文档保存原始输出即其落点（K8）。
+  ⚠️ **证据等级如实标注**（R2 的未验证项 1）：这段探针输出是**单一来源、不可复现**的二手文本
+  （当时的分支已删、两个 sha 取不到、issue #30 正文里**没有**这段 context dump）。
+  ⇒ 依赖它的叙述（「`github.workflow_sha` 是接入方自己的 commit ⇒ 用它会硬红」那条）**另有一份独立依据**：
+  GitHub 官方 contexts 文档明写 `job.workflow_ref` 在 job **直接定义在 workflow 文件里**时**等同**
+  `github.workflow_ref` ⇒ 反推：job 定义在 **reusable** 里时两者**不同**，`job.workflow_sha` 绑的是
+  「the workflow file that defines the current job」。**Q1 的结论不依赖那份探针**；
+  被削弱的只是「(B) 已被证伪」这一句的**实测**强度（它还有文档依据 + R2 复现的
+  「拿一个不在本仓的 sha 给 `uvx` ⇒ `upload-pack: not our ref` 硬红」这条机制旁证）。
 
 前两轮「未跑成」的留档（探针分支 `probe/workflow-ref` / `c7aa037` 因副本仓 caller PR #5 的 base 冲突
 DIRTY ⇒ 无 merge commit ⇒ 任何 workflow 都不跑）**已被上面这轮真跑成的跨仓探针取代**，不再开问题。
@@ -196,7 +209,7 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 | # | 风险 | 处置 |
 |---|---|---|
 | R1 | ~~`github.workflow_ref` 语义未验证~~ | **已消解**：跨仓真 CI 探针实测（§2 D1）⇒ 定案 (B′) |
-| R2 | **全局面是「新 ref 发布的那一刻」**（M1 订正）：接入方把 `uses:` 指到含新 gate.yml 的 ref 时，**所有**这样的仓同时切换包来源解析 | 发布说明里写明「这是一次**全局**行为变化」；并给回退路径（把 `uses:` 指回旧 ref，或显式 `with: witnessloop-ref:`） |
+| R2 | **全局面是「新 ref 发布的那一刻」**（M1 订正），且**受影响的仓有两类**（R2 的 L6 补第二类）：① 把 `uses:` 指到含新 gate.yml 的 ref 的仓——在**它们动手的那一刻**切换；② `uses:` 写成**分支形态**（如 `@main`）的仓——**在合并那一刻零动作**切换包来源 | 发布说明里写明「这是一次**全局**行为变化」并**点名两类仓**；给回退路径（把 `uses:` 指回旧 ref，或显式 `with: witnessloop-ref:`） |
 | R3 | ~~升级路径把接入方卡死~~ | **已降级**：需一次显式动作，且三条恢复路径实测可用（D2/K3） |
 | R4 | 把 `__version__`/tag 绑起来的需求被夹带进来 | §3 非目标；D3 明写本 change 走 VCS 元数据而不是版本号 |
 | R5 | 本仓自撞（policy 轴本来就红 + 台账 `M` 的解释事件） | D4：迁移拆成 post-merge 动作并写全三件事 |
@@ -242,7 +255,47 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 
 ### R2（报告见 `reviews/grill-adversarial-r2.md`）
 
-见该报告的「收敛结论」。本节的落点按 R2 的必须修改项逐条回写。
+独立零记忆对抗者判定**不收敛**：**R1 的 K1–K8 逐条核对「确实落进正文」**（判据②满足），
+但**本轮新证伪 2 条**（判据①不满足）+ 4 条新缺口，编号 **L1–L6**。**已逐条落库**：
+
+| # | R2 发现 | 落点 |
+|---|---|---|
+| L1 | **post-merge 时序反了** ⇒ 打出的 `v1.7.0` 里 `DEFAULT_GATE_REF` 仍是 `@v1`，「新接入方默认吃新包」在发布那一刻落空（且更隐蔽） | `tasks.md §6` 整段重写：**先改常量 → 再 tag 含该常量的提交**；补 `README.md:20` 的新值进动作清单与 6.7 的验收命令 |
+| L2 | 文档把 `init --gate-ref` 写成「单一升级动作」，但**旧 CLI 上它不存在**（实测 EXIT=1 + 把人指向 policy 的误导文案） | `docs/gate.md §1.2` 与 `README.md` 的 recipe 都改成**两步**（① 先升 CLI ② 再换 ref）+ 如实登记旧 CLI 的症状 |
+| L3 | **没有任何测试钉 `inputs.witnessloop-ref.default == ""`** ⇒ 改回 `"v1"` 时机制静默退化且 665 条全绿 | `tests/test_gate_workflow.py::test_witnessloop_ref_input_default_is_empty` |
+| L4 | `--gate-ref` + 冲突 `--policy` 的**组合语义未写死**（实测 EXIT=1 但已落盘） | `spec.md` 新增该 Scenario（定为「先写后判、不回滚」）+ `initcmd` 在冲突文案前点明「已落盘、不回滚」+ `tests/test_init_gate_ref.py` 的钉子 |
+| L5 | spec 缺两条场景（`--dry-run` / 台账缺 caller 条目） | `spec.md` 补两条 Scenario |
+| L6 | 「全局行为变化」**说小了一类**：分支形态 caller（`@main`）**合并那一刻零动作**切换 | `design §4 R2`、`docs/gate.md §1.2`、`tasks.md 6.5` 三处点名两类仓 |
+
+**R2 的低危观察也一并落库**（不是必须修改项，但便宜且正确）：
+
+- D1：`docs/gate.md §1.2` 补「`check` 自报那行**由新版包起**才有」（旧包跑 `check` 看不到它）。
+- D2：兜底**剥不剥** `refs/heads/` 前缀 → 见 §2 D1 第 3 条，已写死为**剥**。
+- D3：`installed_vcs_ref` 改**宽 except**（成因枚举挡不住 `zipfile.BadZipFile` 这类意外，
+  而规格是「SHALL NOT 因此改变退出码」）⇒ 按**规格**兜而非按成因枚举；测试钉住「抛什么都吞掉」。
+- D4：探针清理措辞改成「**远端**已清理；本地分支刻意保留」，并给探针输出标**证据等级**（见 §2 D1）。
+- D6：spec 第 5 条 Requirement（caller 不受保护要登记）补一条**机械钉子**
+  （`tests/test_docs.py` 断言 `docs/gate.md` 里那段文本在）——它此前只靠人读。
+- D5（**登记、本 change 不修**）：机械门判的是「**候选小节里**出现的每个 `Q<n>` 都有确认」——
+  把某个 `### Q4` 整段**搬到另一个不相干的二级标题**下就能让它免于确认（R2 实测：仍然 0 findings）。
+  ⇒ 本文件与 `grill-design.md` 里「两份文件的 Q 集合 = {Q1…Q5} 逐条一致」这句话**不是**机械判据，
+  只由人复核。改标题绕不过去（fail-closed）。要机械封死属于 `evidence.py` 的机制面（须另开 change），
+  本 change 明确**不动**——与 Q5 同一种取舍。
+
+**R2 未能证伪的部分**（= 既有结论成立，一并记明，避免读者以为全盘被推翻）：(B′) 的上下文落点有
+**官方文档逐字**支撑；`uvx` 对 40 位 sha / 分支 / tag / `refs/heads/*` / `refs/tags/*` / 带斜杠分支
+**八种形态全部实跑可用**；解析 step 的 8 个 case 行为级符合 spec；升级终态是**不动点**；
+作用域守卫**没有**打破「新仓已存在 caller ⇒ 冲突且整体不落盘」；`check` 自报从不因取不到元数据而失败；
+D4 的两条实跑事实逐条成立。R2 还**独立复算确认了 K5 是 R1 自己错**。
+
+### R2 的一条 Open Question 与本 change 的处置
+
+- R2 的 Q1（`--gate-ref` + 冲突 `--policy` 该「先写后判」还是「两轴一起不落盘」）：
+  **采纳 R2 的推荐 = 保持现状（先写后判、不回滚）+ 把文案改准**。理由即其正文给的三条：
+  ① 与 `--test-command` 的既有先例同口径；② 「两轴一起不落盘」会让本 change 的主入口
+  被一个**正交**参数连坐；③ 现状不产生分叉态、恢复路径单一。
+  ⚠️ 这是**作者按独立审阅的推荐落库**，不是用户拍板——已写进 `spec.md` 的 Scenario，
+  若用户不同意，改的是那一条 Scenario + `initcmd` 的落盘顺序（面很小）。
 
 ## 8. 停轮问题（**Q1–Q5 已逐条裁定**，用户答复原文见 `reviews/grill-design.md` 的 `## User Confirmation`）
 

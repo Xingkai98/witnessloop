@@ -66,10 +66,28 @@
 
 ## 6. `(post-merge)` 待办（Q3 裁定；**本 PR 内一律不做**）
 
-- [ ] 6.1 建 tag **`v1.7.0`**（指向合并后的 `main` 上含本 change 的那个 commit）。
-- [ ] 6.2 把 `src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF` 从 `…gate.yml@v1` 改成 `…gate.yml@v1.7.0`，
-      并同步 `tests/test_gate_workflow.py` 里那条 `== …@v1` 的断言。
-- [ ] 6.3 完成 3.5 的本仓自身迁移（caller + 台账 + 解释事件）。
-- [ ] 6.4 **发布说明**里写清这是一次**全局**行为变化（design §4 R2）：接入方把 `uses:` 指到含新 gate.yml 的 ref 时，
-      所有这样的仓**同时**切换包来源解析；并给出回退路径（指回旧 ref，或显式 `with: witnessloop-ref:`）。
-- [ ] 6.5 ⚠️ **不动 `v1` tag**（它是别人依赖的发布物）。
+> ⚠️ **时序是承重的，别调换**（对抗轮 R2 的 L1 实测指出：原稿「先 tag 后改默认值」会让打出的
+> `v1.7.0` 里常量仍是 `@v1` ⇒ 用 `@v1.7.0` 装的 CLI 生成的 caller 还是 `uses:@v1` ⇒
+> **Q3 的收益在发布那一刻就落空**，而且落空得更隐蔽：接入方以为自己钉了 v1.7.0）。
+> ⇒ **被 tag 的那个提交，必须已经含常量改动。**
+
+- [ ] 6.1 **先**改默认值：`src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF` 从 `…gate.yml@v1`
+      改成 `…gate.yml@v1.7.0`，并同步 `tests/test_gate_workflow.py` 里那条 `== …@v1` 的断言。
+      ⚠️ 它是 `src/**` 改动 ⇒ 走本仓自己的门禁（change 证据）。**做法**：本 change **先不归档**
+      （见 5.2），这一步挂在**本 change 目录**下、按既有流程重建全部 manifest（revision 绑定允许
+      「本 PR 自己的变更 + 证据文件」落在 manifest 的 `head_sha` 之后）。
+- [ ] 6.2 **再**建 tag **`v1.7.0`**，指向**含 6.1 改动**的最新 `main` 提交。
+- [ ] 6.3 同步安装文档的字面量：`README.md:20` 的 `uv tool install …@v1` ⇒ `…@v1.7.0`
+      （它是 `docs` 面，不需要 change 证据，但**必须与 6.2 同一个提交**，否则 tag 里的安装指引是旧的）。
+- [ ] 6.4 完成 3.5 的本仓自身迁移（caller + 台账 + 解释事件）。
+- [ ] 6.5 **发布说明**里写清这是一次**全局**行为变化（design §4 R2），且**要点名两类仓**
+      （R2 的 L6：原稿只说了一类，把全局面说小了）：
+      ① 把 `uses:` 指到含新 `gate.yml` 的 ref 的仓——**在它们动手的那一刻**切换；
+      ② `uses:` 写成**分支形态**（如 `@main`）的仓——**在本 PR 合并那一刻**就零动作切换了包来源。
+      回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`。
+- [ ] 6.6 ⚠️ **不动 `v1` tag**（它是别人依赖的发布物）。
+- [ ] 6.7 **验收命令**（可复算，R2 给的）：
+      `uvx --from "git+https://github.com/Xingkai98/witnessloop@v1.7.0" witnessloop init --root <scratch> --dry-run`
+      ⇒ 输出里的 caller 行 SHALL 逐字是
+      `    uses: Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0`。
+      在此之前，README 里那条 `@v1.7.0` 的 recipe 都会指向一个**还不存在**的 ref。

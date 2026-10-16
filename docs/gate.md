@@ -77,16 +77,37 @@ ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
 `check` 自己也会打一行 `本包来源（自报，尽力而为）`——后者读 PEP 610 `direct_url.json` 的
 `vcs_info`，能多给一个**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
 它**取不到就写 `<未知>`，且不影响任何判定**（本地 editable / 源码直跑没有 `vcs_info`）。
+⚠️ 这一行**由新版包起才有**（旧包跑 `check` 的输出里没有它）——别拿旧包的输出当「功能没生效」。
 
-**升级动作（单一、显式）**：对**已接入**的仓，显式给 `init --gate-ref <新 ref>` ⇒
-**重写 caller + 同步台账**（`init-manifest.json` 里该条目的 `sha256` 与 `gate_ref`），
-其余文件照旧只增不改；之后 plain `init` 回到幂等、`uninit` 仍可用。
+**升级动作（单一、显式）——两步，顺序不能反**：
+
+1. **先把 CLI 升上去**：`uv tool install --force git+https://github.com/Xingkai98/witnessloop@<新 ref>`
+   （或 `uv run witnessloop …` 跑源码版）；
+2. 再 `witnessloop init --gate-ref <同一个新 ref>` ⇒ **重写 caller + 同步台账**
+   （`init-manifest.json` 里该条目的 `sha256` 与 `gate_ref`），其余文件照旧只增不改；
+   之后 plain `init` 回到幂等、`uninit` 仍可用。
+
+⚠️ **为什么 ① 不能省**（对抗轮 R2 实测）：重写语义是**新版包**才有的；用旧 CLI
+（例如 `@v1`）跑第 ② 步会得到
+
+```
+init：检测到冲突（已接入，但本次指定的内容与已落地不同；只增不改，拒绝覆盖。要更换 policy 请先 `uninit`）
+```
+
+**EXIT=1**，而文案把人指向 **policy**——**误导**：要换的不是 policy，是这个 CLI 太旧。
+看到这条又来路不明时，**别去删 policy**，先确认 CLI 版本。
+
 ⚠️ 不带 `--gate-ref` 的 plain `init` **不**会顺手改 caller（只增不改照旧）；
 ⚠️ 手改 caller 会让「磁盘 ≠ 台账」——plain `init` 报「被改动过」、`uninit` 拒删；
 `uninit` 的出口仍在（回滚该文件即可），但**别手改**，用这个动作。
+⚠️ **组合语义**：同时给 `--gate-ref <新>` 与一份**冲突的** `--policy` ⇒ caller 与台账
+**先写且不回滚**，policy 那条轴照旧让退出码非零；输出会**点明**这一点（同 `--test-command` 的
+「写在前、其余判定照旧参与退出码」先例，见 `specs/gate-ref-pinning/spec.md` 的对应 Scenario）。
 
-**发布面**：把 `uses:` 指到一个含新 `gate.yml` 的 ref 的那一刻，**所有**这样的仓**同时**
-切换包来源解析——这是一次**全局**行为变化（回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`）。
+**发布面**：这是一次**全局**行为变化，但**受影响的仓有两类**（别只想到第一类）：
+① 把 `uses:` 指到含新 `gate.yml` 的 ref 的仓——在**它们动手的那一刻**切换包来源解析；
+② `uses:` 写成**分支形态**（如 `…gate.yml@main`）的仓——**在合并那一刻**就**零动作**切换了
+包来源（没人动过任何文件）。回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`。
 
 ## 2. `policy.json`
 

@@ -450,3 +450,19 @@ def test_resolve_never_leaves_the_ref_empty(tmp_path: Path):
     ):
         ref, _ = _run_resolve(tmp_path, **overrides)
         assert ref, overrides
+
+
+def test_witnessloop_ref_input_default_is_empty():
+    """(B′) 的**中央机制**：input 的 `default` 必须是**空串**（= 自动），不是 `"v1"`。
+
+    改回 `"v1"` 会让解析规则① 对**每个**没传 `with:` 的接入方命中（`WL_INPUT_REF` 非空），
+    包 ref 就又是 `v1`——症状与今天的缺陷**一模一样**，还会多打一句「来源：调用方显式传入」
+    的**误导**日志，而其余测试**全绿**（实测：对抗轮 R2 的 A3）。
+    ⇒ 这条断言钉的就是那次静默回归。
+    """
+    doc = _gate_doc()
+    call = doc.get("on") or doc.get(True)  # pyyaml 把裸 `on` 解析成布尔 True
+    spec = call["workflow_call"]["inputs"]["witnessloop-ref"]
+
+    assert spec["default"] == "", "input 的 default 非空 ⇒ 自动推导被短路，(B′) 退化成原缺陷"
+    assert spec["required"] is False

@@ -101,6 +101,28 @@ SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
 - **When** 跑不带 `--gate-ref` 的 plain `init`
 - **Then** SHALL 保持「幂等，无改动」（**不**顺手改 caller），与今天一致
 
+### Scenario: `--dry-run` 只预览、且不许谎报幂等
+- **Given** 一个已接入的仓 + 显式 `--gate-ref <新 ref>`
+- **When** 跑 `init --dry-run --gate-ref <新 ref>`
+- **Then** caller 与台账 SHALL **都不落盘**（`git status --porcelain` 逐字不变），
+  且输出 SHALL **不**说「幂等，无改动」（它确实会改），SHALL **不**报冲突
+  （那条冲突正是这个动作要消掉的）
+
+### Scenario: 台账里没有 caller 条目
+- **Given** 已接入的仓，但 `created_files` 里**没有** caller 那一条
+- **When** 显式跑 `init --gate-ref <新 ref>`
+- **Then** SHALL 同步 `gate_ref` 并**补上**该条目（`sha256` = 新内容），
+  条目位置 SHALL 在台账自己的 `self` 条目**之前**；盘上**没有** caller 文件时 SHALL NOT 凭空新建它
+  （交给漂移判定响亮地报）
+
+### Scenario: 与冲突的 `--policy` 同时给出（组合语义）
+- **Given** 一个已接入的仓，同时给 `--gate-ref <新 ref>` 与一份**与已落地不同**的 `--policy`
+- **When** 跑 `init`
+- **Then** caller 与台账 SHALL **先按显式意图改写且不回滚**，`--policy` 那条轴照旧参与退出码
+  （EXIT≠0）；输出 SHALL **点明**「caller 已落盘、不回滚」，SHALL NOT 让用户以为要去删 policy。
+  ⚠️ 这是**刻意**与「未接入分支的整体不落盘」不同的一条语义，理由是同款先例
+  `--test-command`（`initcmd` 的 Z1/O2 注释）：显式意图优先、写在前、其余判定照旧参与退出码。
+
 ## Requirement: caller 文件不受保护这条边界 SHALL 被如实登记
 
 `.github/workflows/witnessloop.yml`（caller）**不在** `protected_paths` / 不变集 / `require_change_for` 里

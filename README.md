@@ -186,16 +186,26 @@ caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「
 [docs/gate.md §1.2](docs/gate.md)；GHES / fork 等能力边界见其 §7）。
 
 ```bash
-# 新接入：直接钉你要的 ref
+# 新接入：直接钉你要的 ref（⚠️ v1.7.0 发布前请用 @v1，见下）
 witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
-# 已接入：升级（重写 caller **并同步台账**，其余文件只增不改；之后 plain init 仍幂等、uninit 仍可用）
-witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
+
+# 已接入：升级**两步，顺序不能反**
+uv tool install --force git+https://github.com/Xingkai98/witnessloop@v1.7.0   # ① 先升 CLI
+witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0   # ② 再换 ref
 ```
+
+⚠️ **第 ① 步不能省**：重写 caller 的语义是**新版包**才有的。用旧 CLI 跑第 ② 步会得到
+EXIT=1 与一句把人指向 **policy** 的「检测到冲突…要更换 policy 请先 `uninit`」——
+**误导**（要换的不是 policy，是 CLI 太旧）；看到它**别去删 policy**。
+
+⚠️ **`v1.7.0` 发布之前，请仍然钉 `@v1`**：这个 tag 是随本 change 的 `(post-merge)` 步骤建的，
+在它出现之前指过去会钉到一个**不存在的 ref**。
 
 ⚠️ **别手改 caller**：手改 ⇒「磁盘 ≠ 台账」⇒ plain `init` 报「被改动过」、`uninit` 拒删
 （有出口，但要用上面那个动作）。要看**本次到底跑了哪个 ref**：`gate / check` 日志里那行
 `::notice::witnessloop 包 ref = …（来源：…）`，以及 `check` 自己那行
-`本包来源（自报，尽力而为）`（它还能给出解析后的 commit）。
+`本包来源（自报，尽力而为）`（它还能给出解析后的 commit；⚠️ 该行**由新版包起**才有——
+拿旧包跑 `check` 看不到它）。
 
 > **前置条件：本仓必须公开。** caller 引用的是本仓的 reusable workflow、CI 里用
 > `uvx --from git+…@<ref>` 安装本包——两者在**私有**仓下都会失败（reusable workflow

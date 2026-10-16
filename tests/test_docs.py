@@ -260,3 +260,24 @@ def test_docs_do_not_call_the_tests_path_a_default(relpath: str):
         f"{relpath} 仍把命令文件路径写成「{STALE_TESTS_PATH_DEFAULT_CLAIM}」"
         "——它不是可覆写的默认值，是 constants 里的常量（没有第二个取值）"
     )
+
+
+#: 「caller 不受保护」这条边界的登记点（change gate-ref-pins-package 的 spec 第 5 条 Requirement）。
+#: 它此前只靠人读——而它恰恰是**能力边界**，属于「必须诚实转述」那一类（本仓对文档的既有态度：
+#: 边界要能被机械钉住，别退化成散文）。
+def test_gate_documents_the_unprotected_caller_boundary():
+    text = (REPO_ROOT / "docs/gate.md").read_text(encoding="utf-8")
+
+    assert ".github/workflows/witnessloop.yml" in text
+    assert "protected=False" in text and "invariant=False" in text
+    # 「刻意不修」这个态度必须写出来——只写「不受保护」会被读成待办。
+    assert "刻意不修" in text
+
+
+def test_gate_documents_the_ref_pinning_upgrade_path():
+    """§1.2 是「怎么钉版本 / 怎么升级」的权威：两条命令与「先升 CLI」都要在。"""
+    text = (REPO_ROOT / "docs/gate.md").read_text(encoding="utf-8")
+
+    assert "init --gate-ref" in text
+    assert "job.workflow_sha" in text
+    assert "先把 CLI 升上去" in text

@@ -426,6 +426,14 @@ def _already_initialized(
         return C.EXIT_FAIL
     conflicts = [item for item in conflicts if item[0] not in ignore]
     if conflicts:
+        if ignore:
+            # 组合语义写死（R2 的 L4）：`--gate-ref` 那一半**已经落盘且不回滚**，
+            # 下面报的是**别的**轴。不写这句的话，用户会以为「什么都没发生」并跑去删 policy。
+            print(
+                f"init：注意——{'、'.join(ignore)} 已按显式 `--gate-ref` 处理（**已落盘、不回滚**）；"
+                "下面报的是**别的**文件：",
+                file=sys.stderr,
+            )
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"
             "只增不改，拒绝覆盖。要更换 policy 请先 `uninit`）：",

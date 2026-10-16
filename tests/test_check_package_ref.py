@@ -111,3 +111,28 @@ def test_wired_repo_check_line_survives_a_green_run(repo: Path, cli):
     assert "requested_revision=" in out
     assert "check：通过 ✓" in out
     assert code == C.EXIT_PASS
+
+
+def test_a_broken_metadata_source_never_escapes(monkeypatch):
+    """规格面：**任何**取不到的成因都必须收敛到「取不到」，SHALL NOT 改变退出码。
+
+    审计（对抗轮 R2 的 D3）指出 `distribution()` 在 sys.path 上有别的包的坏 dist-info 时
+    会抛 `zipfile.BadZipFile`（不属任何常规元组）⇒ 若按成因枚举，`check` 会崩、入口退 1，
+    把一条**信息行**升格成红。⇒ 实现按**规格**兜（宽 except，见那里的注释），这里钉住它。
+    （BadZipFile 本身**未复现**，是推演；但「抛什么都得吞掉」这条规格可以真测。）
+    """
+    import zipfile
+
+    def _boom(name):
+        raise zipfile.BadZipFile("坏 dist-info")
+
+    monkeypatch.setattr("importlib.metadata.distribution", _boom)
+
+    assert checkcmd.installed_vcs_ref() == (None, None)
+
+    def _boom2(name):
+        raise RuntimeError("意外成因")
+
+    monkeypatch.setattr("importlib.metadata.distribution", _boom2)
+
+    assert checkcmd.installed_vcs_ref() == (None, None)

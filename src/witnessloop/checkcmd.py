@@ -59,10 +59,16 @@ def installed_vcs_ref() -> tuple[str | None, str | None]:
     本地 editable / 源码直跑没有 `vcs_info` ⇒ `(None, None)`（**不失败**，见 Q4 裁定）。
     """
     try:
-        from importlib.metadata import PackageNotFoundError, distribution
+        from importlib.metadata import distribution
 
         raw = distribution("witnessloop").read_text("direct_url.json")
-    except (ImportError, PackageNotFoundError, OSError, ValueError, TypeError):
+    except Exception:
+        # ⚠️ 本仓少见的**宽** except，是**有意**的：这里是「尽力而为」的自报（Q4 裁定 /
+        # spec 的「SHALL NOT 因此改变退出码」），任何取不到的**成因**都必须收敛到
+        # 「取不到」这一态——漏一个就变成 `check` 崩溃退 1，把一条**信息行**升格成红。
+        # 已知的漏网成因就是 `zipfile.BadZipFile`（sys.path 上有别的包的坏 dist-info 时
+        # `distribution()` 会抛它，不在任何常规元组里；**未复现，来自审阅的推演**）。
+        # ⇒ 这里按**规格**兜，不按成因枚举。见 `tests/test_check_package_ref.py`。
         return None, None
     return vcs_info_from_direct_url(raw)
 
