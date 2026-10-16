@@ -347,6 +347,22 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 `docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
 `uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
 
+### R9（报告见 `reviews/grill-adversarial-r9.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `3865007` 上 **`src/` 与 `gate.yml`
+行为层零新缺陷**，四条全在规格/文档/钉子层面，**已逐条落库**：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| W2 | **规格/文档** | 「干净不动点」Scenario 的 Then 对**定制 policy 的已接入仓**被实跑证伪（`--gate-ref` 退 1、随后 plain `init` 不报幂等）；文档把该症状**只**归因于「旧 CLI」，且那句「要更换 policy 请先 `uninit`」照做会连 caller + 台账一起删 | Scenario 补**前提**「policy 与出厂默认一致（或同时给 `--policy`）」+ 写明定制 policy 的仓不满足它；`docs/gate.md §1.2` 两种成因都写 |
+| W3 | 钉子级行为 | `caller_retarget_refusal` 的条目扫描缺 `not entry.get("self")`，与另两处**不同口径** ⇒ 手工把 caller 那条标 `self: true` 且文件不在时，V1 的静默 no-op 原样复现 | 补上该守卫（三处同口径）+ `test_a_self_flagged_caller_entry_does_not_hide_the_refusal`；变异复核：在未含守卫的树上**红** |
+| W1 | 规格机制归属错 | `spec.md` 与 `initcmd` 注释写「交给漂移判定响亮地报」——那一态漂移判定**看不见** | 两处措辞订正为「由 `caller_retarget_refusal` 变响亮」 |
+| W4 | 文档面 | `tasks.md 6.3` 只点名 `README.md:20`，漏了「怎么钉版本」那段里的 `@v1` 句子（6.2 之后变成**错的建议**） | 改成「**按语义找**、附 `grep -n "@v1" README.md docs/gate.md`」，写明行号会漂、历史引文保留 |
+
+**R9 的低危观察**：陈旧的「673 passed」已改成不依赖计数；另三条（`created_files` 元素非对象仍崩、
+`…@refs/heads/` 空后缀、`--gate-ref ""` 等价于不给）**登记不修**——前两条**先于本 change 存在**，
+第三条是本仓既有的参数解析口径。
+
 ### R8（报告见 `reviews/grill-adversarial-r8.md`）
 
 独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `ab67ebd` 上找到 **2 条行为/文档缺陷 + 2 条缺钉子**，

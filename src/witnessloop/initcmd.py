@@ -156,8 +156,10 @@ def sync_caller_gate_ref(
 
     ⚠️ **必须原子地同时改台账**：只重写 caller 会让「磁盘 ≠ 台账」——之后 plain ``init``
     走漂移分支退 1、``uninit`` 拒删退 1（实测，change `adopter-test-gate` 记过这个坑）。
-    ⚠️ 盘上**没有** caller 时返回 ``None``：不凭空复活它，交给漂移分支响亮地报——
+    ⚠️ 盘上**没有** caller 时返回 ``None``：不凭空复活它——
     「只增不改」在已接入分支里的含义就是**不新建**。
+    ⚠️ 措辞订正（R9 的 W1）：那一态**不是**「交给漂移分支报」——漂移循环只遍历**台账条目**，
+    看不见「无条目 + 无文件」；真正把它变响亮的是 `caller_retarget_refusal`（V1）。
     """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -209,10 +211,17 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
     if (root / C.GATE_WORKFLOW_PATH).is_file():
         return None  # 文件在 ⇒ 补条目即可（`_set_ledger_gate_ref` 有那条分支），能做成
     if any(
-        isinstance(entry, dict) and entry.get("path") == C.GATE_WORKFLOW_PATH
+        isinstance(entry, dict)
+        and entry.get("path") == C.GATE_WORKFLOW_PATH
+        and not entry.get("self")
         for entry in entries
     ):
-        return None  # 有条目：文件缺失时漂移分支会**响亮地**报，不必在这里拦
+        # 有条目（且**不是**自称 `self` 的那条）：文件缺失时漂移分支会**响亮地**报，
+        # 不必在这里拦。⚠️ `not entry.get("self")` 不能省（R9 的 W3）：另两处
+        # （`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`）都按这个口径跳过
+        # 自称 `self` 的条目——少了它，「caller 那条被标成 self: true 且文件不在」
+        # 会**原样复现** V1 的静默 no-op。
+        return None
     return (
         f"无法按 --gate-ref 改 caller：{C.GATE_WORKFLOW_PATH} 既不在盘上、"
         f"{C.INIT_MANIFEST_PATH} 里也没有它的条目——这个仓既不是「已落地的接入」"

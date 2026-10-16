@@ -403,3 +403,28 @@ def test_no_caller_entry_and_no_file_refuses_loudly(repo: Path, cli):
     assert C.GATE_WORKFLOW_PATH in err and "条目" in err
     assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before  # 一个字节都没动
     assert not (repo / C.GATE_WORKFLOW_PATH).exists()  # 也没复活它
+
+
+def test_a_self_flagged_caller_entry_does_not_hide_the_refusal(repo: Path, cli):
+    """R9 的 W3：`caller_retarget_refusal` 的条目扫描必须与另两处**同口径**跳过 `self` 条目。
+
+    少了 `not entry.get("self")`：手工把 caller 那条标成 `self: true` 且文件不在时，
+    V1 的静默 no-op 会**原样复现**（打印「幂等，无改动」、EXIT=0、`gate_ref` 停在旧值）。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    for entry in manifest["created_files"]:
+        if entry["path"] == C.GATE_WORKFLOW_PATH:
+            entry["self"] = True
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "幂等" not in out
+    assert "条目" in err

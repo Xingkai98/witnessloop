@@ -98,10 +98,14 @@ SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
   文档 SHALL 把这条代价与补救写清，SHALL NOT 只写「重写 caller + 同步台账」就算完。
 
 ### Scenario: 显式换 ref 之后仍是干净的不动点
-- **Given** 一个已接入的仓（caller 无 `with:`）
+- **Given** 一个已接入的仓（caller 无 `with:`），且它的 **policy 与出厂默认一致**（或本次同时给了 `--policy`）
 - **When** 跑 `witnessloop init --gate-ref <新 ref>`
 - **Then** SHALL 重写 caller、SHALL 同步台账的 `sha256` 与 `gate_ref`，EXIT=0；
   且随后 plain `init` SHALL 报「幂等，无改动」、`uninit` SHALL 能正常回滚
+  ⚠️ **前提不能省（R9 的 W2，实跑证伪过）**：**定制过 policy 的仓不满足这个 Then**——
+  `--gate-ref` 会退 1，且随后 plain `init` **不**报「幂等，无改动」（它撞的是**另一条轴**：
+  出厂政策 ≠ 磁盘上的定制政策）。此时那句「要更换 policy 请先 `uninit`」**不可照做**——
+  `uninit` 会把 caller 与台账一起删掉。本仓自己就是这一类（`README` 的「本仓自身接入」）。
 
 ### Scenario: 不给 flag 时不动
 - **Given** 同一个已接入的仓
@@ -119,8 +123,11 @@ SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
 - **Given** 已接入的仓，但 `created_files` 里**没有** caller 那一条
 - **When** 显式跑 `init --gate-ref <新 ref>`
 - **Then** SHALL 同步 `gate_ref` 并**补上**该条目（`sha256` = 新内容），
-  条目位置 SHALL 在台账自己的 `self` 条目**之前**；盘上**没有** caller 文件时 SHALL NOT 凭空新建它
-  （交给漂移判定响亮地报）
+  条目位置 SHALL 在台账自己的 `self` 条目**之前**；盘上**没有** caller 文件时 SHALL NOT 凭空新建它，
+  并且该请求 SHALL **响亮失败**（EXIT≠0 + 一句说明），SHALL NOT 报「幂等，无改动」
+  ⚠️ **措辞订正（R9 的 W1）**：此前这里写「交给漂移判定响亮地报」是**错的**——
+  漂移判定只遍历台账条目，看不见「无条目 + 无文件」这一态；把它变响亮的是
+  `initcmd.caller_retarget_refusal`（R8 的 V1 新增）
 
 ### Scenario: 与冲突的 `--policy` 同时给出（组合语义）
 - **Given** 一个已接入的仓，同时给 `--gate-ref <新 ref>` 与一份**与已落地不同**的 `--policy`
