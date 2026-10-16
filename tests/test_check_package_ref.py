@@ -177,3 +177,38 @@ def test_the_report_line_is_the_first_thing_check_prints(repo: Path, cli):
 
     assert code == C.EXIT_NOT_ONBOARDED
     assert out.splitlines()[0].startswith("check：本包来源")
+
+
+def test_installed_vcs_ref_reads_a_real_dist_info(tmp_path: Path, monkeypatch):
+    """building 审阅的 B1-1：自报链**最后一环**（真的从 dist-info 读出来）此前零覆盖——
+    以前只测了「纯函数解析」与「注入后的打印」两段，中间的 `installed_vcs_ref()` 是空的。
+
+    这里造一个**真** dist-info 放上 `sys.path`（等价于 `uvx` 装出来的形态），断言它读得到。
+    """
+    import json
+    import sys
+
+    dist = tmp_path / "witnessloop-0.1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: witnessloop\nVersion: 0.1.0\n", encoding="utf-8"
+    )
+    (dist / "direct_url.json").write_text(
+        json.dumps(
+            {
+                "url": "https://github.com/Xingkai98/witnessloop",
+                "vcs_info": {
+                    "vcs": "git",
+                    "commit_id": "ae992565ee2162e5b272af471e9adf895e7f83fb",
+                    "requested_revision": "v1.7.0",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    assert checkcmd.installed_vcs_ref() == (
+        "v1.7.0",
+        "ae992565ee2162e5b272af471e9adf895e7f83fb",
+    )

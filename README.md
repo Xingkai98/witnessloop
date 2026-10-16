@@ -180,6 +180,9 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 
 ### 怎么钉版本 / 怎么升级
 
+> ⚠️ 前提：本仓已发布**含本 change 的 ref**（`v1.7.0` 起）。在它出现之前，
+> 下面这些命令里的 ref 都请写 `@v1`（现状），其余步骤与语义完全一样。
+
 caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「跑哪个 witnessloop 包」：
 `gate.yml` 把包 ref 解析成 `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit），
 显式 `with: witnessloop-ref:` 仍可覆盖 ⇒ **改一处、两处跟着走**（细节见

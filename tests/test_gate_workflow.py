@@ -501,7 +501,7 @@ def test_resolve_survives_undefined_env_vars(tmp_path: Path):
 
     assert proc.returncode == 0, proc.stderr
     assert "unbound variable" not in proc.stderr
-    assert "ref=v1" in out_path.read_text(encoding="utf-8")
+    assert f"ref={_fallback_ref()}" in out_path.read_text(encoding="utf-8")
     assert "::warning::" in proc.stdout
 
 
@@ -509,7 +509,7 @@ def test_repository_mismatch_does_not_fall_through_to_workflow_ref(tmp_path: Pat
     """判定顺序的钉子（对抗轮 R6 实测暴露的文档/实现错位）：**repository 不匹配 ⇒ 直接 fail-closed**，
     **不**再去试 `job.workflow_ref`。
 
-    差别是可观测的：若错误地继续走兜底分支，`refs/heads/main` 会被当成包 ref（`ref=v1` 之外的
+    差别是可观测的：若错误地继续走兜底分支，`refs/heads/main` 会被当成包 ref（兜底值之外的
     另一个值）；正确行为是退兜底 ref（`v1`）。
     """
     ref, out = _run_resolve(

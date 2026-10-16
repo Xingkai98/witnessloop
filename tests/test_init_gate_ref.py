@@ -507,3 +507,50 @@ def test_a_self_flagged_caller_entry_with_the_file_present_is_refused(repo: Path
     paths = [entry["path"] for entry in after["created_files"]]
     assert paths.count(C.GATE_WORKFLOW_PATH) == 1
     assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before
+
+
+def test_same_ref_but_a_missing_caller_entry_repairs_the_ledger(repo: Path, cli):
+    """building 审阅的 B1-5：ref 相同**但台账缺 caller 条目**时不能 no-op。
+
+    旧行为：静默 no-op（打印「幂等」）——于是那个台账一直是坏的，而 `uninit` 因为在台账里
+    找不到 caller 那条、**不会删它** ⇒ 半回滚（台账与 caller 各留一半）。本动作正好能补齐。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "幂等" not in out  # 它确实改了台账
+    after = _ledger(repo)
+    assert [e["path"] for e in after["created_files"]].count(C.GATE_WORKFLOW_PATH) == 1
+    assert after["gate_ref"] == OLD_REF
+    # 而且现在 uninit 能整批回滚（不再半删）
+    assert cli("uninit", "--root", str(repo))[0] == C.EXIT_PASS
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()
+    assert not (repo / C.POLICY_PATH).exists()
+
+
+def test_the_drift_branch_also_says_the_caller_half_landed(repo: Path, cli):
+    """building 审阅的 B1-2：漂移分支同样可能「caller 那半已真落盘」，也要把那句话印出来。
+
+    （此前 `handled` 只在**冲突**分支打印 ⇒ 用户在这个分支只看到「被改动过」，
+    会以为显式 `--gate-ref` 那半也没做成。）
+    """
+    _init(repo, cli)
+    # 手改 **policy**（不是 caller）⇒ 命中漂移分支，而 caller 那半会被显式 --gate-ref 真重写
+    (repo / C.POLICY_PATH).write_text('{"schema": "tampered"}\n', encoding="utf-8")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "被改动过" in err  # 漂移分支
+    assert "已落盘、不回滚" in err  # 且点明了 caller 那半已经做成

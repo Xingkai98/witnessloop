@@ -165,7 +165,19 @@ def sync_caller_gate_ref(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None  # 坏台账交给 `_already_initialized` 报（它有一手诊断）
-    if not isinstance(manifest, dict) or manifest.get("gate_ref") == gate_ref:
+    if not isinstance(manifest, dict):
+        return None
+    # ⚠️ 只有「ref 相同 **且** 台账里确有 caller 条目」才算无事可做（building 审阅 B1-5）：
+    # ref 相同但**缺条目**时不能 no-op——那会静默放过一个 `uninit` 会半回滚的台账
+    # （条目缺失 ⇒ 它不删 caller ⇒ 台账与 caller 各留一半），而本函数正好能把它补齐。
+    if manifest.get("gate_ref") == gate_ref and isinstance(
+        manifest.get("created_files"), list
+    ) and any(
+        isinstance(entry, dict)
+        and entry.get("path") == C.GATE_WORKFLOW_PATH
+        and not entry.get("self")
+        for entry in manifest["created_files"]
+    ):
         return None
     # ⚠️ `created_files` **必须已经是数组**，否则一律**拒绝重写**（对抗轮 R5 的 P1）：
     # 旧实现会把它静默重建成 `[]`，于是台账里 policy 等条目**被丢掉**、却报 EXIT=0 成功；
@@ -186,8 +198,12 @@ def sync_caller_gate_ref(
     path.write_text(content, encoding="utf-8")
     _set_ledger_gate_ref(manifest, gate_ref, sha256_bytes(content.encode("utf-8")))
     manifest_path.write_text(policy.dumps(manifest), encoding="utf-8")
-    print(f"init：已重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
-    return f"{C.GATE_WORKFLOW_PATH} 与台账已改成 {gate_ref}"
+    if manifest.get("gate_ref") != gate_ref:
+        print(f"init：已重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
+        return f"{C.GATE_WORKFLOW_PATH} 与台账已改成 {gate_ref}"
+    # ref 本来就对（B1-5）：这一趟只为把缺掉的台账条目补回来——别谎称改了 ref。
+    print(f"init：已补齐台账里的 {C.GATE_WORKFLOW_PATH} 条目（ref 本来就是 {gate_ref}，未改）")
+    return f"台账里的 {C.GATE_WORKFLOW_PATH} 条目已补齐（ref 未变）"
 
 
 def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> str | None:
@@ -233,11 +249,13 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
         and not entry.get("self")
         for entry in entries
     ):
-        # 有条目（且**不是**自称 `self` 的那条）：文件缺失时漂移分支会**响亮地**报，
-        # 不必在这里拦。⚠️ `not entry.get("self")` 不能省（R9 的 W3）：另两处
-        # （`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`）都按这个口径跳过
-        # 自称 `self` 的条目——少了它，「caller 那条被标成 self: true 且文件不在」
-        # 会**原样复现** V1 的静默 no-op。
+        # 有条目（且不是自称 `self` 的那条）：文件缺失时漂移分支会**响亮地**报，
+        # 不必在这里拦。
+        # ⚠️ 口径与另两处一致（`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`
+        # 都跳过自称 `self` 的条目）——**但本函数里那个 `not entry.get("self")` 当前不可达**：
+        # 上面的「被标 self ⇒ 拒绝」分支已经把它们全拦下了（building 审阅 B1-3 指出）。
+        # 保留它是**纵深防御**（两个分支的判据若将来被改动，口径不会悄悄分叉），
+        # 不是「少了它会出 bug」——此处措辞按事实写。
         return None
     return (
         f"无法按 --gate-ref 改 caller：{C.GATE_WORKFLOW_PATH} 既不在盘上、"
@@ -259,6 +277,8 @@ def _set_ledger_gate_ref(manifest: dict, gate_ref: str, digest: str) -> None:
         if (
             isinstance(entry, dict)
             and entry.get("path") == C.GATE_WORKFLOW_PATH
+            # `not entry.get("self")`：与 `caller_retarget_refusal` 同口径的**纵深防御**，
+            # 当前不可达（被标 self 的 caller 条目在入口就被拒绝了，见那里）——building 审阅 B1-3。
             and not entry.get("self")
         ):
             entry["sha256"] = digest
@@ -550,7 +570,16 @@ def _already_initialized(
             print(f"init：注意——{handled}；下面报的是**别的**文件：", file=sys.stderr)
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"
-            "只增不改，拒绝覆盖。要更换 policy 请先 `uninit`）：",
+            "只增不改，拒绝覆盖。"
+            + (
+                # building 审阅的 B1-7：显式 `--gate-ref` 那条轴已经做成时，别把这句
+                # 「要更换 policy 请先 uninit」原样甩给用户——`uninit` 会把 caller 与台账**一起删**。
+                "⚠️ 但**别照下句做**：本行的冲突与你那条显式 `--gate-ref` 无关，"
+                "而 `uninit` 会把 caller 与台账一起删掉。policy 那条轴要单独解决。"
+                if handled
+                else "要更换 policy 请先 `uninit`"
+            )
+            + "）：",
             file=sys.stderr,
         )
         for rel, current, want in conflicts:
