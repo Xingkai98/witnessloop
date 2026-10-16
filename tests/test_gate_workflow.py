@@ -56,7 +56,7 @@ def test_gate_pins_the_pr_head_for_checkout():
 def test_caller_ref_matches_this_repo():
     text = GATE.read_text(encoding="utf-8")
     assert C.REPO_SLUG in text
-    assert C.DEFAULT_GATE_REF == f"{C.REPO_SLUG}/.github/workflows/gate.yml@v1"
+    assert C.DEFAULT_GATE_REF == f"{C.REPO_SLUG}/.github/workflows/gate.yml@v1.7.0"
 
 
 # ---------------------------------------------------------------------------

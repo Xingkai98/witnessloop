@@ -17,9 +17,13 @@ REPO_SLUG = "Xingkai98/witnessloop"
 # 所以接入方 SHALL NOT 需要分别维护两个 ref。
 # ⚠️ 显式传 `--gate-ref` 时：**已接入**的仓会被**重写 caller + 同步台账**（initcmd
 # `sync_caller_gate_ref`），plain `init` 仍只增不改。
-# ⚠️ 本值仍是 `@v1`：把它指到新 tag（`v1.7.0`）是 change gate-ref-pins-package 的
-# **`(post-merge)` 事项**——新 tag 必须先存在，指过去才有意义。
-DEFAULT_GATE_REF = f"{REPO_SLUG}/.github/workflows/gate.yml@v1"
+# ⚠️ **这个字面量是一个「族」**：改它必须同时改 `.github/workflows/gate.yml` 的
+# `WL_FALLBACK_REF`（fail-closed 兜底，与这里**同源**）与 `tests/test_gate_workflow.py`
+# 里那条断言——只改一处会红（change gate-ref-pins-package 的 `tasks.md §6.1` 列了全清单）。
+# 本值随该 change 的 `(post-merge)` 步骤从 `@v1` 移到 `@v1.7.0`：
+# 顺序是**先改这里、再给含该改动的提交打 tag**（反过来打出的 tag 里常量还是旧值，收益会落空）。
+# ⚠️ `v1` tag **不动**：它是别人依赖的发布物。
+DEFAULT_GATE_REF = f"{REPO_SLUG}/.github/workflows/gate.yml@v1.7.0"
 
 # init 创建的文件（相对目标仓根）。
 POLICY_PATH = ".witnessloop/policy.json"

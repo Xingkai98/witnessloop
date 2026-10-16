@@ -42,7 +42,7 @@ jobs:
       #   ④ 否则（repository 已匹配、sha 为空）用 `job.workflow_ref` 的 `@` 之后那段，
       #      只收 `refs/heads/*` 与 `refs/tags/*`；
       #   ⑤ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
-      #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1`）并打 `::warning::`。
+      #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1.7.0`）并打 `::warning::`。
       #
       # ⚠️ **不能用 `github.workflow_ref` / `github.workflow_sha`**：跨仓真 CI 探针（run
       # 38853369550）实测它们指 **caller**（接入方自己那份）⇒ 会拿接入方的 ref 去
@@ -52,7 +52,8 @@ jobs:
       # 只有 `github, inputs, vars` 三个，`job` 不在其中。
       #
       # ⚠️ 两个「常量」（`WL_REPO_SLUG` / `WL_FALLBACK_REF`）必须与 `constants.py` 的
-      # `REPO_SLUG` / `DEFAULT_GATE_REF` 的 ref 部分逐字相同（`tests/test_gate_workflow.py` 钉住）。
+      # `REPO_SLUG` / `DEFAULT_GATE_REF` 的 ref 部分逐字相同（`tests/test_gate_workflow.py` 钉住）
+      # ⇒ **它们是一个字面量族**：改出厂默认时必须同时改这里。
       # 另外：`run:` 里**刻意不用** `${{ }}` 插值——既避免把外来的字符串当 workflow 源码，
       # 也让测试能把 `run:` 原文直接交给 `sh` 跑（行为级钉子）。
       - name: resolve witnessloop package ref
@@ -63,7 +64,7 @@ jobs:
           WL_WORKFLOW_SHA: ${{ job.workflow_sha }}
           WL_WORKFLOW_REF: ${{ job.workflow_ref }}
           WL_REPO_SLUG: "Xingkai98/witnessloop"
-          WL_FALLBACK_REF: "v1"
+          WL_FALLBACK_REF: "v1.7.0"
         run: |
           set -eu
 
