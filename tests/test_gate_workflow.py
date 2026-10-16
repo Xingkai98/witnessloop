@@ -466,3 +466,29 @@ def test_witnessloop_ref_input_default_is_empty():
 
     assert spec["default"] == "", "input 的 default 非空 ⇒ 自动推导被短路，(B′) 退化成原缺陷"
     assert spec["required"] is False
+
+
+def test_resolve_survives_undefined_env_vars(tmp_path: Path):
+    """`set -eu` 下**未定义**（不只是空）的变量会让脚本当场退出 ⇒ 必须一律 `${VAR:-}` 读。
+
+    真实 GitHub 侧 `${{ }}` 取不到时会渲染成空串（env 仍然存在），但脚本不该把
+    「门禁能跑起来」押在那个行为上：解析器宁可 fail-closed 退 `v1` 并告警。
+    （对抗轮 R2 的审题脚本自己就踩过这条：漏一个 env 键 ⇒ `unbound variable`。）
+    """
+    step = _resolve_step()
+    env = dict(os.environ, WL_REPO_SLUG=step["env"]["WL_REPO_SLUG"],
+               WL_FALLBACK_REF=step["env"]["WL_FALLBACK_REF"])
+    for key in ("WL_INPUT_REF", "WL_WORKFLOW_REPOSITORY", "WL_WORKFLOW_SHA", "WL_WORKFLOW_REF"):
+        env.pop(key, None)
+    out_path = tmp_path / "github_output"
+    out_path.write_text("", encoding="utf-8")
+    env["GITHUB_OUTPUT"] = str(out_path)
+
+    proc = subprocess.run(
+        ["sh", "-c", step["run"]], env=env, capture_output=True, text=True
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "unbound variable" not in proc.stderr
+    assert "ref=v1" in out_path.read_text(encoding="utf-8")
+    assert "::warning::" in proc.stdout

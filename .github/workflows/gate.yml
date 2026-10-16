@@ -65,16 +65,20 @@ jobs:
           WHY=""
           FAILED=""
 
-          if [ -n "$WL_INPUT_REF" ]; then
+          # ⚠️ 一律用 `${VAR:-}` 读：本脚本 `set -eu`，而未定义的变量会让它**当场退出**
+          # （GitHub 侧上游取不到时会渲染成空串、env 仍然存在，但这不构成可依赖的保证）。
+          # 解析器宁可 fail-closed 退 `v1` 并告警，也不能因为一个没定义的变量而红在一个
+          # 与「包版本」毫无相似之处的地方。
+          if [ -n "${WL_INPUT_REF:-}" ]; then
             REF="$WL_INPUT_REF"
             WHY="调用方显式传入的 with.witnessloop-ref"
-          elif [ "$WL_WORKFLOW_REPOSITORY" != "$WL_REPO_SLUG" ]; then
+          elif [ "${WL_WORKFLOW_REPOSITORY:-}" != "$WL_REPO_SLUG" ]; then
             FAILED="job.workflow_repository=「${WL_WORKFLOW_REPOSITORY:-<空>}」≠「$WL_REPO_SLUG」（GHES / 别人的仓 / 非本仓 reusable 都落这里）"
-          elif [ -n "$WL_WORKFLOW_SHA" ]; then
+          elif [ -n "${WL_WORKFLOW_SHA:-}" ]; then
             REF="$WL_WORKFLOW_SHA"
             WHY="job.workflow_sha（被复用的那个 workflow 文件自己的 commit）"
           else
-            case "$WL_WORKFLOW_REF" in
+            case "${WL_WORKFLOW_REF:-}" in
               *@refs/heads/*)
                 REF="${WL_WORKFLOW_REF##*@refs/heads/}"
                 WHY="job.workflow_ref 的分支名（job.workflow_sha 缺失时的兜底）" ;;
