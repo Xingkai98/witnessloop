@@ -347,7 +347,7 @@ def test_resolve_step_binds_the_right_contexts():
 
 
 def test_resolve_constants_match_the_single_source():
-    """接受判据（REPO_SLUG）与 fail-closed 落点（`v1`）必须与 `constants.py` 同源。"""
+    """接受判据（REPO_SLUG）与 fail-closed 的**兜底 ref** 必须与 `constants.py` 同源。"""
     env = _resolve_step()["env"]
 
     assert env["WL_REPO_SLUG"] == C.REPO_SLUG
@@ -405,7 +405,7 @@ def test_resolve_fails_closed_on_a_foreign_repository(tmp_path: Path):
 
 
 def test_resolve_fails_closed_when_the_job_context_is_unavailable(tmp_path: Path):
-    """GHES（`job.*` 不可用 ⇒ 全空）⇒ 退 `v1`，但**不静默**（有 warning）。
+    """GHES（`job.*` 不可用 ⇒ 全空）⇒ 退兜底 ref，但**不静默**（有 warning）。
 
     design §4 R6 如实登记：GHES 接入方会一直吃 `v1`，区别只在日志里有 warning。
     """
@@ -434,7 +434,7 @@ def test_resolve_falls_back_to_the_ref_part_of_job_workflow_ref(tmp_path: Path):
 
 
 def test_resolve_fails_closed_on_malformed_workflow_refs(tmp_path: Path):
-    """spec 点名的四个畸形样本（前两个 + 缺 @）⇒ 退 `v1` 且打 warning。"""
+    """spec 点名的四个畸形样本（前两个 + 缺 @）⇒ 退兜底 ref 且打 warning。"""
     for malformed in (
         f"{C.REPO_SLUG}/.github/workflows/gate.yml",  # 缺 @
         f"{C.REPO_SLUG}/.github/workflows/gate.yml@",  # @ 后为空
@@ -481,7 +481,7 @@ def test_resolve_survives_undefined_env_vars(tmp_path: Path):
     """`set -eu` 下**未定义**（不只是空）的变量会让脚本当场退出 ⇒ 必须一律 `${VAR:-}` 读。
 
     真实 GitHub 侧 `${{ }}` 取不到时会渲染成空串（env 仍然存在），但脚本不该把
-    「门禁能跑起来」押在那个行为上：解析器宁可 fail-closed 退 `v1` 并告警。
+    「门禁能跑起来」押在那个行为上：解析器宁可 fail-closed 退兜底 ref 并告警。
     （对抗轮 R2 的审题脚本自己就踩过这条：漏一个 env 键 ⇒ `unbound variable`。）
     """
     step = _resolve_step()

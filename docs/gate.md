@@ -192,8 +192,12 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
      这类符号 ref 会被拒——字段名叫 `*_sha` 就该是 sha），且**能解析成本仓的一个提交**
      （乱填 `"0"*40` 同样被拒）；
   2. `head_sha` 必须是本次被检 head 的**祖先**（含相等）；
-  3. 从 `head_sha` 到本次被检 head 之间，只允许出现**证据文件**与**本 PR 自己的
-     变更**，出现别的即判「**审阅的是旧 revision**」。两个过滤条件缺一不可：
+  3. 从 `head_sha` 到本次被检 head 之间，**只允许出现证据文件**——出现别的即判
+     「**审阅的是旧 revision**」。等价说法：`head_sha` 必须是**最后一个非证据 revision**
+     （`contract._check_git_span` 的 docstring 就是这么写的）。
+     ⚠️ **「本 PR 自己的变更」并不豁免**（对抗轮 R3 实测：改了非证据文件 ⇒ 每份 manifest
+     各报一条 `…之后又改动了非证据文件：…`）⇒ 正确顺序是「**先提交内容，再单独提交证据**」。
+     两个过滤条件缺一不可：
      - **只算本 PR 改过的文件**（`base...head` 的变更集）。被检 head 可能是
        merge commit（`pull_request` 事件下 `actions/checkout` 默认检出 test-merge），
        base 侧顺带进来的改动不算本 PR 漂移。
@@ -510,7 +514,8 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
   钉哪个 ref」是**平台面**的取舍（branch protection / 组织策略），值得单独一个 change。
 - **包 ref 的解析在 GHES / fork 面上取不到**：`job.workflow_repository` 等 `job.*`
   在 **GitHub Enterprise Server 上不可用**，同 owner 的 **fork** 也能匹配上
-  `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回 `v1`——
+  `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回**兜底 ref**
+  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1`）——
   ⚠️ 诚实地说：**GHES 接入方会一直吃 `v1`**，区别只在日志里有一行 `::warning::`（不静默）。
   未验证面：自建 runner 上的 uv 版本差异、`pip install git+…` 是否同样落 PEP 610 的
   `vcs_info`（只实测了 uv 0.13.1 的 `uvx`）。

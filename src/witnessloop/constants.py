@@ -6,7 +6,8 @@ v1 硬编码 OpenSpec 形状的 change 契约（见 design §4「spec 依赖」�
 
 # witnessloop 自身的仓库 slug（init 写的 caller workflow 用它钉版本）。
 # 它同时是 gate.yml 解析包 ref 时的**接受判据**：`job.workflow_repository` 不等于它
-# ⇒ fail-closed 退回 `v1`（跨仓真 CI 探针实证 `job.*` 才指被复用的那个文件）。
+# ⇒ fail-closed 退回**兜底 ref**（= 本文件 `DEFAULT_GATE_REF` 的 ref 部分，与它同源；
+# 跨仓探针 + 官方 contexts 文档证实 `job.*` 才指被复用的那个文件）。
 # ⚠️ gate.yml 里那份字面量由 `tests/test_gate_workflow.py` 与这里钉同值。
 REPO_SLUG = "Xingkai98/witnessloop"
 
