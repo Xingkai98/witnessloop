@@ -31,12 +31,17 @@ jobs:
     steps:
       # ⚠️ **第一个 step**：后面的步骤（含失败的）之后也要能在日志里看见本次用的包 ref。
       #
-      # 解析规则（change gate-ref-pins-package / design §2 D1，用户 2026-10-16 裁定 (B′)）：
+      # 解析规则——**分支顺序即语义**（change gate-ref-pins-package / design §2 D1，
+      # 用户 2026-10-16 裁定 (B′)）：
       #   ① 显式 `with.witnessloop-ref` 非空 ⇒ 用它（显式意图优先，不得静默 no-op）；
-      #   ② `job.workflow_repository == REPO_SLUG` 且 `job.workflow_sha` 非空 ⇒ 用那个 sha
-      #      —— `job.*` 在 called workflow 里指**被复用的那个 workflow 文件**；
-      #   ③ 否则用 `job.workflow_ref` 的 `@` 之后那段，只收 `refs/heads/*` 与 `refs/tags/*`；
-      #   ④ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
+      #   ② `job.workflow_repository != REPO_SLUG`（含空值：GHES / 非本仓 reusable）
+      #      ⇒ **直接 fail-closed 退 `WL_FALLBACK_REF`** + `::warning::`，
+      #      **不**再试 `job.workflow_ref`（那会拿别人仓的 ref 去本仓装包）；
+      #   ③ 否则 `job.workflow_sha` 非空 ⇒ 用那个 sha（`job.*` 在 called workflow 里指
+      #      **被复用的那个 workflow 文件**）；
+      #   ④ 否则（repository 已匹配、sha 为空）用 `job.workflow_ref` 的 `@` 之后那段，
+      #      只收 `refs/heads/*` 与 `refs/tags/*`；
+      #   ⑤ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
       #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1`）并打 `::warning::`。
       #
       # ⚠️ **不能用 `github.workflow_ref` / `github.workflow_sha`**：跨仓真 CI 探针（run

@@ -36,15 +36,25 @@
 **决策细则**：`gate.yml` 把 `inputs.witnessloop-ref` 的 `default` 由字面量 `"v1"` 改成**空串**
 （= 「自动」，与「显式传值」可区分），并在**第一个 step** 里解析出**本次实际用的包 ref**：
 
-1. `inputs.witnessloop-ref` **非空** ⇒ 用它（**显式覆盖**，既有 `with:` 调用方不受影响）；
-2. 否则 `job.workflow_repository == constants.REPO_SLUG` **且** `job.workflow_sha` 非空
-   ⇒ 用 **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit）；
-3. 否则（repository 不匹配 / sha 为空）⇒ 尝试 `job.workflow_ref` 的 `@` 之后那段，
+> ⚠️ **判定顺序即实现**（对抗轮 R6 实测指出原稿把第 3 条的触发条件写错：写成
+> 「repository 不匹配 / sha 为空」，而实现里 **repository 不匹配根本走不到第 3 条**——
+> 它直接 fail-closed）。下面按 `gate.yml` 里那个 step 的**真实分支顺序**逐条写死，
+> 与 `tests/test_gate_workflow.py` 的解析用例**一一对应**：
+
+1. `inputs.witnessloop-ref` **非空** ⇒ 用它（**显式覆盖**，既有 `with:` 调用方不受影响）。
+   ——**先于** repository 判据：显式意图优先，`job.*` 取不到（GHES）也不该让显式传值失效。
+2. 否则 **`job.workflow_repository != constants.REPO_SLUG`**（含**空值**：GHES / 非本仓 reusable）
+   ⇒ **直接 fail-closed 到兜底 ref** + `::warning::`。**不**再试 `job.workflow_ref`
+   ——那会拿别人仓的 ref 去 witnessloop 装包。（同 owner 的 fork 能匹配上这条判据，
+   是**必要不充分**的已知面，见 §4 R6。）
+3. 否则 **`job.workflow_sha` 非空** ⇒ 用 **`job.workflow_sha`**（= 被复用的那个 workflow 文件
+   自己的 commit）。
+4. 否则（repository 已匹配、但 sha 为空）⇒ 尝试 `job.workflow_ref` 的 `@` 之后那段，
    仅接受 `refs/heads/<分支名>` 与 `refs/tags/<tag名>` 两种形态，并**剥掉前缀**只留分支名/tag 名
    （R2 的 D2 要求写死这一点：实测 `uvx` 对 `@refs/heads/main` 与 `@main` **都能装**，
    所以这是**取舍**不是必须——剥掉后日志与人眼更直白，代价是丢掉「同名 branch 与 tag」的消歧
-   （该场景**未实测**）；两种形态任选其一都行，此处选**剥**）；
-4. 以上都拿不到 ⇒ **fail-closed 到兜底 ref** 并打 `::warning::`（不静默）。
+   （该场景**未实测**）；两种形态任选其一都行，此处选**剥**）。
+5. 以上都拿不到 ⇒ **fail-closed 到兜底 ref** 并打 `::warning::`（不静默）。
    兜底 ref SHALL 与 `constants.DEFAULT_GATE_REF` 的 ref 部分**同源**（今天 = `v1`，随出厂默认一起挪）
    —— 见下面 Q1 的裁定。
 
