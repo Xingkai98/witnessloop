@@ -71,11 +71,24 @@
 > **Q3 的收益在发布那一刻就落空**，而且落空得更隐蔽：接入方以为自己钉了 v1.7.0）。
 > ⇒ **被 tag 的那个提交，必须已经含常量改动。**
 
-- [ ] 6.1 **先**改默认值：`src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF` 从 `…gate.yml@v1`
-      改成 `…gate.yml@v1.7.0`，并同步 `tests/test_gate_workflow.py` 里那条 `== …@v1` 的断言。
+- [ ] 6.1 **先**改默认值：`DEFAULT_GATE_REF` 从 `…gate.yml@v1` 改成 `…gate.yml@v1.7.0`。
+      它是一个**字面量族**，四处必须一起动（对抗轮 R3 的 M1：只改第一处会让 7 条测试红，
+      而红的理由与被测行为无关）：
+      1. `src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF`；
+      2. `.github/workflows/gate.yml` 的 `WL_FALLBACK_REF` 字面量（fail-closed 的落点
+         **与 `DEFAULT_GATE_REF` 的 ref 部分同源**——由
+         `test_resolve_constants_match_the_single_source` 钉住）；
+      3. `tests/test_gate_workflow.py::test_caller_ref_matches_this_repo` 的 `== …@v1` 断言；
+      4. 同文件里从常量派生 fail-closed 落点的那些断言（现已改成 `_fallback_ref()` 从 gate.yml 读，
+         **不再硬编**，所以第 4 处已消解——这正是 R3 的 M1 要求的那种解耦）。
+      ⚠️ 顺带核一遍 `docs/` 与 `README.md` 里还有没有把 `@v1` 当**当前值**写的句子
+      （历史引文、错误信息复现那类**保留**）。
       ⚠️ 它是 `src/**` 改动 ⇒ 走本仓自己的门禁（change 证据）。**做法**：本 change **先不归档**
       （见 5.2），这一步挂在**本 change 目录**下、按既有流程重建全部 manifest（revision 绑定允许
       「本 PR 自己的变更 + 证据文件」落在 manifest 的 `head_sha` 之后）。
+      ⚠️ 重建 manifest 是**修改**不变集里的 `**/reviews/*.manifest.json` ⇒ `check` 要一条
+      `protected_path_write` 解释事件**（`policy.py` 的 `INVARIANT_PROTECTED_PATHS` 含该 glob；
+      「不变集 + `A` 免事件」只对**新增**成立）——这一步的事件要一并写进 `workflow-events.jsonl`。
 - [ ] 6.2 **再**建 tag **`v1.7.0`**，指向**含 6.1 改动**的最新 `main` 提交。
 - [ ] 6.3 同步安装文档的字面量：`README.md:20` 的 `uv tool install …@v1` ⇒ `…@v1.7.0`
       （它是 `docs` 面，不需要 change 证据，但**必须与 6.2 同一个提交**，否则 tag 里的安装指引是旧的）。
@@ -86,8 +99,18 @@
       ② `uses:` 写成**分支形态**（如 `@main`）的仓——**在本 PR 合并那一刻**就零动作切换了包来源。
       回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`。
 - [ ] 6.6 ⚠️ **不动 `v1` tag**（它是别人依赖的发布物）。
-- [ ] 6.7 **验收命令**（可复算，R2 给的）：
-      `uvx --from "git+https://github.com/Xingkai98/witnessloop@v1.7.0" witnessloop init --root <scratch> --dry-run`
-      ⇒ 输出里的 caller 行 SHALL 逐字是
+- [ ] 6.7 **验收命令**（可复算；对抗轮 R3 的 M2：`--dry-run` **打不出 caller 的内容**
+      ——它只列文件名，所以要看内容必须真落盘到一个 scratch 目录）：
+      ```bash
+      rm -rf /tmp/wl-v17 && mkdir -p /tmp/wl-v17
+      uvx --from "git+https://github.com/Xingkai98/witnessloop@v1.7.0" \
+        witnessloop init --root /tmp/wl-v17
+      grep -n 'uses:' /tmp/wl-v17/.github/workflows/witnessloop.yml
+      ```
+      ⇒ 那一行 SHALL 逐字是
       `    uses: Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0`。
       在此之前，README 里那条 `@v1.7.0` 的 recipe 都会指向一个**还不存在**的 ref。
+      附带的两条自查：`uvx …@v1.7.0 witnessloop check --root /tmp/wl-v17 --base main --head HEAD`
+      的输出里 SHALL 有 `本包来源（自报，尽力而为）：requested_revision=v1.7.0`（Q4 的能力在
+      真 CI 之外的第一个可见处）；`git show v1.7.0:src/witnessloop/constants.py | grep DEFAULT_GATE_REF`
+      SHALL 含 `@v1.7.0`（R2 的 L1：**被 tag 的提交自己必须已经是新值**）。

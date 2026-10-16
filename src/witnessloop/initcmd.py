@@ -293,8 +293,20 @@ def run(args: argparse.Namespace) -> int:
         note = rewritten if note is None else f"{note}；{rewritten}"
         # caller 那条轴已按**显式意图**处理过 ⇒ 不再进冲突判定：`--dry-run` 下磁盘仍是旧内容，
         # 不滤掉它就会对一个「正要被自己改掉」的文件报红，用户无从判断。
+        # ⚠️ 这句话必须随 dry-run 分叉：`--dry-run` 下**什么都没落盘**，说「已落盘」就是撒谎
+        # （对抗轮 R3 的 M4）。
+        handled = (
+            f"{C.GATE_WORKFLOW_PATH} 将按显式 `--gate-ref` 处理（**dry-run：未落盘**）"
+            if args.dry_run
+            else f"{C.GATE_WORKFLOW_PATH} 已按显式 `--gate-ref` 处理（**已落盘、不回滚**）"
+        )
         return _already_initialized(
-            root, desired, manifest_path, note=note, ignore=(C.GATE_WORKFLOW_PATH,)
+            root,
+            desired,
+            manifest_path,
+            note=note,
+            ignore=(C.GATE_WORKFLOW_PATH,),
+            handled=handled,
         )
 
     # 只增不改：目标文件已存在且内容不同 → 冲突，报 diff 并拒绝。
@@ -354,6 +366,7 @@ def _already_initialized(
     manifest_path: Path,
     note: str | None = None,
     ignore: tuple[str, ...] = (),
+    handled: str | None = None,
 ) -> int:
     """幂等：已接入且台账未漂移 → 无改动退出 0；漂移 → 报 diff 退出 1。
 
@@ -364,6 +377,10 @@ def _already_initialized(
     ``ignore``：**调用方已按显式意图处理过**的那几条轴（目前只有 Q2 (a) 的 caller）——
     从「本次期望 vs 已落地」这条判定里排除掉。**不**影响「磁盘 vs 台账」那条（漂移判定照旧）：
     显式 `--gate-ref` 是一条升级入口，不是给手改文件兜底的后门。
+
+    ``handled``：报冲突前先说的那句话（只有 ``ignore`` 非空时用得上）。**必须由调用方按
+    「到底落盘了没有」写成不同的话**——`--dry-run` 下什么都没写，说「已落盘」就是撒谎
+    （对抗轮 R3 的 M4）。``None`` = 不说。
     """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -426,14 +443,10 @@ def _already_initialized(
         return C.EXIT_FAIL
     conflicts = [item for item in conflicts if item[0] not in ignore]
     if conflicts:
-        if ignore:
-            # 组合语义写死（R2 的 L4）：`--gate-ref` 那一半**已经落盘且不回滚**，
+        if handled:
+            # 组合语义写死（R2 的 L4）：`--gate-ref` 那一半已经（或将）按显式意图处理，
             # 下面报的是**别的**轴。不写这句的话，用户会以为「什么都没发生」并跑去删 policy。
-            print(
-                f"init：注意——{'、'.join(ignore)} 已按显式 `--gate-ref` 处理（**已落盘、不回滚**）；"
-                "下面报的是**别的**文件：",
-                file=sys.stderr,
-            )
+            print(f"init：注意——{handled}；下面报的是**别的**文件：", file=sys.stderr)
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"
             "只增不改，拒绝覆盖。要更换 policy 请先 `uninit`）：",

@@ -1,6 +1,6 @@
 """gate.yml（reusable workflow）与本仓常量的一致性。
 
-`init` 写的 caller 引用 ``<REPO_SLUG>/.github/workflows/gate.yml@v1``——
+`init` 写的 caller 引用 ``<REPO_SLUG>/.github/workflows/gate.yml@<ref>``——
 本文件保证那个引用指向一个真实存在、可被 workflow_call 的薄文件。
 
 后半段是 change adopter-test-gate 的 C 组：门禁里新增的**测试执行点**那一步。
@@ -274,6 +274,15 @@ _RESOLVE_ENV_KEYS = {
 }
 
 
+def _fallback_ref() -> str:
+    """fail-closed 的落点——**从 gate.yml 自己读**，不在测试里硬编 `"v1"`。
+
+    ⚠️ 硬编的代价实测过（对抗轮 R3 的 M1）：`DEFAULT_GATE_REF` 换 tag 时
+    （本 change 的 post-merge 步骤）这些断言会一起红，而红的理由与被测行为无关。
+    """
+    return str(_resolve_step()["env"]["WL_FALLBACK_REF"])
+
+
 def _resolve_step() -> dict:
     matches = [s for s in _steps() if s.get("id") == "wl-ref"]
     assert len(matches) == 1, (
@@ -402,7 +411,7 @@ def test_resolve_fails_closed_when_the_job_context_is_unavailable(tmp_path: Path
     """
     ref, out = _run_resolve(tmp_path)
 
-    assert ref == "v1"
+    assert ref == _fallback_ref()
     assert "::warning::" in out
 
 
@@ -436,7 +445,7 @@ def test_resolve_fails_closed_on_malformed_workflow_refs(tmp_path: Path):
             WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
             WL_WORKFLOW_REF=malformed,
         )
-        assert ref == "v1", malformed
+        assert ref == _fallback_ref(), malformed
         assert "::warning::" in out, malformed
 
 

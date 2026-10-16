@@ -231,3 +231,36 @@ def test_explicit_gate_ref_plus_conflicting_policy_writes_then_reports(repo: Pat
     assert _ledger(repo)["gate_ref"] == NEW_REF
     # 报错里点明「已落盘、不回滚」——这是 L4 的实质
     assert "不回滚" in err
+
+
+def test_dry_run_must_not_claim_it_wrote_anything(repo: Path, cli, tmp_path):
+    """对抗轮 R3 的 M4：`--dry-run` 下**什么都没落盘** ⇒ 那句话不得说「已落盘」。
+
+    这条与上一条是一对：上一条钉「真跑时要点明已落盘、不回滚」，这一条钉
+    「dry-run 时**不许**这么说」——两句都由同一个参数喂，很容易被写成一个常量而撒谎。
+    """
+    import json
+
+    _init(repo, cli)
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps({"changes_root": "custom/root"}), encoding="utf-8")
+
+    code, _, err = cli(
+        "init",
+        "--root",
+        str(repo),
+        "--dry-run",
+        "--gate-ref",
+        NEW_REF,
+        "--policy",
+        str(seed),
+    )
+
+    assert code == C.EXIT_FAIL  # policy 那条轴照旧参与退出码
+    assert "冲突" in err
+    assert "已落盘" not in err, "dry-run 里什么都没写，不得声称已落盘"
+    assert "未落盘" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_text(encoding="utf-8") != (
+        initcmd.caller_workflow(NEW_REF)
+    )
+    assert _ledger(repo)["gate_ref"] == OLD_REF
