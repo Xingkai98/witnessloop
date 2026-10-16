@@ -62,7 +62,7 @@
 
 - [x] 4.1 `uv run pytest -q` 全绿。
 - [x] 4.2 端到端复验：改 `uses:` 一处之后，CI 日志里的 `witnessloop@<ref>` 跟着变（由 3.0 的跨仓探针实证）。
-- [ ] 4.3 本仓自举 `check` 判绿。
+- [x] 4.3 本仓自举 `check` 判绿（`check --base origin/main --head HEAD` ⇒ 通过 ✓）。
 
 ## 5. 收尾
 

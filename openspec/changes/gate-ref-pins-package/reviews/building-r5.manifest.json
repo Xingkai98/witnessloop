@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "gate-ref-pins-package",
+  "stage": "building-r5",
+  "reviewer_run_id": "building-r5-reviewer-gate-ref-pins-package-f5a581477ef7",
+  "author_run_id": "building-r5-author-gate-ref-pins-package-f5a581477ef7",
+  "base_sha": "eaca56898c2caf456f46eec00f76a35fc446d9aa",
+  "head_sha": "f5a581477ef71c80e47dfcdb667b691ee1f48b05",
+  "tasks_hash": "aceb8c01efa93751fa29c0fa2c84f242576cfeef0a326632b6e93a1af1585696",
+  "spec_hash": "0bba0a6dd25da83a5004e5fbc3fbda0b11d4047795f25e0203a7672f22746c69",
+  "diff_hash": "96d2d1b0c6d626954bd9e50dbee2ca7824249ee7ea3377cf9362f3f3881ee0fa",
+  "report_hash": "a0a5dea9b15d14109978badb91d1c2433b8388c4462a98b13b86708a77bae861",
+  "report_path": "reviews/building-review-r5.md"
+}
