@@ -55,7 +55,7 @@
    所以这是**取舍**不是必须——剥掉后日志与人眼更直白，代价是丢掉「同名 branch 与 tag」的消歧
    （该场景**未实测**）；两种形态任选其一都行，此处选**剥**）。
 5. 以上都拿不到 ⇒ **fail-closed 到兜底 ref** 并打 `::warning::`（不静默）。
-   兜底 ref SHALL 与 `constants.DEFAULT_GATE_REF` 的 ref 部分**同源**（今天 = `v1`，随出厂默认一起挪）
+   兜底 ref SHALL 与 `constants.DEFAULT_GATE_REF` 的 ref 部分**同源**（今天 = `v1.7.0`，随出厂默认一起挪）
    —— 见下面 Q1 的裁定。
 
 ```yaml
@@ -227,7 +227,7 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 | R3 | ~~升级路径把接入方卡死~~ | **已降级**：需一次显式动作，且三条恢复路径实测可用（D2/K3） |
 | R4 | 把 `__version__`/tag 绑起来的需求被夹带进来 | §3 非目标；D3 明写本 change 走 VCS 元数据而不是版本号 |
 | R5 | 本仓自撞（policy 轴本来就红 + 台账 `M` 的解释事件） | D4：迁移拆成 post-merge 动作并写全三件事 |
-| R6 | **`job.*` 在 GHES 上不可用**（R1 B6：文档明写 `not available on GitHub Enterprise Server`）；同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据 | 两条都**如实登记、不宣称覆盖**：GHES / fork 场景落到 fail-closed ⇒ 吃**兜底 ref**（= `DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`，与接入方的 `uses:` ref 无关），但**日志里有 `::warning::`**（不静默）；判定不充分的那一半留给后续 change |
+| R6 | **`job.*` 在 GHES 上不可用**（R1 B6：文档明写 `not available on GitHub Enterprise Server`）；同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据 | 两条都**如实登记、不宣称覆盖**：GHES / fork 场景落到 fail-closed ⇒ 吃**兜底 ref**（= `DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1.7.0`，与接入方的 `uses:` ref 无关），但**日志里有 `::warning::`**（不静默）；判定不充分的那一半留给后续 change |
 | R7 | `uninit` 的 diff 质量下降 | 新生成器对旧形态 caller 会打出「看起来要变成新形态」的 diff；**判定仍只看台账 hash**，回滚正确性不受影响（R1 E5 复核成立） |
 | R8 | `refs/pull/N/merge` 的定性措辞 | 只说「**不是稳定的可安装 ref**」；**不**声称它必然安装失败（R1 E3：该 ref 通常能被 git fetch 到，未实测 uv 行为） |
 
@@ -503,7 +503,7 @@ K/L/M/N/P/T/U/V/W/X/O/Y 各项**全部真落库**，未发现第二处「声称�
   可以由「兜底永远等于**那份 gate.yml 写就时**的默认值」自然地限定住。
   **落点**：`gate.yml` 的 `WL_FALLBACK_REF` 与 `DEFAULT_GATE_REF` 的 ref 部分**同源**（由
   `test_resolve_constants_match_the_single_source` 钉住）；全局把「退 `v1`」的措辞改成「退**兜底 ref**
-  （= `DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`）」——`spec.md`、`design.md`、`docs/gate.md §7.1`、
+  （= `DEFAULT_GATE_REF` 的 ref 部分；**该 sweep 已执行，今天 = `v1.7.0`**）」——`spec.md`、`design.md`、`docs/gate.md §7.1`、
   `gate.yml` 注释、`tasks.md` 已逐处改完。**回退面**：改一个 env 字面量 + 一条断言 + 三处措辞。
 - **Q2 多轮对抗报告怎么绑定？→ 裁定：报告留在 `reviews/`（用户指定），多出的轮次各用不同的 stage 名。**
   理由：① 用户的产物路径就是 `reviews/grill-adversarial*.md`；② R3 实测「额外 stage 名 ⇒ 0 条孤儿、

@@ -551,9 +551,9 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 - **包 ref 的解析在 GHES / fork 面上取不到**：`job.workflow_repository` 等 `job.*`
   在 **GitHub Enterprise Server 上不可用**，同 owner 的 **fork** 也能匹配上
   `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回**兜底 ref**
-  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1`）——
+  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1.7.0`）——
   ⚠️ 诚实地说：**GHES 接入方的包版本会一直停在这份 gate.yml 写就时的出厂默认**
-  （今天 = `v1`；`DEFAULT_GATE_REF` 挪了它就跟着挪——它**不随接入方的 `uses:` ref 走**），
+  （今天 = `v1.7.0`；`DEFAULT_GATE_REF` 挪了它就跟着挪——它**不随接入方的 `uses:` ref 走**），
   区别只在日志里有一行 `::warning::`（不静默）。
   未验证面：自建 runner 上的 uv 版本差异、`pip install git+…` 是否同样落 PEP 610 的
   `vcs_info`（只实测了 uv 0.13.1 的 `uvx`）。

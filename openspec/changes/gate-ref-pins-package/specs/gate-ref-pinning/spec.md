@@ -20,7 +20,7 @@
   与 `refs/tags/<tag名>` 两种形态。
 - ⚠️ **能力边界（如实登记、不宣称覆盖）**：`job.*` 在 **GitHub Enterprise Server 上不可用**；
   同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到
-  fail-closed 退**本仓当前默认 ref**（`constants.DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`），
+  fail-closed 退**本仓当前默认 ref**（`constants.DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1.7.0`），
   区别是**日志里有 `::warning::`**（不静默）。见 `design.md §4 R6`。
 
 ### Scenario: 改一处、两处跟着变
@@ -43,7 +43,7 @@
   **不**声称它必然安装失败：该 ref 通常能被 git fetch 到，uv 侧行为**未实测**）
 - **When** 运行门禁
 - **Then** SHALL **fail-closed 到既有默认**（= `constants.DEFAULT_GATE_REF` 的 **ref 部分**；
-  今天 = `v1`，随出厂默认一起挪，**不写死某个 tag**）**并打 `::warning::` 说明**，SHALL NOT 静默改变行为
+  今天 = `v1.7.0`，随出厂默认一起挪，**不写死某个 tag**）**并打 `::warning::` 说明**，SHALL NOT 静默改变行为
 
 ## Requirement: 实际使用的 ref SHALL 在 CI 日志里可见
 
