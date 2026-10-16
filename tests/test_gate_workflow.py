@@ -407,7 +407,9 @@ def test_resolve_fails_closed_on_a_foreign_repository(tmp_path: Path):
 def test_resolve_fails_closed_when_the_job_context_is_unavailable(tmp_path: Path):
     """GHES（`job.*` 不可用 ⇒ 全空）⇒ 退兜底 ref，但**不静默**（有 warning）。
 
-    design §4 R6 如实登记：GHES 接入方会一直吃 `v1`，区别只在日志里有 warning。
+    design §4 R6 如实登记：GHES 接入方的包 ref 会停在这份 gate.yml 的**兜底 ref**
+    （= `DEFAULT_GATE_REF` 的 ref 部分，与接入方自己的 `uses:` ref 无关），
+    区别只在日志里有 warning。
     """
     ref, out = _run_resolve(tmp_path)
 

@@ -96,9 +96,12 @@
          `tests/test_init_gate_ref.py` 的 `NEW_REF` 必须是**不可能等于出厂默认**的 ref
          （现取 `…@v9.9.9`），且 `test_new_ref_does_not_collide_with_the_factory_default`
          把这条前提钉住了。R3 的原始发现正是「`NEW_REF` 撞上新默认 ⇒ 5 条用例的前提静默塌掉」。
-      ⚠️ 顺带核一遍 `docs/` 与 `README.md` 里还有没有把 `@v1` 当**当前值**写的句子
-      （历史引文、错误信息复现那类**保留**；机制描述一律写成「`DEFAULT_GATE_REF` 的 ref 部分」，
-      见 Q1 的裁定）。
+      ⚠️ 顺带**全仓活面**核一遍还有没有把兜底落点/当前默认写成固定 `v1` 的句子——
+      **自查面必须覆盖 `src/`、`tests/`（含 docstring）、`docs/`、`README.md` 与 `.github/`**，
+      不能只查文档（对抗轮 R4 的 N3：上一轮的自查只点名 `docs/` 与 `README.md`，结果漏了
+      `design.md` 的 §4 R6 表、`tests/` 的 docstring、`docs/gate.md §7.1` 三处）。
+      历史引文、错误信息复现那类**保留**；机制描述一律写成「兜底 ref（= `DEFAULT_GATE_REF` 的 ref 部分）」。
+      建议直接用：`grep -rn "退 \`v1\`\|退回 \`v1\`\|退 v1\|吃 \`v1\`" src/ tests/ docs/ README.md .github/`。
       ⚠️ 它是 `src/**` 改动 ⇒ 走本仓自己的门禁（change 证据）。**做法**：本 change **先不归档**
       （见 5.2），这一步挂在**本 change 目录**下、按既有流程重建全部 manifest。
       ⚠️ **重建 manifest 必须绑在「最后一条非证据提交」上**（R3 的 M3，见下）：

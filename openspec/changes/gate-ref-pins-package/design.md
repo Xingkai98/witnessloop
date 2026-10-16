@@ -215,7 +215,7 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 | R3 | ~~升级路径把接入方卡死~~ | **已降级**：需一次显式动作，且三条恢复路径实测可用（D2/K3） |
 | R4 | 把 `__version__`/tag 绑起来的需求被夹带进来 | §3 非目标；D3 明写本 change 走 VCS 元数据而不是版本号 |
 | R5 | 本仓自撞（policy 轴本来就红 + 台账 `M` 的解释事件） | D4：迁移拆成 post-merge 动作并写全三件事 |
-| R6 | **`job.*` 在 GHES 上不可用**（R1 B6：文档明写 `not available on GitHub Enterprise Server`）；同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据 | 两条都**如实登记、不宣称覆盖**：GHES / fork 场景落到 fail-closed ⇒ 吃 `v1`，但**日志里有 `::warning::`**（不静默）；判定不充分的那一半留给后续 change |
+| R6 | **`job.*` 在 GHES 上不可用**（R1 B6：文档明写 `not available on GitHub Enterprise Server`）；同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据 | 两条都**如实登记、不宣称覆盖**：GHES / fork 场景落到 fail-closed ⇒ 吃**兜底 ref**（= `DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1`，与接入方的 `uses:` ref 无关），但**日志里有 `::warning::`**（不静默）；判定不充分的那一半留给后续 change |
 | R7 | `uninit` 的 diff 质量下降 | 新生成器对旧形态 caller 会打出「看起来要变成新形态」的 diff；**判定仍只看台账 hash**，回滚正确性不受影响（R1 E5 复核成立） |
 | R8 | `refs/pull/N/merge` 的定性措辞 | 只说「**不是稳定的可安装 ref**」；**不**声称它必然安装失败（R1 E3：该 ref 通常能被 git fetch 到，未实测 uv 行为） |
 
