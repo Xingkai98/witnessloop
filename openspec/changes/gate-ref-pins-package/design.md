@@ -306,6 +306,24 @@ D4 的两条实跑事实逐条成立。R2 还**独立复算确认了 K5 是 R1 �
 E3（`guard` 与 `check` 共用判定、但**包 ref 自报不共用**）在 `docs/gate.md §8` 补一句；
 E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**已登记**（不算缺口）。
 
+### R4（报告见 `reviews/grill-adversarial-r4.md`）
+
+独立零记忆对抗者判定**不收敛**：**K1–K8 / L1–L6 / M1–M4 逐条复算全部落进正文/实现**（判据②满足），
+本轮**新证伪 2 条非措辞 + 1 条措辞残留**（判据①不满足），编号 **N1–N3**。**已逐条落库**：
+
+| # | R4 发现 | 落点 |
+|---|---|---|
+| N1 | `spec.md` 的「台账没有 caller 条目」Scenario 所依赖的 `_set_ledger_gate_ref` **补条目分支零覆盖**（R4 用插桩在全量 673 条上实测） | `tests/test_init_gate_ref.py::test_ledger_without_a_caller_entry_is_repaired`（补条目 + `sha256` + 插在 `self` **之前** + 随后幂等 + `uninit` 真能回滚） |
+| N2 | `init --gate-ref X --test-command C` 的收尾话自相矛盾（前半「其余文件无改动」后半「caller 与台账已改成 X」） | `initcmd` 的 note 不再自称「其余文件无改动」——两条轴都可能动过，各自只陈述自己那一件事 |
+| N3 | R3-Q1 自称「退 `v1` 措辞已逐处改完」**是假的**：仍漏 `docs/gate.md`（§7.1）、`design.md`（§4 R6 表）、`tests/test_gate_workflow.py`（docstring）三处；且 `tasks.md §6.1` 的自查面只点名 `docs/` 与 `README.md`，**照它执行查不出** | 三处已改；`tasks.md §6.1` 的自查面扩到 **`src/` + `tests/`（含 docstring）+ `docs/` + `README.md` + `.github/`** 并附可直接跑的 grep。全仓活面复查现为**零命中** |
+
+**R4 的事故（已独立核查、净残留为零）**：R4 在 `/tmp/adv4/repoX` 里 `git commit` 时
+**打进了真仓**（`da3db40`，四份 manifest、`reviewer_run_id` 为编造值），随后自行
+`git reset --mixed af57236`。核查：该提交**不可达**、本 change 目录下 `*.manifest.json` **零命中**、
+`git status` 只有 R4 的报告未跟踪、后续提交的 stat 不含 manifest、**从未 push**。
+⚠️ 根因值得记：**worktree 的 `.git` 是指针文件，`cp -a` 会把它带过去**——在副本里 commit 等于在真仓 commit。
+这条**不是**本 change 的缺陷，不产生必须修改项；唯一痕迹是本地 reflog 里那条悬空记录。
+
 ### R3 的两条 Open Question 与本文的裁定（**作者裁定，非用户拍板**）
 
 > 用户已明确「不要向用户提问」⇒ 这两条由作者按对抗轮自己的倾向与机制事实裁定，
