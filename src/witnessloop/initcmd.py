@@ -190,11 +190,8 @@ def sync_caller_gate_ref(
     if not path.is_file():
         return None
 
-    if manifest.get("gate_ref") != gate_ref:
-        changing_ref = True
-    else:
-        # 补齐态（B2-5）：ref 本来就对，这一趟只为补台账条目——别把文案说成「改成 <同一个 ref>」。
-        changing_ref = False
+    # 补齐态 = ref 本来就对、这一趟只为补台账条目（B2-5）：两种文案都别把它说成「改成 <同一个 ref>」。
+    changing_ref = manifest.get("gate_ref") != gate_ref
 
     if dry_run:
         if changing_ref:
@@ -205,9 +202,13 @@ def sync_caller_gate_ref(
 
     content = caller_workflow(gate_ref)
     path.write_text(content, encoding="utf-8")
+    # ⚠️ `changing_ref` **必须在改台账之前**算好（building 审阅 B3-1）：`_set_ledger_gate_ref`
+    # 会把 `manifest["gate_ref"]` 就地改成新值，之后再比就**恒等** ⇒ 真换了 ref 也会被报成
+    # 「已补齐…（ref 本来就是 <新 ref>，未改）」——把用户看到的结果说反。
+    changing_ref = manifest.get("gate_ref") != gate_ref
     _set_ledger_gate_ref(manifest, gate_ref, sha256_bytes(content.encode("utf-8")))
     manifest_path.write_text(policy.dumps(manifest), encoding="utf-8")
-    if manifest.get("gate_ref") != gate_ref:
+    if changing_ref:
         print(f"init：已重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
         return f"{C.GATE_WORKFLOW_PATH} 与台账已改成 {gate_ref}"
     # ref 本来就对（B1-5）：这一趟只为把缺掉的台账条目补回来——别谎称改了 ref。
@@ -262,8 +263,13 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
         if manifest.get("gate_ref") == gate_ref:
             try:
                 current = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                return None  # 读不出：交给下面那两条判定去报（别在这里猜）
+            except (OSError, UnicodeDecodeError) as exc:
+                # B3-2：读不出**不能**放行——放行等于把读不出来的内容静默覆盖掉。
+                why = "无法解码" if isinstance(exc, UnicodeDecodeError) else "无法读取"
+                return (
+                    f"无法按 --gate-ref 补台账：{C.GATE_WORKFLOW_PATH} {why}（{exc}）——"
+                    "无法判断盘上内容是不是本次期望的那一份，故不覆盖。请人工核对后重跑。"
+                )
             if current != caller_workflow(gate_ref):
                 return (
                     f"无法按 --gate-ref 补台账：{C.GATE_WORKFLOW_PATH} 被手改过，"
@@ -281,9 +287,9 @@ def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> s
         # 有条目（且不是自称 `self` 的那条）：文件缺失时漂移分支会**响亮地**报，
         # 不必在这里拦。
         # ⚠️ 口径与另两处一致：`_set_ledger_gate_ref` 的匹配、漂移循环的 `continue`
-        # 都跳过自称 `self` 的条目。本函数里那个 `not entry.get("self")` 是**纵深防御**
-        # （上面的「被标 self ⇒ 拒绝」分支已先拦下它们）——但**不是**「不可达」：
-        # B2-1 的回归正是「少了口径一致就会插重复条目」，所以它按**同口径**写，而不是省掉。
+        # 都跳过自称 `self` 的条目。本函数里那个 `not entry.get("self")` 在当前控制流下**不可达**
+        # （上面的「被标 self ⇒ 拒绝」分支已先拦下它们）；保留它是**纵深防御**——B2-1 那次的回归
+        # 正是「口径不一致 ⇒ 插出重复条目」，所以按同口径写，而不是省掉。
         return None
     return (
         f"无法按 --gate-ref 改 caller：{C.GATE_WORKFLOW_PATH} 既不在盘上、"
@@ -305,8 +311,9 @@ def _set_ledger_gate_ref(manifest: dict, gate_ref: str, digest: str) -> None:
         if (
             isinstance(entry, dict)
             and entry.get("path") == C.GATE_WORKFLOW_PATH
-            # `not entry.get("self")`：与 `caller_retarget_refusal` 同口径的**纵深防御**，
-            # 当前不可达（被标 self 的 caller 条目在入口就被拒绝了，见那里）——building 审阅 B1-3。
+            # `not entry.get("self")`：与 `caller_retarget_refusal` **同口径**。在当前控制流下
+            # 恒真（被标 self 的 caller 条目在入口就被拒绝了）⇒ **本身不可达**；留着是因为
+            # 「被绕过后插重复条目」正是 B2-1 那次的回归形态（building 审阅 B3-4 要求按事实写）。
             and not entry.get("self")
         ):
             entry["sha256"] = digest

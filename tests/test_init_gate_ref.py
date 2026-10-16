@@ -70,6 +70,10 @@ def test_explicit_different_ref_rewrites_caller_and_syncs_the_ledger(repo: Path,
     # 不能谎称「幂等，无改动」——它确实改了东西（工具不撒谎）。
     assert "幂等" not in out
     assert C.GATE_WORKFLOW_PATH in out
+    # ⚠️ 也不能把**结果说反**（building 审阅 B3-1：判据曾经在写台账之后求值 ⇒ 恒假 ⇒
+    # 真换了 ref 却报「已补齐…（ref 本来就是 <新 ref>，未改）」）。这条在此之前**零覆盖**。
+    assert "已重写" in out and "改成" in out
+    assert "补齐" not in out and "ref 未变" not in out
 
 
 def test_rewrite_and_a_tests_write_do_not_contradict_each_other(repo: Path, cli):
@@ -627,3 +631,35 @@ def test_the_repair_branch_says_it_only_filled_the_ledger(repo: Path, cli):
     code, out, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
     assert code == C.EXIT_PASS, err
     assert "补齐" in out and "ref 未变" in out
+
+
+def test_a_dry_run_ref_change_says_it_will_rewrite_not_backfill(repo: Path, cli):
+    """B3-3：dry-run 侧的「将重写」文案同样零覆盖（与上一条是同一对）。"""
+    _init(repo, cli)
+
+    code, out, err = cli("init", "--root", str(repo), "--dry-run", "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_PASS, err
+    assert "将重写" in out and NEW_REF in out
+    assert "补齐" not in out
+
+
+def test_an_unreadable_caller_is_not_silently_overwritten(repo: Path, cli):
+    """B3-2：盘上 caller 读不出（非 UTF-8 字节）时**不能**放行——放行 = 静默覆盖。"""
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).write_bytes(b"\xff\xfe not utf-8 \xff")
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", OLD_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "无法解码" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == b"\xff\xfe not utf-8 \xff"
