@@ -72,6 +72,22 @@ def test_explicit_different_ref_rewrites_caller_and_syncs_the_ledger(repo: Path,
     assert C.GATE_WORKFLOW_PATH in out
 
 
+def test_rewrite_and_a_tests_write_do_not_contradict_each_other(repo: Path, cli):
+    """两条轴（测试执行点 / caller）同时动过时，收尾话**不得**自称「其余文件无改动」。
+
+    对抗轮 R4 的 N2 报的就是这句自相矛盾；这里把修好的语义钉住——只陈述自己那一件事。
+    """
+    _init(repo, cli, "--test-command", "true")
+
+    code, out, err = cli(
+        "init", "--root", str(repo), "--test-command", "false", "--gate-ref", NEW_REF
+    )
+
+    assert code == C.EXIT_PASS, err
+    assert "其余文件无改动" not in out
+    assert "已写入测试执行点" in out and C.GATE_WORKFLOW_PATH in out
+
+
 def test_rewrite_leaves_the_policy_untouched(repo: Path, cli):
     _init(repo, cli)
     before = (repo / C.POLICY_PATH).read_bytes()
@@ -238,8 +254,11 @@ def test_explicit_gate_ref_plus_conflicting_policy_writes_then_reports(repo: Pat
         repo / C.GATE_WORKFLOW_PATH
     ).read_text(encoding="utf-8")
     assert _ledger(repo)["gate_ref"] == NEW_REF
-    # 报错里点明「已落盘、不回滚」——这是 L4 的实质
-    assert "不回滚" in err
+    # 报错里点明「已落盘、不回滚」——这是 L4 的实质。
+    # ⚠️ **两面都要钉**（对抗轮 R5 实测：只钉「不回滚」时，把 dry-run 与非 dry-run 两句
+    # 改成同一个常量，674 条全绿，而真跑时会一边改写 caller+台账、一边说「未落盘」）：
+    assert "已落盘" in err
+    assert "未落盘" not in err
 
 
 def test_dry_run_must_not_claim_it_wrote_anything(repo: Path, cli, tmp_path):
