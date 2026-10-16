@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "archive-arrival-d-side",
+  "stage": "grill-adversarial-a1",
+  "reviewer_run_id": "grill-adversarial-a1-reviewer-archive-arrival-d-side-0cc2c8791066",
+  "author_run_id": "grill-adversarial-a1-author-archive-arrival-d-side-0cc2c8791066",
+  "base_sha": "f82595e5321de46a8051d6c75b5aa1acaa3406cd",
+  "head_sha": "0cc2c87910661d34f9d5314afe04f21aed406a84",
+  "tasks_hash": "efe0c1930c7ab64103c24b43fff7f22a4fd89d5e9ea381a43d0c478684314cb0",
+  "spec_hash": "855a7365a03638ee4a4617508b9361015c4c88652a8d10048529c731b1ae0370",
+  "diff_hash": "004e28dd979b01928bc0900745467958f070e4f09ecd75a6d7181319831ac842",
+  "report_hash": "4710ad660e9d1e7fc57ac076d879c42126fb69b3203e44a0428b3aaeeee0dce0",
+  "report_path": "reviews/grill-adversarial-a1.md"
+}
