@@ -69,6 +69,9 @@ def installed_vcs_ref() -> tuple[str | None, str | None]:
         # 已知的漏网成因就是 `zipfile.BadZipFile`（sys.path 上有别的包的坏 dist-info 时
         # `distribution()` 会抛它，不在任何常规元组里；**未复现，来自审阅的推演**）。
         # ⇒ 这里按**规格**兜，不按成因枚举。见 `tests/test_check_package_ref.py`。
+        #
+        # ⚠️ 兜的是 `Exception`、**不是** `BaseException`：`KeyboardInterrupt` 与 `SystemExit`
+        # 照常传播（Ctrl-C 不该被这条信息行吞掉）。
         return None, None
     return vcs_info_from_direct_url(raw)
 
