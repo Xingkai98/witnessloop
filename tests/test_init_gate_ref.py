@@ -355,3 +355,20 @@ def test_a_malformed_ledger_is_loud_and_never_rebuilt(repo: Path, cli):
     code, _, err = cli("init", "--root", str(repo))
     assert code == C.EXIT_FAIL
     assert (repo / C.INIT_MANIFEST_PATH).read_text(encoding="utf-8") == raw
+
+
+def test_an_unparseable_ledger_is_loud_and_untouched(repo: Path, cli):
+    """`sync_caller_gate_ref` 的「台账坏 JSON」分支：**不写**，让 `_already_initialized` 报。
+
+    这条分支此前没有钉子（对抗轮 R6 的变异面之一）：把它误改成「照写」，用户会得到一个
+    半改的台账 + 一条别处的红。
+    """
+    _init(repo, cli)
+    (repo / C.INIT_MANIFEST_PATH).write_text("{ 不是 JSON", encoding="utf-8")
+    caller_before = (repo / C.GATE_WORKFLOW_PATH).read_bytes()
+
+    code, _, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL
+    assert "无法解析" in err
+    assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before

@@ -136,3 +136,16 @@ def test_a_broken_metadata_source_never_escapes(monkeypatch):
     monkeypatch.setattr("importlib.metadata.distribution", _boom2)
 
     assert checkcmd.installed_vcs_ref() == (None, None)
+
+
+def test_empty_string_fields_are_treated_as_absent():
+    """空串必须归到「取不到」——空串直接进 `uvx` 会变成「装默认分支」（静默跑错版本）。
+
+    （`_text` 的两条判定各自都要有钉子：`isinstance(str)` 与 `and value`。）
+    """
+    assert checkcmd.vcs_info_from_direct_url(
+        '{"vcs_info":{"requested_revision":"","commit_id":""}}'
+    ) == (None, None)
+    assert checkcmd.vcs_info_from_direct_url(
+        '{"vcs_info":{"requested_revision":"v1","commit_id":""}}'
+    ) == ("v1", None)
