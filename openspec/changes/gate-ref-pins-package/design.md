@@ -170,6 +170,8 @@ tests 文件就是为绕开这条冲突判定才走了独立路径）。故：
 1. **迁移的目标 ref 在本 PR 内不存在**：本仓 caller 的 `uses:` 要指向一个**含新 gate.yml 的 ref**，
    而这样的 ref 只有在本 change 合并之后才存在（出厂默认仍是 `@v1` = `ae99256`，
    `git show v1:.github/workflows/gate.yml` 是**改动前**的文件、`git diff --stat v1..HEAD -- .github/workflows/gate.yml` **为空**）。
+   ⚠️ **测量时点**：那两条命令是对**本 change 之前**的树测的；本 change 自己改了 `gate.yml`
+   ⇒ **现在**再跑，diff 不再为空（R7 复核：85+/3−）。结论不受影响（它讲的是**发布前**的存量状态）。
 2. **自证命令今天本来就红，且与 caller 无关**（grill CD7 实测）：本仓 plain `init --dry-run` **今天已退 1**，
    且 diff **只涉及 `.witnessloop/policy.json`**（`require_change_for` 与三个 stage 键）；
    只有 `init --dry-run --policy <seed>` 才是「幂等，无改动」EXIT=0 —— 而 seed 是**仓外的临时文件、刻意不入库**
@@ -260,7 +262,9 @@ R1 B3 实测：用工具自己的 `paths.matches_any` 跑本仓 policy ⇒
 | K2 | 「没有任何提示」**是假的**（空缓存 `uvx` 自己打印 resolved sha） | `proposal.md` 机制段改写 |
 | K3 | 「**永久**死锁 / 再也卸载不掉」**过强** | §2 D2 降级为「响亮、可恢复的分叉态」+ 三条恢复路径 |
 | K4 | 「本 change 内只做 `init --dry-run --policy <seed>` 自证」在 (A) 下会 EXIT=1 | §2 D4 改写：本 PR **不做**本仓迁移，自证条件与 post-merge 动作一并写清 |
-| K5 | 「`v1` 落后 47 个提交」**计数口径未标注**（R1 报 50） | **复算订正**：计数**取决于测量哪个 ref** —— `git rev-list --count v1..origin/main` = **47**，而在当时的 docs 分支上（多 3 个文档提交）测出来是 50。⇒ 改写成不依赖计数的表述（「落后数十个提交，`src/` 差 6 文件 +922/−96」），并在 `grill-design.md` 标注计数基准。**R1 的 K5 本身是测量口径造成的假差异。** |
+| K5 | 「`v1` 落后 47 个提交」**计数口径未标注**（R1 报 50） | **复算订正**：计数**取决于测量哪个 ref** —— `git rev-list --count v1..origin/main` = **47**，而在当时的 docs 分支上（多 3 个文档提交）测出来是 50。⇒ 改写成不依赖计数的表述（「落后数十个提交」，并在 `grill-design.md` 标注计数基准）。
+⚠️ 文中原文那句「`src/` 差 6 文件 +922/−96」也是**测量时点**的数（本 change 落地后 R7 复核为
+8 files +1135/−101）⇒ 已从正文去掉具体数字，只留「落后数十个提交」。**R1 的 K5 本身是测量口径造成的假差异。** |
 | K6 | 同源文档清单漏 `docs/design.md:56,73` | §3 接线点 5 |
 | K7 | 第四条升级路径（台账 `sha256: null`）未登记 | §2 D2 末条 + D6（登记为已知出口，**明确不收紧**） |
 | K8 | 探针文件/结果无落点 | §2 D1 写明「原始输出保存在本文档即落点；**远端**已清理、**本地**分支刻意保留」；`tasks.md` 3.0 同步 |
@@ -342,6 +346,28 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 `BaseException`（实测 `KeyboardInterrupt` / `SystemExit` 照常传播）——已在 `checkcmd` 与
 `docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
 `uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
+
+### R7（报告见 `reviews/grill-adversarial-r7.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `9bf5c8c` 上用「变异 → 跑全量 681」
+新证伪 **4 条**，**全部是「某个变异没有被任何钉子抓住」这一类**（代码行为本身正确），已逐条落库：
+
+| # | 变异 | 后果 | 落点 |
+|---|---|---|---|
+| U1 | 删掉 `::notice::` 的 `（来源：$WHY）` | spec 的 Then 明写 SHALL 写出「来源」 | `test_resolve_notice_names_the_source_of_the_ref`（三条分支的来源文案各自断言） |
+| U2 | 脚本把 `REF="$WL_FALLBACK_REF"` **硬编**成 `"v1"` | post-merge 改默认值时兜底不跟着走 | 行为侧 `test_resolve_reads_the_fallback_ref_from_its_env`（哨兵值）+ 文本侧 `test_resolve_script_reads_both_constants_from_the_environment` |
+| U3 | 自报行两值**对调** | **真 CI 后果**：两值都非空时 `requested_revision` 会打出 sha ⇒ 用户照 ①′ 误判「CLI 没升成」 | `test_the_report_line_binds_each_value_to_the_right_label`（注入已知二元组） |
+| U4 | 自报行**之前**插一行 stdout | ①′ 的承重前提（自报行是 `check` 的第一行）失效 | `test_the_report_line_is_the_first_thing_check_prints` |
+
+**R7 登记的两条过时证据句**已就地标注「测量时点」（`design.md` 的「diff 为空」与「6 文件 +922/−96」
+都是**本 change 之前**的数；本 change 自己改了 `gate.yml` / `src`）——结论不受影响，
+同时把正文里的具体数字去掉，只留「落后数十个提交」。
+
+**R7 试过但没找到可证伪项的四条**（`--gate-ref`+`--no-tests`、`--policy`+`--gate-ref` 的 doc 选择、
+重定向下自报丢不丢、`gate.yml` 的 `permissions`/`on`/job 名）：接受，不追。
+
+⇒ **R7 的发现全部落在「缺钉子」这一类**（无一条是行为缺陷）。这一点对判①的读法有意义：
+`src/` 与 `gate.yml` 的行为面已被前七轮反复攻击而未被推翻，剩下的面基本是「补一条断言」。
 
 ### R6（报告见 `reviews/grill-adversarial-r6.md`）
 

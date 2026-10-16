@@ -149,3 +149,31 @@ def test_empty_string_fields_are_treated_as_absent():
     assert checkcmd.vcs_info_from_direct_url(
         '{"vcs_info":{"requested_revision":"v1","commit_id":""}}'
     ) == ("v1", None)
+
+
+def test_the_report_line_binds_each_value_to_the_right_label(monkeypatch, capsys):
+    """U3（对抗轮 R7，最硬的一条）：把自报行的两值**对调** ⇒ 全量零红。
+
+    后果不是学术的：真 CI 里（真 `uvx` 装包）两值**都非空**，对调后 `requested_revision` 打出的是
+    **commit sha** —— 用户照 `docs/gate.md §1.2` 的 ①′ 那条 recipe 去核对，会**误判「CLI 没升成」**。
+    （测试环境恒为源码直跑 ⇒ 两值都是 `<未知>`，所以这个错位在测试里从不显形——必须用注入来钉。）
+    """
+    monkeypatch.setattr(checkcmd, "installed_vcs_ref", lambda: ("REF-X", "COMMIT-Y"))
+
+    checkcmd._report_package_source()
+
+    out = capsys.readouterr().out
+    assert "requested_revision=REF-X" in out
+    assert "commit_id=COMMIT-Y" in out
+
+
+def test_the_report_line_is_the_first_thing_check_prints(repo: Path, cli):
+    """U4（对抗轮 R7）：在自报行**之前**插一行 stdout ⇒ 全量零红。
+
+    而 ①′ recipe 的承重前提正是「自报行是 `check` 输出的**第一行**」（`| head -1`）——
+    `gate.yml` 侧有同款钉子，`check` 侧此前没有。
+    """
+    code, out, _ = cli("check", "--root", str(repo), "--base", "main", "--head", "HEAD")
+
+    assert code == C.EXIT_NOT_ONBOARDED
+    assert out.splitlines()[0].startswith("check：本包来源")

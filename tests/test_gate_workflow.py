@@ -547,3 +547,40 @@ def test_the_install_step_consumes_the_resolved_ref():
     # uvx 用的是那个变量，而不是任何内联表达式
     assert '"git+https://github.com/Xingkai98/witnessloop@$WL_REF"' in run
     assert "${{" not in run
+
+
+def test_resolve_notice_names_the_source_of_the_ref(tmp_path: Path):
+    """U1（对抗轮 R7）：删掉 `（来源：$WHY）` 会让全量零红，而 spec 的 Then 明写 SHALL 写出「来源」。
+
+    ⇒ 三条分支各自的**来源文案**都要被断言，光断言「有 `::notice::`」不够。
+    """
+    _, explicit = _run_resolve(tmp_path, WL_INPUT_REF="v2")
+    _, derived = _run_resolve(
+        tmp_path, WL_WORKFLOW_REPOSITORY=C.REPO_SLUG, WL_WORKFLOW_SHA="deadbeef" * 5
+    )
+    _, failed = _run_resolve(tmp_path)
+
+    assert "来源" in explicit and "显式" in explicit
+    assert "来源" in derived and "job.workflow_sha" in derived
+    assert "来源" in failed and "fail-closed" in failed
+
+
+def test_resolve_reads_the_fallback_ref_from_its_env(tmp_path: Path):
+    """U2（对抗轮 R7）：把脚本里的 `REF="$WL_FALLBACK_REF"` 硬编成 `"v1"` ⇒ 全量零红。
+
+    `test_resolve_constants_match_the_single_source` 只比对 **env 字面量**，钉不住「脚本**读**它」。
+    这里用**行为**钉：把兜底 ref 换成一个哨兵值，fail-closed 的输出必须跟着变
+    （——post-merge 改默认值时，改的就是这个 env）。
+    """
+    ref, out = _run_resolve(tmp_path, WL_FALLBACK_REF="v9.9.9")
+
+    assert ref == "v9.9.9"
+    assert "v9.9.9" in out
+
+
+def test_resolve_script_reads_both_constants_from_the_environment():
+    """同一件事的**文本侧**背书：`run` 里必须出现这两个变量的**读**（不是它们的值）。"""
+    run = _resolve_step()["run"]
+
+    assert '"$WL_FALLBACK_REF"' in run
+    assert '"$WL_REPO_SLUG"' in run
