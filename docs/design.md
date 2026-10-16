@@ -53,7 +53,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 **v1 假设 witnessloop 公开。** 在私有仓下会发生两处摩擦，已用一次性仓 `Xingkai98/wl-test` 实测：
 
 1. **reusable workflow 访问级别**：私有仓的 reusable workflow 默认 `none`，且**最多只能开放到「同 owner」**——外部接入方根本调不到。表现为 caller run **0 个 job**、报「workflow file issue」。
-2. **CI 安装私有包需要凭据**：reusable workflow 里 `uvx --from git+https://github.com/<owner>/witnessloop@v1` 在私有仓下报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。
+2. **CI 安装私有包需要凭据**：reusable workflow 里 `uvx --from git+https://github.com/<owner>/witnessloop@v1` 在私有仓下报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。（`@v1` 那段的 ref **就是包版本**——change `gate-ref-pins-package` 起，它由 `gate.yml` 从 `job.workflow_sha` 推导，接入方只需要管 caller 的 `uses:` 一处；见 `docs/gate.md §1.2`。）
 
 改为**公开**后两处摩擦全消、零配置。**私有接入需要额外配置 token，不在 v1 范围。**（这也把最初「私有起步」的判断修正为「公开起步」。）
 
@@ -70,7 +70,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
   `check` 兜底）——供需要定制的仓一次写成，避免「先 init 再手改」打破 init-manifest 台账。写入：
   - `.witnessloop/policy.json`（受保护路径 + 必需 artifact + 证据格式 + `require_change_for`）
   - `.witnessloop/init-manifest.json`（创建清单 + init 前 base ref）
-  - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@v1`）
+  - 一个极薄 GitHub caller workflow（`uses: <owner>/witnessloop/.github/workflows/gate.yml@<ref>`；这一个 ref **同时**决定 workflow 文件与 witnessloop 包版本——change `gate-ref-pins-package`，见 `docs/gate.md §1.2`）
 - `check`：CI 入口，**fail-closed**。校验 change 目录契约、review manifest 存在且 hash 绑定、`reviewer ≠ author`、受保护路径写入有结构化解释事件、**命中 `require_change_for` 的改动必须挂 change 目录**。无 policy 时报「未接入」并以非零退出。
 - `uninit`：依 `init-manifest.json` 精确回滚（被改过的文件拒绝删并报 diff）。
 

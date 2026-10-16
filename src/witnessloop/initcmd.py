@@ -146,6 +146,67 @@ def conflicting_files(root: Path, desired: dict[str, str]) -> list[tuple[str, st
     return out
 
 
+def sync_caller_gate_ref(
+    root: Path, manifest_path: Path, gate_ref: str, *, dry_run: bool
+) -> str | None:
+    """显式 ``--gate-ref``：重写 caller **并同步台账**（change gate-ref-pins-package / Q2 裁定 (a)）。
+
+    只在**已接入**分支调用（调用方保证 ``manifest_path`` 是文件）。返回一句给用户的说明；
+    ``None`` = 无需改动（台账里记的就是这个 ref，或盘上根本没有 caller）。
+
+    ⚠️ **必须原子地同时改台账**：只重写 caller 会让「磁盘 ≠ 台账」——之后 plain ``init``
+    走漂移分支退 1、``uninit`` 拒删退 1（实测，change `adopter-test-gate` 记过这个坑）。
+    ⚠️ 盘上**没有** caller 时返回 ``None``：不凭空复活它，交给漂移分支响亮地报——
+    「只增不改」在已接入分支里的含义就是**不新建**。
+    """
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None  # 坏台账交给 `_already_initialized` 报（它有一手诊断）
+    if not isinstance(manifest, dict) or manifest.get("gate_ref") == gate_ref:
+        return None
+    path = root / C.GATE_WORKFLOW_PATH
+    if not path.is_file():
+        return None
+
+    if dry_run:
+        print(f"init：[dry-run] 将重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
+        return f"[dry-run] 未落盘：{C.GATE_WORKFLOW_PATH} 与台账将一起改成 {gate_ref}"
+
+    content = caller_workflow(gate_ref)
+    path.write_text(content, encoding="utf-8")
+    _set_ledger_gate_ref(manifest, gate_ref, sha256_bytes(content.encode("utf-8")))
+    manifest_path.write_text(policy.dumps(manifest), encoding="utf-8")
+    print(f"init：已重写 {C.GATE_WORKFLOW_PATH}（→ {gate_ref}）并同步台账")
+    return f"{C.GATE_WORKFLOW_PATH} 与台账已改成 {gate_ref}"
+
+
+def _set_ledger_gate_ref(manifest: dict, gate_ref: str, digest: str) -> None:
+    """就地改台账：``gate_ref`` + caller 条目的 ``sha256``。
+
+    条目缺失就补一条，且**插在 `self` 条目之前**（台账自己的那条约定俗成排最后）。
+    """
+    entries = manifest.get("created_files")
+    if not isinstance(entries, list):
+        entries = []
+        manifest["created_files"] = entries
+    for entry in entries:
+        if (
+            isinstance(entry, dict)
+            and entry.get("path") == C.GATE_WORKFLOW_PATH
+            and not entry.get("self")
+        ):
+            entry["sha256"] = digest
+            break
+    else:
+        at = next(
+            (i for i, e in enumerate(entries) if isinstance(e, dict) and e.get("self")),
+            len(entries),
+        )
+        entries.insert(at, {"path": C.GATE_WORKFLOW_PATH, "sha256": digest})
+    manifest["gate_ref"] = gate_ref
+
+
 def ledger_gate_ref(manifest_path: Path) -> str | None:
     """台账里记录的 ``gate_ref``（重跑 ``init`` 时的缺省来源）；坏台账/不存在 → None。
 
@@ -219,7 +280,22 @@ def run(args: argparse.Namespace) -> int:
                 )
                 print(f"init：已写入测试执行点 {C.ADOPTER_TESTS_PATH}（{why}）")
                 note = "其余文件无改动，未 commit"
-        return _already_initialized(root, desired, manifest_path, note=note)
+        # 显式 `--gate-ref` 的覆盖语义（Q2 裁定 (a)）。**只**在这个已接入分支里生效：
+        # 未接入的仓走下面的「只增不改」——否则会静默覆盖新仓里外来的 caller
+        # （`tests/test_init.py` 的「新仓目标文件已存在 ⇒ 冲突且整体不落盘」就是钉它的）。
+        rewritten = (
+            sync_caller_gate_ref(root, manifest_path, gate_ref, dry_run=args.dry_run)
+            if args.gate_ref
+            else None
+        )
+        if rewritten is None:
+            return _already_initialized(root, desired, manifest_path, note=note)
+        note = rewritten if note is None else f"{note}；{rewritten}"
+        # caller 那条轴已按**显式意图**处理过 ⇒ 不再进冲突判定：`--dry-run` 下磁盘仍是旧内容，
+        # 不滤掉它就会对一个「正要被自己改掉」的文件报红，用户无从判断。
+        return _already_initialized(
+            root, desired, manifest_path, note=note, ignore=(C.GATE_WORKFLOW_PATH,)
+        )
 
     # 只增不改：目标文件已存在且内容不同 → 冲突，报 diff 并拒绝。
     try:
@@ -273,13 +349,21 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _already_initialized(
-    root: Path, desired: dict[str, str], manifest_path: Path, note: str | None = None
+    root: Path,
+    desired: dict[str, str],
+    manifest_path: Path,
+    note: str | None = None,
+    ignore: tuple[str, ...] = (),
 ) -> int:
     """幂等：已接入且台账未漂移 → 无改动退出 0；漂移 → 报 diff 退出 1。
 
     ``note``：本次对命令文件做了什么（已写 / dry-run 将写 / 没动）。非 ``None`` 时**不得**
     说「幂等，无改动」——工具不撒谎（B4b）；命令文件不在台账里，所以它**不是**漂移，
     退出码照旧（其余冲突判定照常参与）。
+
+    ``ignore``：**调用方已按显式意图处理过**的那几条轴（目前只有 Q2 (a) 的 caller）——
+    从「本次期望 vs 已落地」这条判定里排除掉。**不**影响「磁盘 vs 台账」那条（漂移判定照旧）：
+    显式 `--gate-ref` 是一条升级入口，不是给手改文件兜底的后门。
     """
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -340,6 +424,7 @@ def _already_initialized(
     except ValueError as exc:
         print(f"init：{exc}", file=sys.stderr)
         return C.EXIT_FAIL
+    conflicts = [item for item in conflicts if item[0] not in ignore]
     if conflicts:
         print(
             "init：检测到冲突（已接入，但本次指定的内容与已落地不同；"

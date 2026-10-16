@@ -18,6 +18,8 @@
 
 ```bash
 uv tool install git+https://github.com/Xingkai98/witnessloop@v1
+# ⚠️ 这个 ref 与 CI 里装包用的 ref **是同一件事**（issue #30 / change gate-ref-pins-package）：
+#    钉旧了，本地 CLI 与 CI 里的门禁都跑旧行为。升级就把 ref 指到新 tag（见「怎么钉版本」）。
 
 # 接入目标仓：幂等、只增不改、不 auto-commit。先看要写什么（不落盘）
 cd your-repo && witnessloop init --dry-run
@@ -117,8 +119,13 @@ witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`�
 > 才被机械拦。这是自举的固有鸡生蛋，不是遗漏。
 >
 > 另：`init --policy` 与 `--test-command` / `--no-tests` 是**接入期**的动词选项，自 **`v1.6.0`**
-> 起随 `@v1` 发布（`@v1` 是滚动大版本）。本地 CLI 还旧时，自己接入跑源码版
-> （`uv run witnessloop …`）即可。
+> 起随 `@v1` 发布。本地 CLI 还旧时，自己接入跑源码版（`uv run witnessloop …`）即可。
+>
+> ⚠️ **关于「`@v1` 是滚动大版本」这句旧说法**（change `gate-ref-pins-package` / issue #30 起**不再成立**）：
+> `@v1` 现在**停在 `v1.6.0`**（`ae99256`），本 change 刻意**不动 `v1` tag**——它是别人依赖的
+> 发布物，移动它会让所有钉 `@v1` 的仓在**没人做任何动作**的情况下换掉门禁本体与包。
+> 新能力改由**新 tag**（`v1.7.0` 起）发布：升级 = 把 ref 指过去一处，包版本跟着走
+> （见下「怎么钉版本 / 怎么升级」）。别再按「`@v1` 会跟着 `main` 滚」理解版本稳定性。
 
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
 
@@ -168,11 +175,30 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 细节与边界表见 [docs/gate.md §5.1.1](docs/gate.md) 与 §4。
 
 `init` 写的 caller workflow 引用本仓的 reusable workflow
-`.github/workflows/gate.yml@v1`——记得在目标仓 branch protection 里把那个 job
+`.github/workflows/gate.yml@<ref>`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。
 
+### 怎么钉版本 / 怎么升级
+
+caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「跑哪个 witnessloop 包」：
+`gate.yml` 把包 ref 解析成 `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit），
+显式 `with: witnessloop-ref:` 仍可覆盖 ⇒ **改一处、两处跟着走**（细节见
+[docs/gate.md §1.2](docs/gate.md)；GHES / fork 等能力边界见其 §7）。
+
+```bash
+# 新接入：直接钉你要的 ref
+witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
+# 已接入：升级（重写 caller **并同步台账**，其余文件只增不改；之后 plain init 仍幂等、uninit 仍可用）
+witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
+```
+
+⚠️ **别手改 caller**：手改 ⇒「磁盘 ≠ 台账」⇒ plain `init` 报「被改动过」、`uninit` 拒删
+（有出口，但要用上面那个动作）。要看**本次到底跑了哪个 ref**：`gate / check` 日志里那行
+`::notice::witnessloop 包 ref = …（来源：…）`，以及 `check` 自己那行
+`本包来源（自报，尽力而为）`（它还能给出解析后的 commit）。
+
 > **前置条件：本仓必须公开。** caller 引用的是本仓的 reusable workflow、CI 里用
-> `uvx --from git+…@v1` 安装本包——两者在**私有**仓下都会失败（reusable workflow
+> `uvx --from git+…@<ref>` 安装本包——两者在**私有**仓下都会失败（reusable workflow
 > 访问级别默认 `none`；私有包安装报 `could not read Username`）。已实测，见
 > [docs/design.md §4.1](docs/design.md)。私有接入需额外配 token，不在 v1 范围。
 

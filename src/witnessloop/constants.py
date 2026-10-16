@@ -5,9 +5,19 @@ v1 硬编码 OpenSpec 形状的 change 契约（见 design §4「spec 依赖」�
 """
 
 # witnessloop 自身的仓库 slug（init 写的 caller workflow 用它钉版本）。
+# 它同时是 gate.yml 解析包 ref 时的**接受判据**：`job.workflow_repository` 不等于它
+# ⇒ fail-closed 退回 `v1`（跨仓真 CI 探针实证 `job.*` 才指被复用的那个文件）。
+# ⚠️ gate.yml 里那份字面量由 `tests/test_gate_workflow.py` 与这里钉同值。
 REPO_SLUG = "Xingkai98/witnessloop"
 
-# caller workflow 引用的 reusable workflow，tag 钉版本（design §5.1）。
+# caller workflow 引用的 reusable workflow。**这一个 ref 同时决定两件事**（change
+# gate-ref-pins-package / design §2 D1）：`uses:` 指向的 workflow 文件，**以及** witnessloop
+# **包**的版本——包 ref 由 gate.yml 从 `job.workflow_sha`（被复用的那个文件的 commit）推导，
+# 所以接入方 SHALL NOT 需要分别维护两个 ref。
+# ⚠️ 显式传 `--gate-ref` 时：**已接入**的仓会被**重写 caller + 同步台账**（initcmd
+# `sync_caller_gate_ref`），plain `init` 仍只增不改。
+# ⚠️ 本值仍是 `@v1`：把它指到新 tag（`v1.7.0`）是 change gate-ref-pins-package 的
+# **`(post-merge)` 事项**——新 tag 必须先存在，指过去才有意义。
 DEFAULT_GATE_REF = f"{REPO_SLUG}/.github/workflows/gate.yml@v1"
 
 # init 创建的文件（相对目标仓根）。

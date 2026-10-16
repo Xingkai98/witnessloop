@@ -249,3 +249,204 @@ def test_path_and_sentinel_are_single_sourced():
         policy_mod.Policy.from_doc(policy_mod.default_policy_doc()).tests_disabled
         is False
     )
+
+
+# ---------------------------------------------------------------------------
+# D 组：(B′) 包 ref 的解析 step（用户 2026-10-16 裁定 Q1；design §2 D1）
+#
+# 机制：`init` 写的 caller 只钉 workflow 文件、**钉不住包**（`gate.yml` 的
+# `inputs.witnessloop-ref` 恒为默认值）。修法 (B′)：包 ref 的**缺省**取自
+# `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit）——
+# 跨仓真 CI 探针实证（run 38853369550），`github.workflow_sha` 是**接入方自己**的，
+# 用它会在 witnessloop 仓取一个不存在的 commit（全量硬红）。
+#
+# 这一段是**行为级**的：把 gate.yml 里那个 step 的 `run:` 原文交真 `sh` 跑，
+# env 照抄该 step 的 `env:`——文本断言钉不住解析优先级。
+# ---------------------------------------------------------------------------
+
+_RESOLVE_ENV_KEYS = {
+    "WL_INPUT_REF",
+    "WL_WORKFLOW_REPOSITORY",
+    "WL_WORKFLOW_SHA",
+    "WL_WORKFLOW_REF",
+    "WL_REPO_SLUG",
+    "WL_FALLBACK_REF",
+}
+
+
+def _resolve_step() -> dict:
+    matches = [s for s in _steps() if s.get("id") == "wl-ref"]
+    assert len(matches) == 1, (
+        f"gate.yml 里解析 witnessloop 包 ref 的 step 应恰好一个（按 id 找），实得 {len(matches)}"
+    )
+    return matches[0]
+
+
+def _run_resolve(tmp_path: Path, **overrides: str) -> tuple[str, str]:
+    """把解析 step 交真 `sh` 跑一遍 → `(解析出的 ref, stdout)`。"""
+    step = _resolve_step()
+    env = dict(os.environ)
+    # 两个「常量」从 YAML 里取（由 test_resolve_step_binds_the_right_contexts 钉其值）
+    env["WL_REPO_SLUG"] = str(step["env"]["WL_REPO_SLUG"])
+    env["WL_FALLBACK_REF"] = str(step["env"]["WL_FALLBACK_REF"])
+    env.update(
+        {
+            "WL_INPUT_REF": "",
+            "WL_WORKFLOW_REPOSITORY": "",
+            "WL_WORKFLOW_SHA": "",
+            "WL_WORKFLOW_REF": "",
+        }
+    )
+    env.update(overrides)
+    out_path = tmp_path / "github_output"
+    out_path.write_text("", encoding="utf-8")
+    env["GITHUB_OUTPUT"] = str(out_path)
+    proc = subprocess.run(
+        ["sh", "-c", step["run"]], env=env, capture_output=True, text=True
+    )
+    assert proc.returncode == 0, proc.stderr
+    ref = ""
+    for line in out_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("ref="):
+            ref = line[len("ref=") :]
+    return ref, proc.stdout
+
+
+def test_resolve_step_is_the_first_step():
+    """D3：后面的步骤（含失败的）之后也要能在日志里看见本次用的 ref。"""
+    assert _steps()[0].get("id") == "wl-ref"
+
+
+def test_resolve_step_binds_the_right_contexts():
+    """(B′) 的基石：**`job.*`** 而不是 `github.*`。
+
+    探针实测 `github.workflow_ref` / `github.workflow_sha` 指 **caller**（接入方自己的），
+    只有 `job.workflow_*` 指被复用的那个文件。绑错了 ⇒ `uvx` 去 witnessloop 仓取一个
+    不存在的 ref ⇒ 全量硬红。这条断言就是防那个绑错。
+    """
+    step = _resolve_step()
+    env = step["env"]
+
+    assert env["WL_INPUT_REF"] == "${{ inputs.witnessloop-ref }}"
+    assert env["WL_WORKFLOW_REPOSITORY"] == "${{ job.workflow_repository }}"
+    assert env["WL_WORKFLOW_SHA"] == "${{ job.workflow_sha }}"
+    assert env["WL_WORKFLOW_REF"] == "${{ job.workflow_ref }}"
+    assert set(env) == _RESOLVE_ENV_KEYS
+    # run 里不得出现 ${{ }} 插值（与 adopter tests 那一步同口径：解析期插值 = 把外来的
+    # 字符串当 workflow 源码）。同时也保证测试能把 run 原文直接交 sh 跑。
+    assert "${{" not in step["run"]
+
+
+def test_resolve_constants_match_the_single_source():
+    """接受判据（REPO_SLUG）与 fail-closed 落点（`v1`）必须与 `constants.py` 同源。"""
+    env = _resolve_step()["env"]
+
+    assert env["WL_REPO_SLUG"] == C.REPO_SLUG
+    assert env["WL_FALLBACK_REF"] == C.DEFAULT_GATE_REF.rsplit("@", 1)[1]
+
+
+def test_resolve_prefers_the_reusable_workflows_own_sha(tmp_path: Path):
+    sha = "6e2ec4dc7955d6d155987a667040b126acab983b"
+    ref, out = _run_resolve(
+        tmp_path,
+        WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+        WL_WORKFLOW_SHA=sha,
+        WL_WORKFLOW_REF=f"{C.REPO_SLUG}/.github/workflows/gate.yml@refs/heads/main",
+    )
+
+    assert ref == sha
+    assert "::notice::" in out
+    assert "::warning::" not in out
+    assert sha in out  # 日志里直接可读（D3）
+
+
+def test_resolve_lets_an_explicit_with_override_win(tmp_path: Path):
+    """显式 `with: witnessloop-ref:` 仍可覆盖（(A) 降级为「显式覆盖」手段后仍要能用）。"""
+    ref, out = _run_resolve(
+        tmp_path,
+        WL_INPUT_REF="v2",
+        WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+        WL_WORKFLOW_SHA="deadbeef" * 5,
+    )
+
+    assert ref == "v2"
+    assert "::notice::" in out
+
+
+def test_resolve_lets_an_explicit_override_win_even_on_an_unusable_job_context(tmp_path: Path):
+    """显式意图优先：`job.*` 取不到（GHES）也不该让显式传值失效。"""
+    ref, _ = _run_resolve(tmp_path, WL_INPUT_REF="v3")
+
+    assert ref == "v3"
+
+
+def test_resolve_fails_closed_on_a_foreign_repository(tmp_path: Path):
+    """接受判据：`job.workflow_repository` 必须等于 `REPO_SLUG`。
+
+    否则会拿**别人的** reusable workflow 的 sha 去 witnessloop 仓取包（装不到）。
+    """
+    ref, out = _run_resolve(
+        tmp_path,
+        WL_WORKFLOW_REPOSITORY="someone/fork",
+        WL_WORKFLOW_SHA="deadbeef" * 5,
+    )
+
+    assert ref == C.DEFAULT_GATE_REF.rsplit("@", 1)[1]
+    assert "::warning::" in out
+
+
+def test_resolve_fails_closed_when_the_job_context_is_unavailable(tmp_path: Path):
+    """GHES（`job.*` 不可用 ⇒ 全空）⇒ 退 `v1`，但**不静默**（有 warning）。
+
+    design §4 R6 如实登记：GHES 接入方会一直吃 `v1`，区别只在日志里有 warning。
+    """
+    ref, out = _run_resolve(tmp_path)
+
+    assert ref == "v1"
+    assert "::warning::" in out
+
+
+def test_resolve_falls_back_to_the_ref_part_of_job_workflow_ref(tmp_path: Path):
+    head = _run_resolve(
+        tmp_path,
+        WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+        WL_WORKFLOW_REF=f"{C.REPO_SLUG}/.github/workflows/gate.yml@refs/heads/main",
+    )
+    tag = _run_resolve(
+        tmp_path,
+        WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+        WL_WORKFLOW_REF=f"{C.REPO_SLUG}/.github/workflows/gate.yml@refs/tags/v1.7.0",
+    )
+
+    assert head[0] == "main"
+    assert tag[0] == "v1.7.0"
+    assert "::warning::" not in head[1]
+    assert "::warning::" not in tag[1]
+
+
+def test_resolve_fails_closed_on_malformed_workflow_refs(tmp_path: Path):
+    """spec 点名的四个畸形样本（前两个 + 缺 @）⇒ 退 `v1` 且打 warning。"""
+    for malformed in (
+        f"{C.REPO_SLUG}/.github/workflows/gate.yml",  # 缺 @
+        f"{C.REPO_SLUG}/.github/workflows/gate.yml@",  # @ 后为空
+        f"{C.REPO_SLUG}/.github/workflows/gate.yml@refs/pull/30/merge",  # PR 合并 ref
+    ):
+        ref, out = _run_resolve(
+            tmp_path,
+            WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+            WL_WORKFLOW_REF=malformed,
+        )
+        assert ref == "v1", malformed
+        assert "::warning::" in out, malformed
+
+
+def test_resolve_never_leaves_the_ref_empty(tmp_path: Path):
+    """ref 为空会把 `uvx --from git+…@` 变成装**默认分支**（静默跑错版本）⇒ 任何输入下都不得为空。"""
+    for overrides in (
+        {},
+        {"WL_WORKFLOW_REPOSITORY": C.REPO_SLUG},
+        {"WL_WORKFLOW_SHA": "x"},
+        {"WL_INPUT_REF": " "},
+    ):
+        ref, _ = _run_resolve(tmp_path, **overrides)
+        assert ref, overrides

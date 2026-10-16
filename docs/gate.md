@@ -11,7 +11,7 @@
 ```
 .witnessloop/policy.json          # 受保护路径 + 必需 artifact + 证据格式
 .witnessloop/init-manifest.json   # 创建清单（含 sha256 台账）+ init 前 base ref
-.github/workflows/witnessloop.yml # 极薄 caller：uses: <owner>/witnessloop/.../gate.yml@v1
+.github/workflows/witnessloop.yml # 极薄 caller：uses: <owner>/witnessloop/.../gate.yml@<ref>
 .github/witnessloop-tests.txt     # 测试执行点：一行命令，门禁在与 check 同一个 job 里跑它
 ```
 
@@ -58,6 +58,35 @@ openspec/changes/<change-id>/
   `Policy.from_doc` 兜底——两处各造一套判定会引入漂移面。`--policy` **允许指向仓外路径**
   （定制 seed 不入库，见 README「本仓自身接入」）。
 - 已接入后再 `init --policy <与已落地不同>` → **报冲突**并以非零退出（**不**静默忽略）。
+
+### 1.2 钉住 ref：一个入口、两处一致（change `gate-ref-pins-package` / issue #30）
+
+caller 里的 `uses: …gate.yml@<ref>` **同时**决定两件事：
+
+1. 跑哪一份 reusable workflow 文件；
+2. 跑哪个 **witnessloop 包** —— `gate.yml` 在**第一个 step** 里把包 ref 解析成
+   **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit），
+   显式 `with: witnessloop-ref:` 仍可覆盖。
+
+⇒ 接入方 SHALL NOT 需要分别维护两个 ref：**改 `uses:` 那一处，包版本跟着走**。
+这条依赖的上下文是 `job.*` 而**不是** `github.*`——跨仓真 CI 探针实测
+`github.workflow_sha` 是**接入方自己**的 commit，用它会在 witnessloop 仓取一个不存在的
+ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
+
+**本次跑的是哪个 ref**：`gate.yml` 的解析 step 会打一行 `::notice::`（含 ref **与来源**）；
+`check` 自己也会打一行 `本包来源（自报，尽力而为）`——后者读 PEP 610 `direct_url.json` 的
+`vcs_info`，能多给一个**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
+它**取不到就写 `<未知>`，且不影响任何判定**（本地 editable / 源码直跑没有 `vcs_info`）。
+
+**升级动作（单一、显式）**：对**已接入**的仓，显式给 `init --gate-ref <新 ref>` ⇒
+**重写 caller + 同步台账**（`init-manifest.json` 里该条目的 `sha256` 与 `gate_ref`），
+其余文件照旧只增不改；之后 plain `init` 回到幂等、`uninit` 仍可用。
+⚠️ 不带 `--gate-ref` 的 plain `init` **不**会顺手改 caller（只增不改照旧）；
+⚠️ 手改 caller 会让「磁盘 ≠ 台账」——plain `init` 报「被改动过」、`uninit` 拒删；
+`uninit` 的出口仍在（回滚该文件即可），但**别手改**，用这个动作。
+
+**发布面**：把 `uses:` 指到一个含新 `gate.yml` 的 ref 的那一刻，**所有**这样的仓**同时**
+切换包来源解析——这是一次**全局**行为变化（回退路径：指回旧 ref，或显式 `with: witnessloop-ref:`）。
 
 ## 2. `policy.json`
 
@@ -422,6 +451,29 @@ v1 不做语义绑定、**不造签名**。因此：**默认只防漂移，不�
 agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写的边界，
 `tests/test_acceptance.py::test_f2_handwritten_allow_event_is_not_blocked`
 把它钉成了契约）。真正的锚是远端 branch protection + required check。
+
+### 7.1 「钉住的 ref」这条链上的边界（change `gate-ref-pins-package`）
+
+- **caller 文件本身不受任何保护**（用户裁定：**只登记、不加机械门**）。实测用工具自己的
+  匹配器跑本仓 policy：
+  ```
+  .github/workflows/witnessloop.yml：protected=False invariant=False require_change=False
+  ```
+  ⇒ 一个 PR 可以把 caller 的 `uses:` 改成**别的仓**的 workflow，`check` **不会**报 finding。
+  ⚠️ 这条要紧的原因是：required check 的名字 `gate / check` 的前半来自 **caller 里的 job 名**
+  （`gate:`），只要那份 substitute 定义一个叫 `check` 的 job 就仍能满足 required check
+  （⚠️ 后一句是**推演**：「替换后的 workflow 能否满足 required check」**未跑 CI 验证**）。
+  本 change **刻意不修**它：把 caller 纳入不变集会影响**所有**既有接入方，且「谁来决定
+  钉哪个 ref」是**平台面**的取舍（branch protection / 组织策略），值得单独一个 change。
+- **包 ref 的解析在 GHES / fork 面上取不到**：`job.workflow_repository` 等 `job.*`
+  在 **GitHub Enterprise Server 上不可用**，同 owner 的 **fork** 也能匹配上
+  `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回 `v1`——
+  ⚠️ 诚实地说：**GHES 接入方会一直吃 `v1`**，区别只在日志里有一行 `::warning::`（不静默）。
+  未验证面：自建 runner 上的 uv 版本差异、`pip install git+…` 是否同样落 PEP 610 的
+  `vcs_info`（只实测了 uv 0.13.1 的 `uvx`）。
+- **`check` 自报的是「包」不是「门禁判定逻辑」**：它读的是本进程安装元数据，
+  与 `gate.yml` 实际传给 `uvx` 的 ref 是**两次独立**的读取（后者进 `::notice::`）。
+  两者不一致时（如本地手动跑 `check`）以各自那行为准。
 
 ## 8. grill 证据的正文校验（`check`）与本地守卫（`guard`）
 

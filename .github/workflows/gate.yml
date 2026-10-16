@@ -17,10 +17,10 @@ on:
         type: string
         default: ""
       witnessloop-ref:
-        description: "witnessloop 自身的 tag（钉版本）"
+        description: "witnessloop 自身的 ref（钉版本）。**留空 = 自动**：取本 reusable workflow 自己的 commit"
         required: false
         type: string
-        default: "v1"
+        default: ""
 
 permissions:
   contents: read
@@ -29,6 +29,72 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # ⚠️ **第一个 step**：后面的步骤（含失败的）之后也要能在日志里看见本次用的包 ref。
+      #
+      # 解析规则（change gate-ref-pins-package / design §2 D1，用户 2026-10-16 裁定 (B′)）：
+      #   ① 显式 `with.witnessloop-ref` 非空 ⇒ 用它（显式意图优先，不得静默 no-op）；
+      #   ② `job.workflow_repository == REPO_SLUG` 且 `job.workflow_sha` 非空 ⇒ 用那个 sha
+      #      —— `job.*` 在 called workflow 里指**被复用的那个 workflow 文件**；
+      #   ③ 否则用 `job.workflow_ref` 的 `@` 之后那段，只收 `refs/heads/*` 与 `refs/tags/*`；
+      #   ④ 全不行 ⇒ **fail-closed 退 `v1`** 并打 `::warning::`（不静默）。
+      #
+      # ⚠️ **不能用 `github.workflow_ref` / `github.workflow_sha`**：跨仓真 CI 探针（run
+      # 38853369550）实测它们指 **caller**（接入方自己那份）⇒ 会拿接入方的 ref 去
+      # witnessloop 仓装包 ⇒ 全量硬红。只有 `job.*` 唯一确定被复用的那个文件。
+      #
+      # ⚠️ 解析只能落在 **step** 里：`on.workflow_call.inputs.<id>.default` 的可用上下文
+      # 只有 `github, inputs, vars` 三个，`job` 不在其中。
+      #
+      # ⚠️ 两个「常量」（`WL_REPO_SLUG` / `WL_FALLBACK_REF`）必须与 `constants.py` 的
+      # `REPO_SLUG` / `DEFAULT_GATE_REF` 的 ref 部分逐字相同（`tests/test_gate_workflow.py` 钉住）。
+      # 另外：`run:` 里**刻意不用** `${{ }}` 插值——既避免把外来的字符串当 workflow 源码，
+      # 也让测试能把 `run:` 原文直接交给 `sh` 跑（行为级钉子）。
+      - name: resolve witnessloop package ref
+        id: wl-ref
+        env:
+          WL_INPUT_REF: ${{ inputs.witnessloop-ref }}
+          WL_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WL_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WL_WORKFLOW_REF: ${{ job.workflow_ref }}
+          WL_REPO_SLUG: "Xingkai98/witnessloop"
+          WL_FALLBACK_REF: "v1"
+        run: |
+          set -eu
+
+          REF=""
+          WHY=""
+          FAILED=""
+
+          if [ -n "$WL_INPUT_REF" ]; then
+            REF="$WL_INPUT_REF"
+            WHY="调用方显式传入的 with.witnessloop-ref"
+          elif [ "$WL_WORKFLOW_REPOSITORY" != "$WL_REPO_SLUG" ]; then
+            FAILED="job.workflow_repository=「${WL_WORKFLOW_REPOSITORY:-<空>}」≠「$WL_REPO_SLUG」（GHES / 别人的仓 / 非本仓 reusable 都落这里）"
+          elif [ -n "$WL_WORKFLOW_SHA" ]; then
+            REF="$WL_WORKFLOW_SHA"
+            WHY="job.workflow_sha（被复用的那个 workflow 文件自己的 commit）"
+          else
+            case "$WL_WORKFLOW_REF" in
+              *@refs/heads/*)
+                REF="${WL_WORKFLOW_REF##*@refs/heads/}"
+                WHY="job.workflow_ref 的分支名（job.workflow_sha 缺失时的兜底）" ;;
+              *@refs/tags/*)
+                REF="${WL_WORKFLOW_REF##*@refs/tags/}"
+                WHY="job.workflow_ref 的 tag 名（job.workflow_sha 缺失时的兜底）" ;;
+              *)
+                FAILED="job.workflow_sha 为空、且 job.workflow_ref=「${WL_WORKFLOW_REF:-<空>}」解析不出可安装的 ref" ;;
+            esac
+          fi
+
+          if [ -n "$FAILED" ]; then
+            REF="$WL_FALLBACK_REF"
+            WHY="fail-closed：$FAILED"
+            echo "::warning::witnessloop 包 ref 解析失败，退到 $REF —— $FAILED"
+          fi
+
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "::notice::witnessloop 包 ref = $REF（来源：$WHY）"
+
       # fetch-depth: 0 是必需的：浅克隆会让 merge-base 求不出来，
       # 而 check 对「求不出 base」是 fail-closed（报错，不静默跳过）。
       #
@@ -48,6 +114,9 @@ jobs:
         env:
           BASE_INPUT: ${{ inputs.base-ref }}
           PR_BASE: ${{ github.base_ref }}
+          # 包 ref 由上面那个 step 解析（(B′)：缺省 = 本 reusable workflow 自己的 commit）。
+          # 走 env 而不是 `${{ }}` 内联：与 adopter tests 那一步同口径，不在 run 里做解析期插值。
+          WL_REF: ${{ steps.wl-ref.outputs.ref }}
         run: |
           if [ -n "$BASE_INPUT" ]; then
             BASE="$BASE_INPUT"
@@ -55,7 +124,7 @@ jobs:
             BASE="origin/$PR_BASE"
           fi
           uvx --from \
-            "git+https://github.com/Xingkai98/witnessloop@${{ inputs.witnessloop-ref }}" \
+            "git+https://github.com/Xingkai98/witnessloop@$WL_REF" \
             witnessloop check --root . --base "$BASE" --head HEAD
 
       # 接入方的测试执行点：`init` 写的命令文件（内容 = 一行 shell 命令）。
