@@ -19,7 +19,7 @@
 
 ## 1. 规格
 
-- [ ] 1.1 `specs/archive-awareness/spec.md`：把 D1 的判据写成 Requirement + Scenario（含 N-a…N-m 的否定面；`<sub>` 为空 / 尾斜杠那类**只能纯函数级**测）。
+- [ ] 1.1 `specs/archive-awareness/spec.md`：把 D1 的判据写成 Requirement + Scenario（含 N-a…N-o 的否定面；`<sub>` 为空 / 尾斜杠 / 只含 gitlink 的源那类**只能纯函数级**测）。
 
 ## 2. 测试（先行）
 
@@ -38,6 +38,7 @@
 ## 3. 实现
 
 - [ ] 3.1 `src/witnessloop/contract.py`：新增 `d_move_halves(changes, policy, arrivals, view, base_rev)`
+      （⚠️ 签名与 `design.md §2 D2` **逐字一致**：读**基准树**用 `base_rev`；早先一处写成 `head_rev`，已订正）
       ——**覆盖**判据的唯一实现（要读**基准树**：`view.walk(base_rev, f"{root}/{id}")` 列出源的全部文件，
       再逐条要它在 `A` 下有同相对子路径的落点）。**判据只此一处**。
 - [ ] 3.2 `src/witnessloop/checkcmd.py`：`_archive_move_exempt` 认 `D` 侧（查集合）。
@@ -45,6 +46,12 @@
       而在最坏情况下它是**第二个洞**（把还活着的 change 从 active id 里排除 ⇒ 逃掉契约校验，A1 的 S2 实测）。
       `:381-383` 的死分支也**不**顺手动（超出本 issue 的面）⇒ 登记为 §4 R5。
 - [ ] 3.4 文档：`docs/gate.md §5.1`（归档豁免那节）与 `§7 能力边界`（登记「`D` 侧配对是推断的」这条边界）。
+
+## 3.9 停轮（**未解除**）
+
+- [x] 3.9 `design.md §6` 的**停轮问题 Q1**（新增豁免面可被伪造绕过 ⇒ 三条路 A/B/C）**已写清、等用户拍板**；
+      `reviews/grill-design.md` 的 `## Open Questions` 同步列出同一条。**在它被回答之前不实现、不合入。**
+      （前四轮我自行裁定的几版判据**都被实测证伪** ⇒ 这条不再自行裁定。）
 
 ## 4. 验证
 
