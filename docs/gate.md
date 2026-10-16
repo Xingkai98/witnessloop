@@ -109,6 +109,19 @@ init：检测到冲突（已接入，但本次指定的内容与已落地不同�
 **EXIT=1**，而文案把人指向 **policy**——**误导**：要换的不是 policy，是这个 CLI 太旧。
 看到这条又来路不明时，**别去删 policy**，先确认 CLI 版本。
 
+⚠️ **同一条冲突还有一个「不是旧 CLI」的成因**（对抗轮 R9 的 W2 / R10 的 X1，**实跑**）：
+**定制过 policy 的仓**（`init --policy <seed>` 接入的，例如**本仓自己**）跑这个动作也会退 1，
+且随后 plain `init` **不**报「幂等，无改动」——它撞的是**另一条轴**：`desired_files()` 用的是
+**出厂政策**，而盘上是你那份定制政策，两者不同 ⇒ 判冲突。此时：
+
+- 那句「**要更换 policy 请先 `uninit`**」**不可照做**——`uninit` 会把 `policy.json`、caller
+  **与台账一起删掉**，而定制 seed 按本仓惯例**不入库**（`README` 的「本仓自身接入」），
+  删掉就恢复不回来；
+- 正确做法：**同时把 policy 带上**——`init --gate-ref <新 ref> --policy <你的 seed>`
+  （两条轴一起给，policy 那条就不再冲突；caller 与台账照旧先写且不回滚）；
+- ⇒ 上面那句「之后 plain `init` 回到幂等、`uninit` 仍可用」**只对 policy 与出厂默认一致的仓成立**；
+  定制 policy 的仓**即使升级成功**，plain `init` 也照旧退 1（那是**既有**行为，与本 change 无关）。
+
 ⚠️ 不带 `--gate-ref` 的 plain `init` **不**会顺手改 caller（只增不改照旧）；
 ⚠️ 手改 caller 会让「磁盘 ≠ 台账」——plain `init` 报「被改动过」、`uninit` 拒删；
 `uninit` 的出口仍在（回滚该文件即可），但**别手改**，用这个动作。

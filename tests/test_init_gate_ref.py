@@ -428,3 +428,33 @@ def test_a_self_flagged_caller_entry_does_not_hide_the_refusal(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "幂等" not in out
     assert "条目" in err
+
+
+def test_a_refused_retarget_writes_nothing_at_all(repo: Path, cli):
+    """R10 的 O1：拒绝必须发生在**任何写入之前**。
+
+    旧位置在 `--test-command` 那条轴之后 ⇒ 「退 1 但测试执行点已经被写了」，
+    与「做不成 ⇒ 不写任何东西」自相矛盾。
+    """
+    import json
+
+    _init(repo, cli, "--test-command", "true")
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+    tests_before = (repo / C.ADOPTER_TESTS_PATH).read_bytes()
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, _, err = cli(
+        "init", "--root", str(repo), "--test-command", "false", "--gate-ref", NEW_REF
+    )
+
+    assert code == C.EXIT_FAIL
+    assert "无法按 --gate-ref" in err
+    assert (repo / C.ADOPTER_TESTS_PATH).read_bytes() == tests_before  # 也没写它
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before

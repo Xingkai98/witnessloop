@@ -313,6 +313,15 @@ def run(args: argparse.Namespace) -> int:
 
     if manifest_path.is_file():
         note = None
+        if args.gate_ref:
+            # V1（对抗轮 R8）：先判「这件事做不做得成」——做不成就**响亮拒绝**，
+            # 否则会静默 no-op 并打印「幂等，无改动」（把用户要的换 ref 悄悄丢掉）。
+            # ⚠️ 位置在**所有写入之前**（对抗轮 R10 的 O1）：`--test-command` 那条轴也会写文件，
+            # 若把本判据放在它之后，就会出现「退 1 但已经写了东西」——与「做不成 ⇒ 不写任何东西」矛盾。
+            refusal = caller_retarget_refusal(root, manifest_path, gate_ref)
+            if refusal is not None:
+                print(f"init：{refusal}", file=sys.stderr)
+                return C.EXIT_FAIL
         if tests_write is not None:
             if args.dry_run:
                 print(f"init：[dry-run] 将写入测试执行点 {C.ADOPTER_TESTS_PATH}")
@@ -334,13 +343,6 @@ def run(args: argparse.Namespace) -> int:
         # 显式 `--gate-ref` 的覆盖语义（Q2 裁定 (a)）。**只**在这个已接入分支里生效：
         # 未接入的仓走下面的「只增不改」——否则会静默覆盖新仓里外来的 caller
         # （`tests/test_init.py` 的「新仓目标文件已存在 ⇒ 冲突且整体不落盘」就是钉它的）。
-        if args.gate_ref:
-            # V1（对抗轮 R8）：先判「这件事做不做得成」——做不成就**响亮拒绝**，
-            # 否则会静默 no-op 并打印「幂等，无改动」（把用户要的换 ref 悄悄丢掉）。
-            refusal = caller_retarget_refusal(root, manifest_path, gate_ref)
-            if refusal is not None:
-                print(f"init：{refusal}", file=sys.stderr)
-                return C.EXIT_FAIL
         rewritten = (
             sync_caller_gate_ref(root, manifest_path, gate_ref, dry_run=args.dry_run)
             if args.gate_ref

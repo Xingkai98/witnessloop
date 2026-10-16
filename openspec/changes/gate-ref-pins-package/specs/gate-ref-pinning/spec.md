@@ -105,7 +105,7 @@ SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
   ⚠️ **前提不能省（R9 的 W2，实跑证伪过）**：**定制过 policy 的仓不满足这个 Then**——
   `--gate-ref` 会退 1，且随后 plain `init` **不**报「幂等，无改动」（它撞的是**另一条轴**：
   出厂政策 ≠ 磁盘上的定制政策）。此时那句「要更换 policy 请先 `uninit`」**不可照做**——
-  `uninit` 会把 caller 与台账一起删掉。本仓自己就是这一类（`README` 的「本仓自身接入」）。
+  `uninit` 会把 `policy.json`、caller **与台账一起删掉**，而定制 seed 按惯例不入库。本仓自己就是这一类（`README` 的「本仓自身接入」）。
 
 ### Scenario: 不给 flag 时不动
 - **Given** 同一个已接入的仓
