@@ -18,6 +18,11 @@
   （`Xingkai98/witnessloop`）——否则退回**兜底 ref**（fail-closed；见下条 Scenario 的定性）。
 - `job.workflow_ref` SHALL 只作**兜底**（`job.workflow_sha` 缺失时）：仅接受 `refs/heads/<分支名>`
   与 `refs/tags/<tag名>` 两种形态。
+- ⚠️ **措辞收准（真 CI 实测，`v1.7.0` 那次）**：包 ref 就是 **`job.workflow_sha` 的原值**，
+  而**不总是**「那个 workflow 文件所在的 commit」——对 **annotated tag** 形态，GitHub 给的是
+  **tag 对象的 sha**（实测：`uses: …@v1.7.0` ⇒ `job.workflow_sha = 00192ab…` = tag 对象，
+  而它指向的 commit 是 `c9b2811…`）。机制**照常成立**（`uv`/git 能解析 tag 对象 sha，那一跑装成且门禁绿），
+  只是本文件与 `design.md` 里「commit」那个词对它不准确。本仓既有 tag 全是 annotated ⇒ 这是**常态**。
 - ⚠️ **能力边界（如实登记、不宣称覆盖）**：`job.*` 在 **GitHub Enterprise Server 上不可用**；
   同 owner 的 **fork** 也能匹配上 `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到
   fail-closed 退**本仓当前默认 ref**（`constants.DEFAULT_GATE_REF` 的 ref 部分；今天 = `v1.7.0`），
