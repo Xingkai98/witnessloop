@@ -52,7 +52,8 @@
 - [x] 3.3 `src/witnessloop/checkcmd.py`：自报本包 VCS ref（Q4 (a)，尽力而为）。
 - [x] 3.4 文档：`docs/gate.md`（§1 caller 行 + **§7 能力边界**加 Q5 的登记）、`README.md:20,119-121,170-177`、
       `docs/design.md:56,73`（K6）。
-- [ ] 3.5 **`(post-merge)` 本仓自身迁移**：**不在本 PR 内**（design §2 D4：目标 ref 只在合并后才存在）——
+- [x] 3.5 **`(post-merge)` 本仓自身迁移**：**不在实现 PR 内**（design §2 D4：目标 ref 只在合并后才存在）——
+      ✅ **已完成**（见 §6.4：tag 建好之后用工具自己迁移的；两者本是一条待办的两次勾选，别只看这一个框）。
       更新 `.github/workflows/witnessloop.yml` + `.witnessloop/init-manifest.json`，并建
       `openspec/changes/gate-ref-pins-package/workflow-events.jsonl` 写一条 `protected_path_write`
       （`artifact_path` 指向 `.witnessloop/init-manifest.json`、`reason`/`approved_by` 非空），
@@ -69,6 +70,10 @@
 - [x] 5.1 实现后独立审阅闭环 → `reviews/building-review.md`（**B1–B5 五轮**；
       B5 判**通过**）。后续轮次的报告按 M2 的约定各用不同 stage 名。
 - [ ] 5.2 归档 / 回链 issue #30。
+      ✅ **回链已完成**（issue #30 下已评论指向 PR #32）。
+      ⏸️ **归档刻意没做**（用户 2026-10-16 明确要求：witnessloop 至今**零归档**，这次要不要成为第一次由用户定夺；
+      且归档动作可能撞上 issue **#31**——docs-first 形态下搬移的 `D` 记录会被误报「受保护写入没有解释事件」）。
+      ⇒ 本 change 目录**保持 active**；`openspec/changes/archive/` **不存在**（已核实）。
       ⚠️ **归档之前**先把 manifest 补齐（对抗轮 R3 的 M2）：本 change 的 `reviews/` 会有
       **多份** `.md`（`grill-design` / `grill-adversarial`（R1）/ `-r2`…`-r11` / `building-review` —— 
       **按语义数，别按这里的清单数**：对抗轮跑到收敛为止，清单会继续长），
