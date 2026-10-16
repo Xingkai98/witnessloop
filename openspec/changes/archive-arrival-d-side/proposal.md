@@ -44,7 +44,8 @@ git 没配出 rename，于是它的旧路径被当成「删除受保护文件」
 1. 它的路径在 `<changes_root>/<id>/…` 下（**active** 源侧，`<sub>` 非空、不在 `archive/**` 下）；
 2. 同一次 diff 里存在一条 **`A`** 记录，路径**逐字等于** `f"{A.directory}/{<sub>}"`（**相对子路径相同**）；
 3. 那个到达目录 `A`（**已满足现有到达判据**）的 `source_ids` **恰为 `{<id>}`**
-   —— 即 git 的相似度配对认为「`A` 是从 `<id>` 搬来的」，且没有第二个 change 被配进来。
+   —— 即 git 的相似度配对认为「`A` 是从 `<id>` 搬来的」，且没有第二个 change 被配进来；
+4. **那个 change 确实离开了**：`<changes_root>/<id>` 在 head 树里没有 entry。
 
 ⇒ 该 `D` SHALL 免于「受保护路径被写入，但没有结构化解释事件」；其源 id SHALL 与 rename 的旧侧一样**从 active change id 里排除**。
 
@@ -57,6 +58,6 @@ git 没配出 rename，于是它的旧路径被当成「删除受保护文件」
 ## 验收
 
 - issue #31 的复现命令 ⇒ `check：通过 ✓`（红从 1 项降到 0 项）。
-- **十一条否定面**逐条仍红（`design.md §3` 的 N-a…N-k；含两轮独立审阅各实测出的杀手用例：
-  grill 的 G1「删整个 change + 别处一次正当搬移」、对抗轮的 S2「拖一个仍活着的 change 进来」）——
-  逐条见 `specs/` 的 Scenario。
+- **十三条否定面**逐条仍红（`design.md §3` 的 N-a…N-m；含**三轮独立审阅**各实测出的杀手用例：
+  grill 的 G1「删整个 change + 别处一次正当搬移」、A1 的 S2「拖一个仍活着的 change 进来」、
+  A2 的 P7「自造到达目录当钥匙」）——逐条见 `specs/` 的 Scenario。

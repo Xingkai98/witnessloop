@@ -18,7 +18,7 @@
 
 ## 1. 规格
 
-- [ ] 1.1 `specs/archive-awareness/spec.md`：把 D1 的判据写成 Requirement + Scenario（含 N-a…N-h 的否定面）。
+- [ ] 1.1 `specs/archive-awareness/spec.md`：把 D1 的判据写成 Requirement + Scenario（含 N-a…N-m 的否定面；`<sub>` 为空 / 尾斜杠那类**只能纯函数级**测）。
 
 ## 2. 测试（先行）
 
@@ -29,12 +29,15 @@
 - [ ] 2.3 否定面逐条：往**已存在**的归档目录搬 / **单独**删 active change 的文件 / 删整个 active change 目录 /
       **删掉整个 `b` 而别处有一次正当搬移的到达目录**（**G1 的杀手用例：改前会漏**）/
       **在仍活着的 `b` 里 `git mv` 一个小文件污染 `source_ids` 后再删它的受保护文件**（**A1 的 S2：改前会漏**）/
-      **零蓄意跨配对**（A1 的 S8）/ 源在 active change 外 / `<sub>` 为空 / `archive/<name>` 不是到达。
+      **零蓄意跨配对**（A1 的 S8）/ **自造到达目录当钥匙**（**A2 的 P7：只有「恰一个源 ∧ 源已离开」一起才挡得住**）/
+      **部分搬移 + 某文件没被配上**（N-m，与改动前同结论）/ 源在 active change 外 /
+      `<sub>` 为空与尾斜杠（**纯函数级**）/ `archive/<name>` 不是到达。
 - [ ] 2.4 纯函数面：`d_move_halves` 的配对算法（相对子路径逐字相等、前缀边界、大小写与 `./` 归一化）。
 
 ## 3. 实现
 
-- [ ] 3.1 `src/witnessloop/contract.py`：新增 `d_move_halves(...)`（D1 判据的**唯一**实现）。
+- [ ] 3.1 `src/witnessloop/contract.py`：新增 `d_move_halves(...)`（D1 的四条判据的**唯一**实现；
+      第 4 条用与 `changed_change_ids:391` **同一个谓词**：`view.entry(head_rev, f"{root}/{id}") is None`）。
 - [ ] 3.2 `src/witnessloop/checkcmd.py`：`_archive_move_exempt` 认 `D` 侧（查集合）。
 - [ ] 3.3 **`changed_change_ids` 不动**（A1-2 订正）：早先那半已删除——在「恰为一个源」的锚下它恒为空 no-op，
       而在最坏情况下它是**第二个洞**（把还活着的 change 从 active id 里排除 ⇒ 逃掉契约校验，A1 的 S2 实测）。
