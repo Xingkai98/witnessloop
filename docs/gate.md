@@ -79,6 +79,19 @@ ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
 它**取不到就写 `<未知>`，且不影响任何判定**（本地 editable / 源码直跑没有 `vcs_info`）。
 ⚠️ 这一行**由新版包起才有**（旧包跑 `check` 的输出里没有它）——别拿旧包的输出当「功能没生效」。
 
+⚠️ **`job.workflow_sha` 对 annotated tag 给的是「tag 对象的 sha」**（**真 CI 实测**，`v1.7.0` 那次，run `38928669316`）：
+本仓 caller 写 `uses: …gate.yml@v1.7.0` 时，job 日志是
+```
+Uses: Xingkai98/witnessloop/.github/workflows/gate.yml@refs/tags/v1.7.0 (00192abe45d2d72a4389eccb202faad48c34fa26)
+   Building witnessloop @ git+https://github.com/Xingkai98/witnessloop@00192abe45d2d72a4389eccb202faad48c34fa26
+check：本包来源（自报，尽力而为）：requested_revision=00192abe…，commit_id=00192abe…
+```
+——`00192ab…` 是 **tag 对象**的 sha，**不是**它指向的 commit（`c9b2811…`）。
+⇒ **机制照常成立**（`uv`/git 能把 tag 对象 sha 解析成它指向的 commit；那一跑**装成了、门禁绿**），
+但「包 ref 总是那个 workflow 文件所在的 **commit**」这句话对 annotated tag **不准确**：
+**它是 GitHub 给的 `job.workflow_sha` 原值**。好处是它比 tag 名更稳（tag 被移动也不改变已记下的那个对象）。
+⚠️ 本仓所有既有 tag（`v1`、`v1.0.0`…`v1.7.0`）都是 annotated ⇒ 这条是**常态**、不是边角。
+
 **升级动作（单一、显式）——两步，顺序不能反**：
 
 1. **先把 CLI 升上去**：`uv tool install --force git+https://github.com/Xingkai98/witnessloop@<新 ref>`

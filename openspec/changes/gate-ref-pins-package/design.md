@@ -47,8 +47,12 @@
    ⇒ **直接 fail-closed 到兜底 ref** + `::warning::`。**不**再试 `job.workflow_ref`
    ——那会拿别人仓的 ref 去 witnessloop 装包。（同 owner 的 fork 能匹配上这条判据，
    是**必要不充分**的已知面，见 §4 R6。）
-3. 否则 **`job.workflow_sha` 非空** ⇒ 用 **`job.workflow_sha`**（= 被复用的那个 workflow 文件
-   自己的 commit）。
+3. 否则 **`job.workflow_sha` 非空** ⇒ 用 **`job.workflow_sha`**。
+   ⚠️ **实测收准（`v1.7.0` 发布后那次真 CI）**：对 **annotated tag** 形态，GitHub 给的是
+   **tag 对象的 sha**（`uses: …@v1.7.0` ⇒ `00192ab…`，而它指向的 commit 是 `c9b2811…`），
+   所以这里是「`job.workflow_sha` 的原值」而**不是**「某个 commit」。机制不受影响
+   （`uv`/git 能把 tag 对象 sha 解析成它指向的 commit，实测装成且门禁绿），
+   且它比 tag 名更稳（tag 被移动也不改变已记下的那个对象）。
 4. 否则（repository 已匹配、但 sha 为空）⇒ 尝试 `job.workflow_ref` 的 `@` 之后那段，
    仅接受 `refs/heads/<分支名>` 与 `refs/tags/<tag名>` 两种形态，并**剥掉前缀**只留分支名/tag 名
    （R2 的 D2 要求写死这一点：实测 `uvx` 对 `@refs/heads/main` 与 `@main` **都能装**，
