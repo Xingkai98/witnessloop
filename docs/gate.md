@@ -116,6 +116,26 @@ init：检测到冲突（已接入，但本次指定的内容与已落地不同�
 **先写且不回滚**，policy 那条轴照旧让退出码非零；输出会**点明**这一点（同 `--test-command` 的
 「写在前、其余判定照旧参与退出码」先例，见 `specs/gate-ref-pinning/spec.md` 的对应 Scenario）。
 
+⚠️ **升级 PR 会被自己的门禁拦一次，先备好解释事件**（对抗轮 R8 的 V2，**实跑复现**）：
+`init --gate-ref` 会改写 `.witnessloop/init-manifest.json`，而它在**不变集**里 ⇒
+`A`（新增）免事件、**`M`（修改）要**。照上面两步做完提交，`check` 会报：
+
+```
+.witnessloop/init-manifest.json：受保护路径被写入，但没有结构化解释事件
+```
+
+**补救**：把那条事件写进**某个既有 change 目录**的 `workflow-events.jsonl`
+（`event_type=protected_path_write`、`artifact_path` 指向 `.witnessloop/init-manifest.json`、
+`reason`/`approved_by` 非空）。⚠️ **别为此新建一个「只有事件文件」的 change 目录**——
+新目录会触发 change 目录契约（必需件 + 审阅证据），实跑复现：**1 条红会变成 7 条红**。
+本仓自己那次迁移（`tasks.md §6.4`）走的就是「把事件写进本 change 目录」这条路。
+⚠️ 若该 PR **顺带**有别的 change 目录，直接写进它即可——`check` 读的是仓内**所有**
+`<changes_root>/*/workflow-events.jsonl`，不要求事件与改动落在同一个目录。
+
+⚠️ **`--gate-ref` 做不成时会响亮拒绝**（对抗轮 R8 的 V1）：若目标文件既不在盘上、台账里
+也没有它的条目，`init` **不会**报「幂等，无改动」，而是退 1 并说明原因——那一态既躲开了
+漂移判定（它只遍历台账条目），又走不到未接入分支（台账在），旧行为会**静默丢掉**你要的换 ref。
+
 **发布面**：这是一次**全局**行为变化，但**受影响的仓有两类**（别只想到第一类）：
 ① 把 `uses:` 指到含新 `gate.yml` 的 ref 的仓——在**它们动手的那一刻**切换包来源解析；
 ② `uses:` 写成**分支形态**（如 `…gate.yml@main`）的仓——**在合并那一刻**就**零动作**切换了

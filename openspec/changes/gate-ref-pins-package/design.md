@@ -347,6 +347,22 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 `docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
 `uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
 
+### R8（报告见 `reviews/grill-adversarial-r8.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `ab67ebd` 上找到 **2 条行为/文档缺陷 + 2 条缺钉子**，
+**全部已落库**（这是本 change 里最后一批非「缺钉子」类的发现）：
+
+| # | 类别 | 发现 | 落点 |
+|---|---|---|---|
+| V1 | **行为缺陷** | `init --gate-ref <新>` 在「台账无 caller 条目 **且** 盘上无文件」时**静默 no-op**（打印「幂等，无改动」、`gate_ref` 留在 `@v1`）——那一态躲开了漂移判定（只遍历台账条目）又走不到未接入分支（台账在） | 新增 `initcmd.caller_retarget_refusal()`：**先判可否做成**，做不成**响亮拒绝**（退 1、不写任何东西）；钉子 `test_no_caller_entry_and_no_file_refuses_loudly` |
+| V2 | **文档缺口** | 文档给的升级动作**照字面做会让接入方的 `check` 必红**：`init --gate-ref` 改写 `.witnessloop/init-manifest.json`，而它在**不变集**里 ⇒ `M` 需要 `protected_path_write` 解释事件。**已独立复现**（`check` 报一条「受保护路径被写入，但没有结构化解释事件」，EXIT=1） | `docs/gate.md §1.2` + `README.md` + `spec.md` 的升级 Requirement 新增「代价（SHALL 写进文档）」。⚠️ 复现时还发现更坏的一步：把事件放进**新建的**「只有事件文件」目录 ⇒ 触发 change 目录契约，红从 **1 条变 7 条**——一并写明 |
+| V3 | 缺钉子 | spec 列了**四类** ref 来源，notice 只钉了三类（「兜底」那类无断言） | `test_resolve_notice_names_the_source_of_the_ref` 补 `job.workflow_ref` 兜底那类 |
+| V4 | 缺钉子 | `--dry-run --gate-ref` 轴上「SHALL 不说『幂等，无改动』」零断言 | `test_dry_run_previews_without_writing` 补 `assert "幂等" not in out` |
+
+**⇒ 至此 `src/` 与 `gate.yml` 的行为面、以及接入方可见的文档面，都已被八轮独立对抗反复攻击过。**
+V1（静默 no-op）与 V2（升级即红）是这一轮最有价值的两条——它们都不是「缺一条断言」，
+而是**用户真的会踩到的行为/文档缺陷**。
+
 ### R7（报告见 `reviews/grill-adversarial-r7.md`）
 
 独立零记忆对抗者判定**不收敛**（判据②满足、①不满足）：在 `9bf5c8c` 上用「变异 → 跑全量 681」

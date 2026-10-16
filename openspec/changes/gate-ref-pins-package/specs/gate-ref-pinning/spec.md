@@ -91,6 +91,11 @@ SHALL 打印 `<未知>`，且 SHALL NOT 因此改变退出码。
   未接入的仓里若已存在内容不同的 caller，仍 SHALL 判冲突并整体不落盘。
 - **诚实边界**：不修这条时，接入方并非「没有出口」（三条恢复路径实测可用，见 `design.md §2 D2`），
   而是出口**难用**——本要求交付的是**好用**的那条。
+- **代价（SHALL 写进文档）**：本动作会改写 `.witnessloop/init-manifest.json`，而它在**不变集**里
+  ⇒ 该 PR 会**多一条**「受保护路径被写入但没有解释事件」的红，接入方 SHALL 在该 PR 里补一条
+  `protected_path_write` 事件（写在某个**既有** change 目录的 `workflow-events.jsonl`；
+  新建「只有事件文件的目录」会让红从 1 条变 7 条——实跑复现，见 `docs/gate.md §1.2`）。
+  文档 SHALL 把这条代价与补救写清，SHALL NOT 只写「重写 caller + 同步台账」就算完。
 
 ### Scenario: 显式换 ref 之后仍是干净的不动点
 - **Given** 一个已接入的仓（caller 无 `with:`）

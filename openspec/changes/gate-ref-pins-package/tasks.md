@@ -89,8 +89,11 @@
       模拟执行下列改动 ⇒ `673 passed`；改之前是 `5 failed`）：
       1. `src/witnessloop/constants.py` 的 `DEFAULT_GATE_REF`；
       2. `.github/workflows/gate.yml` 的 `WL_FALLBACK_REF` 字面量——fail-closed 的落点
-         **与 `DEFAULT_GATE_REF` 的 ref 部分同源**（由
-         `test_resolve_constants_match_the_single_source` 钉住）。见下面 Q1 的裁定；
+         **与 `DEFAULT_GATE_REF` 的 ref 部分同源**（由 *三条*钉住：
+         `test_resolve_constants_match_the_single_source` 比 env 字面量、
+         `test_resolve_reads_the_fallback_ref_from_its_env` 比**行为**（换哨兵值 ⇒ 输出跟着变）、
+         `test_resolve_script_reads_both_constants_from_the_environment` 比 `run` 里有没有**读**它——
+         R7 的 U2 证明只靠第一条会被「把字面量硬编进脚本」蒙过去）。见下面 Q1 的裁定；
       3. `tests/test_gate_workflow.py::test_caller_ref_matches_this_repo` 的 `== …@v1` 断言；
       4. ⚠️ **没有第 4 处要改**，但有一条**前提**要保住：
          `tests/test_init_gate_ref.py` 的 `NEW_REF` 必须是**不可能等于出厂默认**的 ref

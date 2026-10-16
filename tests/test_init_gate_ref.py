@@ -212,6 +212,8 @@ def test_dry_run_previews_without_writing(repo: Path, cli):
 
     assert code == C.EXIT_PASS, err
     assert "[dry-run]" in out
+    # R8 的 V4：spec 的 Scenario 明写「SHALL 不 说『幂等，无改动』」——这条轴此前零断言。
+    assert "幂等" not in out
     assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before
     assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == manifest_before
     assert git(repo, "status", "--porcelain") == status_before
@@ -372,3 +374,32 @@ def test_an_unparseable_ledger_is_loud_and_untouched(repo: Path, cli):
     assert code == C.EXIT_FAIL
     assert "无法解析" in err
     assert (repo / C.GATE_WORKFLOW_PATH).read_bytes() == caller_before
+
+
+def test_no_caller_entry_and_no_file_refuses_loudly(repo: Path, cli):
+    """对抗轮 R8 的 V1（**行为缺陷**）：台账里没有 caller 条目、盘上也没有这个文件时，
+    旧行为是**静默 no-op + 打印「幂等，无改动」**——用户要的换 ref 被悄悄丢掉。
+
+    这一态躲开了两条既有判定：漂移判定只遍历**台账条目**（看不见它）、
+    未接入分支又要台账不存在（从而不走）。⇒ 必须在这里 fail-closed 地拒绝。
+    """
+    import json
+
+    _init(repo, cli)
+    manifest = _ledger(repo)
+    manifest["created_files"] = [
+        entry for entry in manifest["created_files"] if entry["path"] != C.GATE_WORKFLOW_PATH
+    ]
+    (repo / C.INIT_MANIFEST_PATH).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (repo / C.GATE_WORKFLOW_PATH).unlink()
+    ledger_before = (repo / C.INIT_MANIFEST_PATH).read_bytes()
+
+    code, out, err = cli("init", "--root", str(repo), "--gate-ref", NEW_REF)
+
+    assert code == C.EXIT_FAIL, "做不成的显式请求不得报成功"
+    assert "幂等" not in out, "更不得谎称「幂等，无改动」"
+    assert C.GATE_WORKFLOW_PATH in err and "条目" in err
+    assert (repo / C.INIT_MANIFEST_PATH).read_bytes() == ledger_before  # 一个字节都没动
+    assert not (repo / C.GATE_WORKFLOW_PATH).exists()  # 也没复活它

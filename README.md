@@ -206,6 +206,11 @@ EXIT=1 与一句把人指向 **policy** 的「检测到冲突…要更换 policy
 ⚠️ **`v1.7.0` 发布之前，请仍然钉 `@v1`**：这个 tag 是随本 change 的 `(post-merge)` 步骤建的，
 在它出现之前指过去会钉到一个**不存在的 ref**。
 
+⚠️ **升级 PR 会被自己的门禁拦一次**：`init --gate-ref` 会改写 `.witnessloop/init-manifest.json`，
+它在**不变集**里 ⇒ `M` 需要一条 `protected_path_write` **解释事件**（写进某个**既有** change 目录的
+`workflow-events.jsonl`；⚠️ 别为此新建一个只有事件文件的 change 目录，实测那样会从 1 条红变 7 条红）。
+细节与实跑输出见 [docs/gate.md §1.2](docs/gate.md)。
+
 ⚠️ **别手改 caller**：手改 ⇒「磁盘 ≠ 台账」⇒ plain `init` 报「被改动过」、`uninit` 拒删
 （有出口，但要用上面那个动作）。要看**本次到底跑了哪个 ref**：`gate / check` 日志里那行
 `::notice::witnessloop 包 ref = …（来源：…）`，以及 `check` 自己那行

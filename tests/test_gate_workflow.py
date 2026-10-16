@@ -558,10 +558,18 @@ def test_resolve_notice_names_the_source_of_the_ref(tmp_path: Path):
     _, derived = _run_resolve(
         tmp_path, WL_WORKFLOW_REPOSITORY=C.REPO_SLUG, WL_WORKFLOW_SHA="deadbeef" * 5
     )
+    _, fallback = _run_resolve(
+        tmp_path,
+        WL_WORKFLOW_REPOSITORY=C.REPO_SLUG,
+        WL_WORKFLOW_REF=f"{C.REPO_SLUG}/.github/workflows/gate.yml@refs/heads/main",
+    )
     _, failed = _run_resolve(tmp_path)
 
     assert "来源" in explicit and "显式" in explicit
     assert "来源" in derived and "job.workflow_sha" in derived
+    # spec 点名了**四类**来源（显式 / job.workflow_sha / 兜底 / fail-closed）——
+    # 第四类此前没有断言，于是「把『兜底』写成指错来源的标签」可以全绿通过（R8 的 V3）。
+    assert "来源" in fallback and "job.workflow_ref" in fallback
     assert "来源" in failed and "fail-closed" in failed
 
 

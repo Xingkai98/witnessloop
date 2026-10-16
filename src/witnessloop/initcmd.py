@@ -188,6 +188,39 @@ def sync_caller_gate_ref(
     return f"{C.GATE_WORKFLOW_PATH} 与台账已改成 {gate_ref}"
 
 
+def caller_retarget_refusal(root: Path, manifest_path: Path, gate_ref: str) -> str | None:
+    """显式 ``--gate-ref`` 在什么情况下**既写不了、也不能装作没事**（对抗轮 R8 的 V1）。
+
+    唯一一种：**台账里没有 caller 条目、盘上也没有这个文件**。
+    它既不是「已落地的接入」（没有条目 ⇒ 漂移判定**看不见它**、不会报），
+    也不是「未接入」（台账在 ⇒ 走的是已接入分支）
+    ⇒ 旧行为会**静默 no-op 并打印「幂等，无改动」**，把用户要的换 ref 悄悄丢掉。
+    ⇒ 这里 fail-closed 地**拒绝**，并把「为什么」写清（不替用户猜他想要什么）。
+    """
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None  # 坏台账由 `_already_initialized` 报（它有一手诊断）
+    if not isinstance(manifest, dict) or manifest.get("gate_ref") == gate_ref:
+        return None
+    entries = manifest.get("created_files")
+    if not isinstance(entries, list):
+        return None  # 结构非法，同上
+    if (root / C.GATE_WORKFLOW_PATH).is_file():
+        return None  # 文件在 ⇒ 补条目即可（`_set_ledger_gate_ref` 有那条分支），能做成
+    if any(
+        isinstance(entry, dict) and entry.get("path") == C.GATE_WORKFLOW_PATH
+        for entry in entries
+    ):
+        return None  # 有条目：文件缺失时漂移分支会**响亮地**报，不必在这里拦
+    return (
+        f"无法按 --gate-ref 改 caller：{C.GATE_WORKFLOW_PATH} 既不在盘上、"
+        f"{C.INIT_MANIFEST_PATH} 里也没有它的条目——这个仓既不是「已落地的接入」"
+        "（没有可改的产物），也不是「未接入」（台账在）。"
+        "请人工确认后重跑：恢复该文件，或先 `uninit` 再 `init`。"
+    )
+
+
 def _set_ledger_gate_ref(manifest: dict, gate_ref: str, digest: str) -> None:
     """就地改台账：``gate_ref`` + caller 条目的 ``sha256``。
 
@@ -292,6 +325,13 @@ def run(args: argparse.Namespace) -> int:
         # 显式 `--gate-ref` 的覆盖语义（Q2 裁定 (a)）。**只**在这个已接入分支里生效：
         # 未接入的仓走下面的「只增不改」——否则会静默覆盖新仓里外来的 caller
         # （`tests/test_init.py` 的「新仓目标文件已存在 ⇒ 冲突且整体不落盘」就是钉它的）。
+        if args.gate_ref:
+            # V1（对抗轮 R8）：先判「这件事做不做得成」——做不成就**响亮拒绝**，
+            # 否则会静默 no-op 并打印「幂等，无改动」（把用户要的换 ref 悄悄丢掉）。
+            refusal = caller_retarget_refusal(root, manifest_path, gate_ref)
+            if refusal is not None:
+                print(f"init：{refusal}", file=sys.stderr)
+                return C.EXIT_FAIL
         rewritten = (
             sync_caller_gate_ref(root, manifest_path, gate_ref, dry_run=args.dry_run)
             if args.gate_ref
