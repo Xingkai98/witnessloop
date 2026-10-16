@@ -343,6 +343,28 @@ E5（兜底 ref 随默认值漂移 = 下面的 Q1）已裁定；E2/E4/E6 属**�
 `docs/gate.md §7.1` 写明；`gate.yml` 的 `>> "$GITHUB_OUTPUT"` **刻意不兜底**（兜了会退化成
 `uvx --from git+…@` 装默认分支的**静默错版**；现状是响亮的 fail-closed）——已就地写清理由。
 
+### R6（报告见 `reviews/grill-adversarial-r6.md`）
+
+独立零记忆对抗者判定**不收敛**（判据②满足；判据①不满足）。**这一轮的报告由两个互不消费的 R6 实例
+写就**（第一个实例写完即崩、没发回完成通知，我据此误判「无产物」并重启了一个新实例；第二个**没有覆写**
+第一个，只追加了自己的独立复核）——**形状不是设计出来的，如实登记**；净效果是多了一轮独立复核。
+两实例合计的新证伪项 **全部已落库**：
+
+| # | 发现 | 落点 |
+|---|---|---|
+| T1 | **安装步「吃不吃解析 step 的输出」全仓无钉子**：把 `gate.yml` 的 `WL_REF` 改回 `${{ inputs.witnessloop-ref }}`（= **逐字复现 issue #30 的原缺陷**）⇒ **680 条全绿**；而 `inputs` 的默认已是空串 ⇒ URL 退化成 `…@` = **静默装默认分支** | `tests/test_gate_workflow.py::test_the_install_step_consumes_the_resolved_ref`（钉来源、run 里不得再出现那个输入、uvx 用的就是该变量）。变异复核：改回旧绑定 ⇒ **红** |
+| 工作区不干净 | 被审 revision 的工作区里有**未提交**的测试（正是题面点名面的钉子）——按提交物读，那两条分支当时无钉子 | 已由 `b71f457` 消除；第二个实例复核确认它以干净工作区开始 |
+| D1 第 3 条触发条件 | `design §2 D1` 写「repository 不匹配 / sha 为空」都走 `job.workflow_ref` 兜底，实现里**只有 sha 为空**才走（不匹配直接 fail-closed） | D1 判定顺序按真实分支逐条重写（①–⑤）+ `test_repository_mismatch_does_not_fall_through_to_workflow_ref` |
+| recipe 顺序无钉子 | 把两步调换 ⇒ 全量零红，而文档明写「顺序不能反」 | `tests/test_docs.py::test_gate_recipe_puts_the_cli_upgrade_before_the_ref_change`（`docs/gate.md` 与 `README.md` 两处，变异复核变红） |
+
+**两个实例一致判为「不是必须修改项」的三条**（`docs/gate.md` 只改编号时顺序仍绿、
+`_set_ledger_gate_ref` 的纵深防御无独立钉子、dry-run 的 `print` 无钉子）：**接受**——都属
+「无行为后果 / 不可达」，**刻意不修**（为零行为后果的代码加测试只增加维护面）。
+
+**判①的读法**（第一个实例点名的元问题）：若把「轮内被并发修掉的证伪项」重新计零，判①会退化成
+**对并发消费敏感**的判据。**采纳其口径：按字面记** ⇒ 本轮有新证伪项 ⇒ 不收敛。
+其收敛前提是「树在被审 revision 上冻结（或只追加证据）」——**R7 之前不再改动 `src/`、`gate.yml`、`docs/`**。
+
 **R5 的低危观察**：`tasks.md §6.1` 的自查 grep 抓不住变体、面也不含 `openspec/` ——
 已把面扩到 `openspec/changes/gate-ref-pins-package/`，并把单一字面 grep 降级为「起手式」，
 写明**必须用已知会漏的形态试过**、抓完**逐条人判**。
