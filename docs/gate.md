@@ -210,6 +210,8 @@ witnessloop manifest build \
 
 - `head_sha` = 跑 build 时的 HEAD。所以要在**内容提交之后、证据提交之前**跑
   （§3.1）；随后把报告 + manifest 单独提交。
+- `--change` 传什么名字，取决于 change 的**来历**（见 §5.1.1）：**base 里已是 active** 的 change 可以在
+  归档前用**源 id** 产（归档后不必重建）；**出生即归档**的必须在归档**之后**用**归档目录名**产。
 - `base_sha` = 给定 `--base`（缺省与 `check` 用同一套解析）的 sha。
 - `tasks_hash` / `spec_hash` / `report_hash` 由 build 算出；`diff_hash` 是
   informational（如实算 `base..head` 的 diff 文本 sha256，`check` 不校验）。
@@ -290,7 +292,7 @@ manifest、grill 正文…都照旧）。**它仍然是红，不是绿**，所�
 若新增也要事件，每个正常 PR 都得为自己那份 manifest 写一条解释（自相矛盾），
 接入 PR 更会被自己的门禁拦下（鸡生蛋）。**修改或删除**才是要解释的动作。
 
-### 5.1 归档豁免：`<changes_root>/archive/**` 上的**纯改名**免解释
+### 5.1 归档豁免：把 change 搬进一个**本次到达**的归档目录免解释（`R100` 与 `R<100` 都算；issue #26 起）
 
 OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifest、事件文件都在
 不变集里，改名会被判成「修改受保护路径」——于是每次归档都得手写一条解释事件。
@@ -309,7 +311,7 @@ OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifes
 id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在」）；`archive/**` 同时
 进 `stale_exempt_paths`（归档不改内容，不该触发「审阅的是旧 revision」）。
 
-#### 5.1.1 归档感知：归档 move 把该 change「归属」回本次 diff（change `archive-awareness` / issue #21）
+#### 5.1.1 归档感知：**本次到达**的归档目录把该 change「归属」回本次 diff（change `archive-awareness` / issue #21；issue #26 起改为**目录级**判定）
 
 归档 move **不豁免任何东西**——它只让那个 change **重新成为本次 diff 的 change**，
 于是 ①`require_change_for`（§2）不再对「实现 PR 同时归档」误报、
@@ -339,17 +341,27 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
   `proposal.md` / `design.md` 的逐字节撞车**不**触发；**空文件**豁免。
 - **归档 move **不再**必须是纯改名**（issue #26 放宽）：同一个 diff 里「move + 改写被 move 的文件」
   （含「在归档态重建 manifest」，git 报 `R<100`）**照样算到达**——这正是接入方的真实形态。
-  推荐顺序仍是 **内容 → 在 active 态产证据 → 归档放最后**（省事），但**不再强制**。
+- **推荐时序按 change 的「来历」分两种**（**必须分开**，`issue #26 之后实测踩过**）：
+  - **base 里已是 active 的 change**（先有文档 PR 把 change 落进主干、实现 PR 再搬它）
+    ⇒ **① 内容 → ② 在 active 态产证据 → ③ `git mv` 归档放最后**（省事，也省一次重建）；
+  - **出生即归档**（change 与实现同一 PR 内产生，diff 里**没有 rename**）
+    ⇒ **必须**在归档 move **之后**、用**归档目录名**跑 `manifest build`
+    （`--change <归档目录名> --stage <stage> --report reviews/<报告>.md`）。
 - **树读不出来 ⇒ fail-closed**：到达判定要读 `merge-base(base, head)` 的树与 head 的树；
   `merge-base` 求不出、或 `ls-tree` 失败（浅克隆 / partial clone / 对象缺失）⇒ `check` **非零退出**并点名，
   **不授予**任何到达资格（既不按「已到达」也不按「未到达」静默放行）。
 - **归档目录名不再要求认得源 id**（用户 2026-10-15 裁定）：`archive/misc` 这类名字也认。
   连带：归档 target 的 `change_id` 别名「接受集合」= {归档目录名} ∪ 到达组里出现过的**全部**源 id
   （不再按名字过滤）。
-- **归档前产出的 manifest 不必重建**：归档态 target 的 `change_id` **接受两个名字**——归档目录名
-  （归档后产出的证据用）与**源 id**（归档**前**产出的证据用，一次改名把两者连起来）。
-  少了这条别名，「实现 PR 同时归档」那张 PR 的既有证据会全部判「与目录不符」，
-  而唯一的补救（重建）又撞上面那条 ⇒ 顺序上无解。
+- **「源 id」别名有前提：必须看得见 rename**。归档态 target 的 `change_id` 接受两个名字——
+  归档目录名与**源 id**，但**源 id 是从 rename 记录里解析出来的**（`git mv <changes_root>/<id>/… → archive/<name>/…`）：
+  - **有** rename ⇒ 归档**前**用源 id 产出的 manifest **不必重建**（一次改名把两个名字连起来）；
+  - **没有** rename（**出生即归档**：change 与实现同一 PR 内产生，归档目录下全是 `A`）
+    ⇒ 接受集合只有**归档目录名** ⇒ 归档前产的 manifest（`change_id=<源 id>`）会判「与目录不符」，
+    **必须在归档 move 之后用归档目录名重建**（或干脆在归档之后再产证据）。
+  ⚠️ **实测**（接入方 asterwynd，issue #305 阶段 C，合入 `6c5de92` 后复算）：出生即归档的实现 PR
+  （33 文件、该 change 的 15 条记录**全是 `A`、0 条 `R`**）精确报**三条**
+  `manifest.change_id='<源 id>' 与目录不符`；用归档目录名重建三份 manifest 后，同一个 diff **`check：通过 ✓`**。
 
 ## 6. 退出码（**按动词分表**——同一数字语义相反）
 

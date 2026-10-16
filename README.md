@@ -145,12 +145,24 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 三条要记住的操作边界：
 
 - **归档时带内容改动也可以**（issue #26 放宽）：move 与「改写被 move 的文件」（含在归档态重建 manifest，
-  git 报 `R<100`）同时在同一个 diff 里**照样算到达**，不再产生幽灵 id。推荐顺序仍是
-  **① 内容（实现 + 收尾）→ ② 在 active 态产证据 → ③ `git mv` 归档放最后**（省事），但不再强制。
+  git 报 `R<100`）同时在同一个 diff 里**照样算到达**，不再产生幽灵 id。
+- **推荐时序按 change 的「来历」分两种**（issue #26 之后必须分开看）：
+  - **change 在 base 里已经是 active**（例如先有一个文档 PR 把 change 落进主干，实现 PR 再来搬它）
+    ⇒ **① 内容（实现 + 收尾）→ ② 在 active 态产证据 → ③ `git mv` 归档放最后**（省事，也省一次重建）。
+  - **出生即归档**（change 与实现同一 PR 内产生，diff 里**一个 rename 都没有**）
+    ⇒ 必须在**归档 move 之后**、用**归档目录名**产 manifest：
+    `witnessloop manifest build --change <归档目录名> --stage <stage> --report reviews/<报告>.md`。
+    原因见下一条。
 - **不要「搬」现成证据**：把别的 change 的证据整份 `cp`/改名到新归档目录、或做成指向它的**符号链接**
   ⇒ 不授予（会报「没有任何 change 目录」）。
-- **归档前的 manifest 不必重建**：归档态 manifest 的 `change_id` 接受「归档目录名」与**源 id**
-  两个名字，两种归档命名（`archive/<id>`、`archive/<date>-<id>`）都算数。
+- **「源 id」别名**的前提是**有 rename**：归档态 manifest 的 `change_id` 接受「归档目录名」与**源 id**两个名字，
+  而**源 id 只能从 rename 记录里解析**（`git mv <changes_root>/<id>/… → archive/<name>/…`；
+  两种归档命名 `archive/<id>`、`archive/<date>-<id>` 都算）：
+  - **有** rename（上面第一种来历）⇒ 归档**前**用源 id 产的 manifest **不必重建**；
+  - **没有** rename（出生即归档）⇒ 只有**归档目录名**算数 ⇒ 归档前产的 manifest（`change_id=<源 id>`）
+    会**报「与目录不符」**，必须**在归档后用归档目录名重建**（或在归档之后再产证据）。
+  - 实测（接入方 asterwynd，issue #305 阶段 C）：出生即归档的实现 PR 精确报**三条**
+    `manifest.change_id='<源 id>' 与目录不符`（三份 stage manifest 各一条）——重建后同一个 diff `check：通过 ✓`。
 - **要改归档后的证据** ⇒ 放到**不含该归档 move** 的后继 diff 里（那会是覆盖 = 每条一条解释事件）。
 
 细节与边界表见 [docs/gate.md §5.1.1](docs/gate.md) 与 §4。
