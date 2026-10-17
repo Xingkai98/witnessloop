@@ -365,6 +365,11 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes, arrivals) -> 
     except events_mod.EventError as exc:
         return [contract.Finding(".", f"事件文件无法解析：{exc}")]
 
+    # issue #31 / user 2026-10-17 裁定 B：**只喂文案**——`D` 记录照旧要求解释事件，
+    # 但「它看起来像一次搬移的一半」时，把对侧路径、一行补救与示例写进 finding 的消息里。
+    # 它**不参与**下面任何 if、不影响 findings 的有无 / 路径 / 条数（`contract.move_half_candidates`）。
+    move_half = contract.move_half_candidates(changes, pol, arrivals)
+
     findings: list[contract.Finding] = []
     for change in changes:
         # 到达 = 把 change 搬进一个**本次新到达**的归档目录（`R100` 与 `R<100` 都算），
@@ -398,10 +403,76 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes, arrivals) -> 
                     "受保护路径被写入，但没有结构化解释事件"
                     f"（需 {pol.events_file} 里有 event_type="
                     f"{'/'.join(pol.protected_write_event_types)}、"
-                    "artifact_path 指向该文件、reason/approved_by 非空的事件）",
+                    "artifact_path 指向该文件、reason/approved_by 非空的事件）"
+                    + _move_half_hint(path, move_half, pol),
                 )
             )
     return findings
+
+
+def _move_half_hint(
+    path: str, move_half: dict[str, tuple[str, str]], pol: policy_mod.Policy
+) -> str:
+    """issue #31 / 用户裁定 **B**：把「这可能是搬移的一半」写成**可行动**的一行补救。
+
+    ⚠️ 只拼文案——**不**改变任何判定（本函数不在任何 `if` 里，finding 照旧成立）。
+
+    * `event_type` 取自 `pol.protected_write_event_types` 的**首个非空项**（**不硬编码**接入方
+      policy 里 `protected_artifact_explained` 那种名字：witnessloop 自己的 policy 只有
+      `protected_path_write`）。
+    * **示例必须真能用**（B1-1）：印之前**用 `events.covers` 验一遍**——policy 的允许集若本身
+      不可满足（例如带首尾空白：`Event` 会把事件类型去空白，而 `covers` 比的是**未去空白**的
+      允许集 ⇒ 任何事件都过不了），就**不印示例**、改印一句诊断。⚠️ 那是**先于本 change** 的
+      policy 写法问题，本 change 不修它（修它会改变豁免语义）。
+    * 允许集为空（只能由**代码**构造出的 Policy 触发；`from_doc` 对 `[]` 回落出厂默认）⇒ 不给示例。
+    * `artifact_path` 是那条 `D` 的**真实路径**（`events.covers` 不接受通配）。
+    * **补救位置**（B1-2 实测订正）：写进**该 change 归档后的** `workflow-events.jsonl`——
+      **不要**写进别的既有 change 目录（那是对不变集里一个 `M`，红会**转移**到那个文件）。
+    * **「一条」是有条件的**（B1-2 实测）：若追加本身让那个 events 文件的**旧路径**也配不上
+      rename（单行文件追加一行就可能发生）⇒ 再补一条覆盖它；**仍在同一个文件、同一个 PR**。
+    """
+    pair = move_half.get(path)
+    if pair is None:
+        return ""
+    counterpart, arrival_dir = pair
+    hint = (
+        "（⚠️ 这可能是**一次搬移的一半**："
+        f"`{path}` 被删，而同一次 diff 里 `{counterpart}` 是它在到达目录 `{arrival_dir}` 下的"
+        "**同相对子路径新增**。"
+        "若确属搬移，请在**同一个 PR** 内补解释事件——写进**该 change 归档后的** "
+        f"`{pol.events_file}`（**不要**写进别的既有 change 目录：那会让红转移到那个文件）；"
+        "**不要**为它新建一个只有事件文件的 change 目录（那会触发 change 目录契约，红会变多）。"
+        "通常**一条**就够；若追加本身让那个 events 文件的旧路径也掉成 `D`，按同样的办法再补一条"
+        "（仍在同一个文件、同一个 PR）——**反复跑到 `check：通过 ✓` 为止**。"
+    )
+    # B1-1 / BR-5：**取第一个能过 `covers` 的允许类型**（不是第一个非空的）——
+    # 允许集里可能有「带首尾空白的废项 + 一个好的」；此时**有好项可用**，不能报「都不可满足」。
+    reason = "归档时与 change 一起搬进 archive/（git 未配成 rename）"
+    approved_by = "<你的名字或 run id>"
+    usable = None
+    for candidate in pol.protected_write_event_types:
+        if not candidate:
+            continue
+        probe = events_mod.Event(candidate, path, reason, approved_by)
+        if events_mod.covers(probe, path, pol.protected_write_event_types):
+            usable = candidate
+            break
+    if usable is not None:
+        example = {
+            "schema": C.SCHEMA_EVENT,
+            "event_type": usable,
+            "change_id": "<归档目录名>",
+            "artifact_path": path,
+            "reason": reason,
+            "approved_by": approved_by,
+        }
+        hint += "可直接复制的示例：" + json.dumps(example, ensure_ascii=False)
+    elif any(pol.protected_write_event_types):
+        hint += (
+            "⚠️ 本仓 policy 的 `protected_write_event_types` 里**没有一个**能通过 `covers`"
+            f"（{pol.protected_write_event_types!r}）——请先修 policy 本身（例如去掉首尾空白）。"
+        )
+    return hint + "）"
 
 
 def _report(base, head, changes, targets, findings) -> None:

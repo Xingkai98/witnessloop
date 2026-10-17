@@ -324,6 +324,61 @@ def archive_arrivals(
     return arrivals
 
 
+def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, tuple[str, str]]:
+    """诊断用（**不参与任何判定**）：`D` 记录 ↔ 同一次 diff 里「同相对子路径」的 `A` 落点。
+
+    user 2026-10-17 裁定 B ⇒ **不发豁免**：这条 `D` 照旧要求解释事件；本函数只把
+    「它看起来像搬移的一半」这件事**喂给 finding 的文案**（`checkcmd._move_half_hint`），
+    让那条红**可行动**。
+
+    返回 ``{normalize(D.path): (normalize(A.path), normalize(A_dir))}``；同一个 `D` 有多条候选时
+    取 **A 路径字典序最小**的一条（确定性）。不收：
+
+    * 不是 `D` 侧唯一形态（`status[:1] == "D"` 且 `old_path` 为空——见 `gitutil._parse_name_status`）；
+    * 路径不在 ``<changes_root>/<id>/<sub>`` 下（`<sub>` 非空、且不在 ``archive/**`` 下）；
+    * 找不到**落在到达目录之下、相对子路径逐字相同**的 `A`。
+
+    ⚠️ **它是启发式**：一条 `D` 恰好与一条无关的 `A` 同相对子路径时也会命中——所以文案写的是
+    「**可能**是」，且**判定面零改动**（findings 的有无 / 路径 / 条数都不受它影响）。
+    """
+    root = policy.changes_root.rstrip("/")
+    archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
+    prefix = root + "/"
+    # 索引：每个到达目录 → {相对子路径: A 的实际路径}
+    by_dir: list[tuple[str, dict[str, str]]] = []
+    for arrival in arrivals:
+        directory = pathutil.normalize(arrival.directory)
+        rel: dict[str, str] = {}
+        for change in changes:
+            if change.status[:1] != "A":
+                continue
+            path = pathutil.normalize(change.path)
+            # 记录必须**落在**目录之下（记录正好是目录本身不算「某个子路径的新增」）。
+            if path == directory or not under_path(path, directory):
+                continue
+            rel[path[len(directory) + 1 :]] = path
+        by_dir.append((directory, rel))
+
+    out: dict[str, tuple[str, str]] = {}
+    for change in changes:
+        if change.status[:1] != "D" or change.old_path:
+            continue
+        path = pathutil.normalize(change.path)
+        if not path.startswith(prefix) or under_path(path, archive_root):
+            continue
+        rest = path[len(prefix) :]
+        if "/" not in rest:
+            continue  # `<sub>` 为空：记录就是 change 目录本身
+        sub = rest.split("/", 1)[1]
+        if not sub:
+            continue
+        candidates = sorted((rel[sub], directory) for directory, rel in by_dir if sub in rel)
+        if candidates:
+            a_path, a_dir = candidates[0]
+            out[path] = (a_path, a_dir)
+    return out
+
+
 def near_miss_archives(policy: Policy, view: TreeView, base_rev: str, head_rev: str) -> list[str]:
     """「像归档目录、但缺必需件」的候选名（**只为诊断文案**，不参与任何判定）。
 
