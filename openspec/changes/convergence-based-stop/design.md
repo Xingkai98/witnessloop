@@ -1,9 +1,10 @@
 # Design: convergence-based-stop（有界批次 × 20 轮上限）
 
 > **状态：按用户 2026-10-17 拍板的新模型重写；grill（`reviews/grill-design.md`）的 R1–R13
-> 已逐条整合（见文末 `## Pre-Implementation Review`）。** 旧版设计（收敛判据 / 问题账本 /
-> 无限轮）与其评审产物**全部作废**；旧文件保留在 git 历史（旧分支提交 `9acdf2b` 与重写提交
-> `20f1089`），不参与本 change 的证据。
+> 与对抗 R1（`reviews/grill-adversarial.md`）的 I1–I12 已逐条整合（见文末
+> `## Pre-Implementation Review`）。** 旧版设计（收敛判据 / 问题账本 / 无限轮）与其评审产物
+> **全部作废**；旧文件保留在 git 历史（旧分支提交 `9acdf2b` 与重写提交 `20f1089`），
+> 不参与本 change 的证据。
 > 关联 issue：witnessloop **#24**；基线：`origin/main` `46e45b4`（2026-10-17 fetch）。
 >
 > **用户已经拍板、本设计不再重开的参数**：
@@ -58,7 +59,9 @@
 | **验证（verification）** | 只核对当前批次每一项「是否已修好」；**不是**新一轮审阅，**不扫描/不追加**新的阻塞项。 |
 | **deferred（下一批）** | 验证期间发现的新问题（以及重分类为 medium+ 的项）。只登记，**不扩当前批次**，进下一轮批次。 |
 | **登记项（low / nit）** | 不进入阻塞批次的低严重度问题；可修可登记不修，登记不修必须写理由。 |
-| **收口确认（closing check）** | 一轮结束后的下一次开批：若批次为空 ⇒ `PASS`；非空则成为下一轮。 |
+| **收口确认（closing check）** | 一轮结束后的下一次开批：若批次为空 ⇒ `PASS`；非空则成为下一轮。初次开批（第 0 轮）为空也记作收口确认。 |
+| **已收口的轮** | `B_n` 全部验证通过的轮；只有它计入 20。`BLOCKED` / 超上限 `BLOCKED` 是终结态，不计为已收口轮。 |
+| **轮内 verdict** | 本轮报告里的 `PASS` / `CHANGES_REQUESTED` / `BLOCKED`；只有终结时才写「闭环出口」。 |
 
 ### 2.2 一轮的精确流程
 
@@ -66,19 +69,24 @@
 
 1. **开批**：审阅者做一次完整审阅，产出本轮 **medium+ 批次** `B_n`。
    - `B_n = ∅` ⇒ **`PASS`**（不进入修复，不消耗轮数）。
-   - `B_n ≠ ∅` 且已存在 20 个已结束的轮 ⇒ **超上限 `BLOCKED`**（§2.5）。
+   - `B_n ≠ ∅` 且已存在 20 个已收口的轮 ⇒ **超上限 `BLOCKED`**（§2.5）。
    - 否则本轮编号为 `n`，`B_n` **冻结**。
 2. **全修**：开发者把 `B_n` 的每一项修完；每项给出具体处置 + 一条能变红的回归测试。
 3. **验证**：审阅者只逐条确认 `B_n` 的每一项：
    - 已修好 ⇒ 记录 `已修好`（修复提交 + 回归测试）；
    - 没修好 ⇒ 记录 `未修好`，开发者继续修；**仍是第 `n` 轮**，不另计轮；
-   - **验证重试的终止点（R2）**：同一项在本轮内被再次判 `未修好`，且开发者拿不出
-     **新的、可验证的修复方案**时，审阅者 SHALL 以 `BLOCKED` + 成因终结（记录验证次数与
-     未通过项）；不新增数字上限，但「同一批反复无法收口」是 **SHALL**，不是可选。
+   - **验证重试的终止点（R2/I3）**：触发点是「同一项被再次（第二次及以后）判 `未修好`，
+     且开发者拿不出**新的、可验证的修复方案**」；第一次判 `未修好` 时开发者就明确拿不出
+     新方案，也立即触发。**「新的、可验证的修复方案」** = 实现环：新 commit + 一条在修复前红、
+     修复后绿的回归测试（或可复现失败的命令）；设计环：具体文本修改 + 可复现反例 / 文档守卫 /
+     逐条决策记录（见 §2.7）。审阅者 SHALL 记录验证次数、每次的修复提交与测试；触发时
+     以 `BLOCKED` + 成因终结。**第 20 轮触发该终止点时，出口是超上限 `BLOCKED`，不是通用
+     `BLOCKED`**。不新增数字上限，但「同一批反复无法收口」是 **SHALL**，不是可选。
    - 验证期间发现的新问题 ⇒ 只写入 `deferred`（medium+）或 low/nit 登记表；
      **不得**当场作为本轮阻塞项提出，**不得**扩大 `B_n`。
      **安全漏洞的例外（R3）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身
-     不安全」才可 `BLOCKED`；否则仍进 `deferred`，并在 deferred 行写明「为什么可以延后一轮」。
+     不安全」才可 `BLOCKED`；否则仍进 `deferred`。**所有** deferred medium+ 的「延后理由」列
+     都要写「为什么可以延后一轮」；安全项额外写「为什么晚一轮仍安全」（I9）。
 4. **收口**：`B_n` 全部为 `已修好` ⇒ 本轮结束，回到第 1 步做下一次开批（含 deferred）。
    **下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表**：每个 deferred medium+ SHALL
    以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里（R9）。
@@ -88,11 +96,18 @@
 
 ### 2.3 轮数上限 = 20
 
-- 最多存在 **20 个已结束的轮**（`n = 1..20`）。
-- **第 20 轮自身无法收口（R1）**：若 `B_20` 仍有任何一项为 `未修好`，本轮不会结束，
-  收口确认不会发生——此时出口 SHALL 是**超上限 `BLOCKED`**（不是通用 `BLOCKED`）：
-  报告 SHALL 写「**建议推倒重开（revise the design）**」+ 第 20 轮批次/验证账本 +
-  未收口 medium+ 列表；SHALL NOT 开启第 21 轮。
+- 最多存在 **20 个已收口的轮**（`n = 1..20`；「已收口」= `B_n` 全部验证通过；
+  `BLOCKED` / 超上限 `BLOCKED` 的终结态不计入）。
+- **第 20 轮自身无法收口（R1/I2）**：若第 20 轮达到 §2.2 第 3 步的验证重试终止点
+  （同一项再次判 `未修好`，且开发者拿不出新的、可验证的修复方案），出口 SHALL 是
+  **超上限 `BLOCKED`**（不是通用 `BLOCKED`）：报告 SHALL 写「**建议推倒重开
+  （revise the design）**」+ 第 20 轮批次/验证账本 + 未收口 medium+ 列表；
+  SHALL NOT 开启第 21 轮。
+  **第 20 轮收口后、收口确认前**：等待收口确认，不开启第 21 轮，不做修复。
+- **零轮 PASS 与收口确认的 id（I8）**：初次开批（第 0 轮）为空 ⇒ `PASS`；报告写
+  `### 初次开批 · 收口确认`，low/nit 用 `R0-<序号>`。第 20 轮收口后的收口确认若发现
+  medium+ ⇒ 超上限 `BLOCKED`，标识用 `C-<序号>`（或 `R20-C<序号>`）；发现 low/nit ⇒
+  仍可 `PASS`，同样用 `C-<序号>`。
 - 第 20 轮收口后，审阅者仍要做一次**收口确认**（下一次开批）：
   - 批次为空 ⇒ `PASS`；
   - 批次非空 ⇒ **超上限 `BLOCKED`**：报告 SHALL 写「**建议推倒重开（revise the design）**」，
@@ -126,11 +141,13 @@
 
 | 出口 | 触发 | 报告必须包含 |
 |---|---|---|
-| **`PASS`** | 某次开批 `B = ∅` | 收口确认结论 + low/nit 登记表（若有） |
+| **`PASS`** | 某次开批 `B = ∅`（含初次开批） | 收口确认结论 + 累积 low/nit 登记表（若有） |
 | **`BLOCKED` + 成因** | 阻塞性缺陷（核心功能缺失 / 安全漏洞 / 测试大面积失败 / 同一批反复无法收口） | 成因；当前批次与验证状态；交人决策项（照合 / 缩范围 / 放弃） |
-| **超上限 `BLOCKED`** | 20 轮已结束，收口确认仍有 medium+ | 「**建议推倒重开（revise the design）**」；第 20 轮账本；未收口 medium+ 列表 |
+| **超上限 `BLOCKED`** | 20 个轮已收口且收口确认仍有 medium+；或第 20 轮自身达到验证重试终止点 | 「**建议推倒重开（revise the design）**」；第 20 轮账本；未收口 medium+ 列表 |
 
 - `BLOCKED` 不自行修复：它是**终结态**，把问题交回用户。
+- **轮内 verdict 与闭环出口分开（I10）**：报告里的 `## 本轮判定` 可写 `PASS` /
+  `CHANGES_REQUESTED` / `BLOCKED`；`## 闭环出口` 只在终结时填三种出口之一，轮内写「未定」。
 - `CHANGES_REQUESTED` **不是出口**：它只描述「本批仍有未验证通过的项」，是轮内状态；
   对应动作是继续修/继续验证，不是停下交人。
 - 「同一批反复无法收口」**SHALL** 按 `BLOCKED` 结束并写成因（R2）：触发点是「同一项再次
@@ -143,43 +160,51 @@
   C 没修好 ⇒ **本轮不结束**，继续修 C（**这不算新一轮**）；C 修好后本轮结束。
 - **第 2 轮**：审阅者此时才提 D/E（以及第 1 轮验证期间 deferred 的问题）⇒ ……
 - 直到某一轮**没有任何 medium+ 问题** ⇒ `PASS`。
-- 若到第 20 轮仍有 medium+ 未收口 ⇒ `BLOCKED` +「建议重开设计」。
+- 若第 20 轮达到验证重试终止点，或第 20 轮收口后的收口确认仍有 medium+ ⇒ 超上限
+  `BLOCKED` +「建议重开设计」。
 
-### 2.7 报告形态（供第三方复核；`check` 不解析）
+### 2.7 报告形态（供第三方复核；`check` 不新增正文解析）
 
-每轮报告 SHALL 至少有：
+每轮报告 SHALL 至少包含（**轮内 verdict 与闭环出口分开**，I10）：
 
 ```markdown
+## 本轮判定（verdict）
+PASS | CHANGES_REQUESTED | BLOCKED（轮内可见；不是终结出口）
+
 ### 第 <n> 轮 · 批次
 | id | severity | 锚点（文件:行） | 问题 |
-…
 
 ### 第 <n> 轮 · 验证
-| id | 结果 | 修复提交 | 回归测试 |
-…
+| id | 结果 | 修复提交 | 回归测试 / 设计环对应物 |
 
 ### 第 <n> 轮 · 下一批（deferred）
-| id | severity | 锚点 | 问题 | 来源 |
-…
+| id | severity | 锚点 | 问题 | 来源 | 延后理由 |
+（所有 deferred medium+ 都写「为什么可以延后一轮」；安全项额外写「为什么晚一轮仍安全」）
 
-### low / nit 登记（累积：含前序轮次，或逐项链接）
+### low / nit 登记（累积：含前序轮次，或逐项链接 `#第-<n>-轮--low--nit-登记`）
 | id | severity | 处置（已修 / 登记不修） | 理由 |
-…
 
 ### 第 <n> 轮后 · 收口确认
-- 审阅时间 / 审阅范围 / 结论：0 条 medium+ ⇒ PASS；或 N 条 medium+ ⇒ 下一轮 / 超上限 BLOCKED
+- 审阅时间 / 范围 / 结论：0 条 medium+ ⇒ PASS；或 N 条 medium+ ⇒ 下一轮 / 超上限 BLOCKED
+- 仅在本轮收口或下一次开批时记录；BLOCKED / 超上限 BLOCKED 报告改记
+  「终止状态 / 验证账本 / 未通过项」，不伪造收口确认
 
-## 出口
+## 闭环出口（仅在终结时填写；轮内写「未定」）
 PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计）
 ```
 
 ⚠️ **PASS 必须引用 `### 第 <n> 轮后 · 收口确认`**：空的批次表与「没做这次审阅」在文本上
-不可区分（R12）。收口确认是 `PASS` 的证据位，不是可省略的装饰。
+不可区分（R12）。收口确认是 `PASS` 的证据位，不是可省略的装饰。**初次开批**为空时用
+`### 初次开批 · 收口确认`。
 
 - `id` = `R<首次出现轮次>-<序号>`；deferred 项沿用首次出现的轮次编号，进入下一轮批次时
-  不换 id（便于第三方追同一问题）。
+  不换 id（便于第三方追同一问题）。初次开批的 low/nit 用 `R0-<序号>`；第 20 轮收口后的
+  收口确认用 `C-<序号>`（或 `R20-C<序号>`）。
+- **设计环的验证表**：「回归测试 / 设计环对应物」列填**可复现反例**、**改前失败改后通过的
+  文档守卫**、或**逐条决策记录**（三选一，I11）；不是填 `N/A`。
 - 同一份报告可以叠多轮（本仓惯例）；每轮小节标题带轮次，避免同名小节被合并。
-- 这些是**流程约定**；`check` 只要求报告存在且被 manifest 绑定，**不解析**表格。
+- 这些是**流程约定**；`check` 只要求报告存在且被 manifest 绑定，**不解析**这些表格
+  （既有 `stage=grill` 正文结构判据另计，见 D6）。
 
 ## 3. 决策记录
 
@@ -194,18 +219,22 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 - **理由**：这是「一轮有界」的关键；否则审阅者可以在验证时不断追加，轮次仍不可数。
 - **边界**：验证只允许改「验证状态」和 deferred / low/nit 登记表；批次成员不变。
-- **例外（R3）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」才可
-  按 `BLOCKED` 终结；其余安全漏洞仍进 deferred，并在行内写明「为什么可以延后一轮」。
+- **例外（R3/I9）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」才可
+  按 `BLOCKED` 终结；其余安全漏洞仍进 deferred。所有 deferred medium+ 的「延后理由」列都要
+  写「为什么可以延后一轮」；安全项额外写「为什么晚一轮仍安全」。
 - **传递硬规则（R9）**：下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表；每个 deferred
   medium+ SHALL 以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
+- **终止点（I3）**：「再次」= 第二次及以后判 `未修好`；第一次失败就明确无新方案也立即触发。
+  「新的、可验证的修复方案」的形态见 §2.2 第 3 步；报告记录验证次数、提交与测试。
 
 ### D3：20 轮上限 + 超限建议重开
 
 - **理由**：用户拍板；有界模型下 20 轮足够大，再大说明该推倒重开。
-- **计数**：只有非空 medium+ 批次算轮；收口确认（空批）不占轮；按 change（且按环）累计，
-  后续报告保留前序轮次（R10）。
-- **第 20 轮自身无法收口（R1）**：若 `B_20` 仍有 `未修好`，出口 SHALL 是**超上限 `BLOCKED`**
-  +「建议推倒重开（revise the design）」+ 第 20 轮账本，不得开启第 21 轮。
+- **计数**：只有非空 medium+ 批次算「已收口的轮」；收口确认（空批）不占轮；按 change
+  （且按环）累计，后续报告保留前序轮次（R10）；`BLOCKED` / 超上限 `BLOCKED` 终结态不计入 20。
+- **第 20 轮自身无法收口（R1/I2）**：达到 §2.2 第 3 步的验证重试终止点 ⇒
+  **超上限 `BLOCKED`** +「建议推倒重开（revise the design）」+ 第 20 轮账本，
+  不得开启第 21 轮。
 - **超限处理**：第 20 轮收口后的收口确认若仍有 medium+ ⇒ `BLOCKED` +「建议推倒重开
   （revise the design）」。这不是「到轮数就停」——停的原因是 20 轮有界修复仍未收口。
 - **备选**：无限轮（旧版设计）——用户已否决；把收口确认也计一轮——会让第 20 轮恰好收敛的
@@ -222,21 +251,32 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 - `templates/grill.md` 的对抗验证环与 `templates/review-loop.md` 的 building 环同构：
   另起独立零记忆审阅者、开批、验证、deferred、20 上限、三出口。
-- **设计环的 `BLOCKED` 成因映射（R11）**：核心需求缺失 / 设计自相矛盾 / 依赖不可满足 /
-  同一批反复无法收口；作者负责改 `design.md` / `grill-design.md`；报告同样带
+- **设计环的 `BLOCKED` 成因映射（R11/I12）**：核心需求缺失 / 设计自相矛盾 / 依赖不可满足 /
+  同一批反复无法收口；作者负责改该 change 的**设计制品**：`design.md`、`proposal.md`、
+  `specs/<capability>/spec.md`、`tasks.md`，以及决策记录 `grill-design.md`；报告同样带
   「批次 / 验证 / deferred / low/nit / 收口确认 / 出口」。
+- **设计环的「能变红的回归测试」对应物（I11）**：可复现反例 / 一条改前失败、改后通过的
+  文档守卫 / 逐条决策记录（三选一），填在验证表的「回归测试 / 设计环对应物」列。
 - **显式豁免（R6）**：grill 的 frontier 追问轮**仅指进入对抗环之前**、为求设计树完备而做的
   内部轮；它不是审阅轮，不受 20 上限与「验证禁提新问题」约束。**由对抗环批次项驱动的设计
   探索属于该轮修复**，SHALL NOT 改标为 frontier。
 
-### D6：机械门禁零变化
+### D6：机械门禁**不新增**正文解析（既有判据不变）
 
-- `check` 仍只判「manifest + 报告存在、绑在最终 revision、reviewer ≠ author」；
-  **不解析** verdict / 批次 / severity / 轮数 / deferred。
+- 本 change **不新增**任何 `check` 判据；既有判据保持：
+  - change 契约件存在；
+  - review manifest / 报告 / revision / hash / `reviewer_run_id != author_run_id`；
+  - 孤儿报告（`reviews/**/*.md` 必须被 manifest 绑定）；
+  - **`stage=grill` 的决策记录正文完备性**（`Confirmed Decisions` ≥3 且每条有 `来源:`、
+    `Open Questions`、`User Confirmation`；`src/witnessloop/evidence.py:259-330`）；
+  - **`stage=grill-adversarial` / `building` 存在即可**（`verify_body=False`；
+    `evidence.py:334-380`）。
+- **不解析** verdict / 批次 / severity / 轮数 / deferred / low-nit 理由（新模型不进入机械面）。
 - 理由：与本仓 §9 building、§10 grill-adversarial 的既有口径一致；机械解析正文会引入
   「格式规范 + 历史回填 + 覆盖机制」的成本，且无法防伪造。
 - **诚实边界**：20 上限、批次冻结、deferred 都靠**模板 + 独立审阅者**执行；
-  `check` 绿只证明「有绑在最终 revision 的报告」，不证明报告里真的按新模型跑了。
+  `check` 绿只证明「既有证据判据通过」，不证明报告里真的按新模型跑了；但 `stage=grill`
+  的正文结构**是**会被解析的（既有事实，不是本 change 新增）。
 
 ### D7：不做本 change 之外的回填
 
@@ -267,69 +307,94 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
   8. 收尾落 manifest。
 - **三态 verdict 表（`templates/review-loop.md:75-81`）也要改**：`CHANGES_REQUESTED` 从
   「出口」降为「轮内状态」；`BLOCKED` 仍是出口；`PASS` 来自收口确认。
-- 报告形态加 `### 第 <n> 轮后 · 收口确认`，`PASS` 必须引用它（R12）。
+- **`templates/review-loop.md:150` 的「verdict 三态」也要限定**（I6）：三态值仍在，但只有
+  `PASS` / `BLOCKED` / 超上限 `BLOCKED` 是**闭环出口**；`CHANGES_REQUESTED` 是轮内状态。
+- 报告形态加 `本轮判定` / `闭环出口` 两段与 `### 第 <n> 轮后 · 收口确认`，`PASS` 必须引用
+  收口确认（R12/I10）；BLOCKED 报告不伪造收口确认。
 - 硬约束：批次冻结核 severity（R8）/ 验证禁提新问题 / medium+ 全修 / low/nit 登记须理由 /
   20 上限（含第 20 轮自身未收口，R1）/ deferred 传递（R9）/ 总账累计（R10）/
-  `CHANGES_REQUESTED` 不是出口 / `check` 不解析正文。
+  `CHANGES_REQUESTED` 不是出口 / `check` **不新增**正文解析。
 
 ### 4.2 `templates/grill.md`（对抗环）
 
 - 时序图与第 5 步改成「批次模型，与 review-loop 同构」。
 - 写码硬条件 #2 改成「对抗验证已 `PASS`，或 `BLOCKED` + 成因 + **用户已明确裁决继续**」；
-  `BLOCKED` 本身 SHALL NOT 作为写码许可（R5）。
+  `BLOCKED` 本身 SHALL NOT 作为写码许可（R5）。用户裁决记录在 `grill-design.md` 的
+  `## User Confirmation`（或新增 `## Blocked Ruling`）（L5）。
 - 明确 frontier 追问轮豁免的起止：仅限进入对抗环之前的求完备阶段；对抗环批次项驱动的
   设计探索属于该轮修复（R6）。
-- 设计环的 `BLOCKED` 成因映射与修复面见 D5（R11）。
+- 设计环的 `BLOCKED` 成因映射与修复面见 D5（R11/I12）。
+- 设计环的验证表填「可复现反例 / 文档守卫 / 逐条决策记录」对应物（I11）。
 
 ### 4.3 适配器与自述
 
 - `plugin/commands/review-loop.md`：front-matter、步骤 5/6、约束同步；
-  **`:63` 的「结论是三态」也要改**，否则 `CHANGES_REQUESTED` 仍被当出口。
+  **`:22` 的「步骤 1–6」改成「步骤 1–8」**（I6），`:23` / `:63` 的「三态」限定为
+  「三态值仍在，但只有 `PASS` / `BLOCKED` / 超上限 `BLOCKED` 是出口」。
 - `plugin/commands/grill.md`：步骤 5 同步。
 - `plugin/README.md`：命令说明同步。
-- `README.md:306`、`docs/design.md:25`、`docs/gate.md:716`：自述同步。
+- `README.md:306`、`docs/design.md:25`、`docs/gate.md:715-716`：自述同步；
+  `docs/gate.md:716` 同时写明「机械接受 ≠ 终结出口；`CHANGES_REQUESTED` 是轮内状态」（L2）。
 
-### 4.4 测试（R7 的扫描面）
+### 4.4 测试（R7/I4/I5 的扫描面）
 
-- 改 `tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 的旧断言。
-- 新增 `tests/test_convergence_stop.py`：
-  - **规范面清单**（显式列出）：`templates/review-loop.md`、`templates/grill.md`、
+- **扫描口径：显式 allowlist，不做「全仓减排除」**。只扫下列 11 个文件；不在名单里的文件
+  （历史记录、夹具、`docs/tasks.md`、`docs/reviews/**`、`openspec/changes/archive/**`、
+  其它 change 目录、`tests/test_grill_adversarial_gate.py`）**不进入反断言**——不需要可执行的
+  排除 glob，也不需要行级排除机制。
+  - allowlist：`templates/review-loop.md`、`templates/grill.md`、
     `plugin/commands/review-loop.md`、`plugin/commands/grill.md`、`plugin/README.md`、
     `README.md`、`docs/design.md`、`docs/gate.md`、`tests/test_templates.py`、
-    `tests/test_plugin.py`、`specs/review-termination/spec.md`。
-  - **排除名单**（历史/夹具，不得被反断言误伤）：`docs/tasks.md`、`docs/reviews/**`、
-    `openspec/changes/archive/**`、`openspec/changes/<其它 change>/**`、
-    `tests/test_grill_adversarial_gate.py:180`（夹具里的旧措辞是「check 不解析正文」的输入）。
-  - 模板/适配器/自述含新模型七要素；规范面不再出现旧口径（`3 轮封顶`、`三轮封顶`、
-    `有界轮数`、`轮数封顶`）。
-  - **变异验证**：把 `templates/review-loop.md` 的一处新措辞改回旧口径，测试必须 1 failed
-    （可在本地手动验证并记入 building 报告；不把变异提交进仓）。
+    `tests/test_plugin.py`、本 change 的 `specs/review-termination/spec.md`。
+- **词表（I4）**：`3 轮封顶`、`三轮封顶`、`有界轮数`、`轮数封顶`、`N 轮封顶`、`或封顶`、
+  `**封顶**`；再加**裸 `封顶` 行级规则**：allowlist 文件里任何含 `封顶` 的行，必须同时含
+  `常量` 或 `路径深度`，否则失败。这条覆盖 `templates/grill.md:21`、`templates/review-loop.md:101`、
+  `docs/design.md:25`、`tests/test_templates.py:258`、`tests/test_plugin.py:176` 里的裸「封顶」；
+  同时放行与本规则无关的 `docs/gate.md:407`（常量封顶）/ `:554`（路径深度封顶）/
+  `docs/design.md:85`（封顶 ~5 条常量）。
+- **七要素 → 必须出现的文件映射**（避免对一行摘要过度断言）：
+  - 全部七要素：`templates/review-loop.md`、spec；
+  - 批次 / 20 / 建议重开：`templates/grill.md`、`plugin/README.md`、`README.md`、
+    `docs/design.md`、`docs/gate.md`；
+  - 批次 / deferred / 20 / 三出口：两个 `plugin/commands/*.md`。
+- 改 `tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 的旧断言。
+- 新增 `tests/test_convergence_stop.py`：上述 allowlist、词表、映射、以及「适配器不得出现
+  `步骤 1–6`、必须出现 `1–8`」。
+- **变异验证（L4）**：把 `templates/grill.md:21` 的「封顶」措辞临时改回旧口径（或先制造），
+  指定测试 `test_normative_surfaces_drop_the_old_round_cap` **至少 1 failed**（不是固定 1 failed）；
+  改回后复绿。变异不提交。
 
 ## 5. 测试策略（TDD）
 
 1. 先写 `tests/test_convergence_stop.py` 与两条旧断言的改写版，跑 `uv run pytest -q` 确认**红**；
 2. 再改模板/适配器/文档；
 3. 目标：全量 `uv run pytest -q` 全绿（基线 `723 passed`，2026-10-17 实测）。
-4. **变异验证**（R7）：临时把 `templates/review-loop.md` 的一处新措辞改回旧口径，
-   确认新测试**变红**；改回后复绿。变异不提交。
+4. **变异验证**（R7/L4）：临时把 `templates/grill.md:21` 的旧口径改回来，指定测试
+   `test_normative_surfaces_drop_the_old_round_cap` **至少 1 failed**；改回后复绿。
 5. 文档守卫只钉**措辞在场**，不证明语义执行；语义由独立零记忆审阅者按 tasks 逐项核对。
 
 ## 6. 诚实边界
 
-- `check` **不解析**报告正文（D6）：新模型的 20 上限、批次冻结、deferred、severity
-  都是**流程规定**，不是机械门禁判据。
+- `check` **不新增**正文解析（D6），但**既有**的 `stage=grill` 正文完备性判据仍在
+  （`Confirmed Decisions` / `Open Questions` / `User Confirmation`，`evidence.py:259-330`）；
+  `stage=grill-adversarial` / `building` 仍只判存在（`evidence.py:373-380`）。
+  新模型的 20 上限、批次冻结、deferred、severity 都是**流程规定**，不是机械门禁判据。
 - 本 change 的「20」是**安全上限**，不是收敛判据；真正的收敛判据是「收口确认时批次为空」。
-- 「同一批反复无法收口」按 `BLOCKED` 处理，报告要如实记录验证次数；本 change 不新增
-  「每轮验证次数上限」参数（用户未拍板）。
+- 「同一批反复无法收口」按 `BLOCKED` 处理，报告要如实记录验证次数与每次修复的提交/测试；
+  本 change 不新增「每轮验证次数上限」参数（用户未拍板）。
 - 不承诺「20 轮内一定收敛」；只承诺「超过 20 轮时给出可行动的结论：重开设计」。
+- 本 change 改 `templates/**`、`plugin/**`，两者在 `require_change_for` 内
+  （`.witnessloop/policy.json:8-12`）⇒ 改动前后都会要求同一批 stage manifest；
+  「不新增 finding 类别/数量」不等于「没有 code_hits」。
 
 ## 7. 验收
 
 - 规范面（`templates/`、`plugin/`、`README.md`、`docs/design.md`、`docs/gate.md`）
-  能逐条查到新模型七要素；不再有旧口径（`3 轮封顶`、`有界轮数`、`轮数封顶`）。
+  能逐条查到新模型七要素；不再有旧口径（裸 `封顶` 行按 §4.4 的规则判）。
 - `specs/review-termination/spec.md` 的 Requirement 覆盖：
   轮定义、批次冻结、验证禁提新问题、deferred、medium+ 全修、low/nit 登记须理由、
-  20 上限与超限建议重开、三出口、两个环适用 + frontier 豁免、机械门禁零变化。
+  20 上限与超限建议重开、三出口、两个环适用 + frontier 豁免、机械门禁**不新增**正文解析。
+- 反断言的 allowlist、词表、裸「封顶」行级规则与七要素映射均可执行；变异验证至少 1 failed。
 - `uv run pytest -q` 全绿。
 - 三份 stage manifest（grill / grill-adversarial / building）齐全且 `witnessloop check` 绿。
 
@@ -375,6 +440,30 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 - **Code-Resolved**：落点行号全部核对；旧口径在规范面内无漏网；`tests/test_grill_adversarial_gate.py:180`
   的旧措辞是夹具，不改成断言；`check` 的正文判据只在 `evidence.py:259-330`，`building`/`grill-adversarial`
   只判存在（`evidence.py:373-380`）。
+
+**Adversarial R1（`reviews/grill-adversarial.md`，run
+`grill-adversarial-reviewer-convergence-2026-10-17`，`CHANGES_REQUESTED` → 已整合）**：
+
+- **I1** B2「无轮数上限」→ 改为批次模型 + 20 上限 + 超限建议重开（tasks B2）。
+- **I2** 第 20 轮触发过宽 → 改为「达到验证重试终止点」；补「第 20 轮收口后、收口确认前」
+  状态与出口表遗漏支（§2.3、§2.5、D3、spec Requirement 1.6/4）。
+- **I3** R2 终止点不可复核 → 定义「再次」「新的可验证修复方案」的形态与记录要求（§2.2、§2.5）。
+- **I4** 反断言词表漏裸「封顶」→ 加 `N 轮封顶` / `或封顶` / `**封顶**` + 裸 `封顶` 行级规则
+  与允许行（§4.4、§5）。
+- **I5** 扫描面与排除名单冲突 → 改为显式 allowlist，不做「全仓减排除」；加七要素映射（§4.4）。
+- **I6** 适配器「步骤 1–6」→ 改「1–8」；限定两处「三态」；加测试守卫（§4.1、§4.3、§4.4）。
+- **I7** 机械门禁诚实边界 → 改为「不新增正文解析」，列出 `stage=grill` 既有正文判据
+  （D6、§6、§7、spec Requirement 7、proposal 非目标）。
+- **I8** 零轮 PASS / 收口确认 id → 加初次开批 `R0-*` 与 `C-*` 规则（§2.3、§2.7、spec）。
+- **I9** deferred 延后理由 → 所有 deferred medium+ 都写；表加「延后理由」列（§2.2、§2.7、D2）。
+- **I10** 轮内 verdict 与闭环出口混淆 → 拆成 `## 本轮判定` / `## 闭环出口`；BLOCKED 报告不伪造
+  收口确认（§2.5、§2.7、spec Requirement 5）。
+- **I11** 设计环缺回归测试对应物 → 可复现反例 / 文档守卫 / 逐条决策记录（§2.7、D5、spec Req 1/6）。
+- **I12** 设计环修复面过窄 → 扩到 `design.md` / `proposal.md` / `spec.md` / `tasks.md` /
+  `grill-design.md`（D5、spec Requirement 6、tasks B4）。
+- **L1–L7** 已顺手修：`BLOCKED` 新成因（proposal）、`docs/gate.md:715-716` 机械接受≠出口、
+  累积登记链接格式、变异验证改为「至少 1 failed」、用户裁决记录位、`require_change_for` 触发面、
+  「已结束」→「已收口」。
 
 **停轮门**：无新增待拍板问题。用户 2026-10-17 的四个事项已记入 `grill-design.md` 的
 `## User Confirmation`。

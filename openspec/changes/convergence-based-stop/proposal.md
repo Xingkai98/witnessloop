@@ -53,7 +53,7 @@
 |---|---|---|
 | `PASS` | 一次开批**没有 medium+ 问题**（批次为空） | 收口确认 + low/nit 登记表 |
 | `BLOCKED` + **成因** | 阻塞性缺陷（核心功能缺失 / 安全漏洞 / 测试大面积失败 / 同一批无法收口） | 成因 + 当前批次/验证状态 + 交人决策项 |
-| 超上限 `BLOCKED` | 已跑满 20 轮，下一次开批仍有 medium+ | **建议推倒重开（revise the design）** + 第 20 轮账本 |
+| 超上限 `BLOCKED` | 已跑满 20 个已收口的轮且下一次开批仍有 medium+；或第 20 轮自身达到验证重试终止点 | **建议推倒重开（revise the design）** + 第 20 轮账本 |
 
 ### 一个具体例子（写进 design，帮助理解）
 
@@ -61,7 +61,8 @@
   ⇒ **本轮不结束**，继续修 C（**这不算新一轮**）；修好后本轮结束。
 - 第 2 轮：审阅者此时才提 D/E（以及第 1 轮 deferred 的问题）⇒ ……
 - 直到某一轮**没有任何 medium+ 问题** ⇒ `PASS`。
-- 若到第 20 轮仍有 medium+ 未收口 ⇒ `BLOCKED` +「建议重开设计」。
+- 若第 20 轮达到验证重试终止点，或第 20 轮收口后的收口确认仍有 medium+ ⇒ 超上限
+  `BLOCKED` +「建议重开设计」（不是通用 `BLOCKED`，也不是「到轮数就停」）。
 
 ## 目标
 
@@ -76,19 +77,22 @@
    后续报告保留前序轮次。
 7. **deferred 传递是开批硬规则**：下一次开批先读上一轮 deferred/low-nit 表；每个 deferred
    medium+ 以原 id 进入下一轮批次，或出现在 `BLOCKED` 成因里。
-8. 机械门禁口径**不变**：`check` 仍只判「证据存在 + 绑在最终 revision」，
-   **不解析**批次、severity、轮次或出现次数——新模型靠**模板 + 独立审阅者**执行。
+8. 机械门禁口径**不新增正文解析**：`check` 的既有判据（契约件 / manifest / revision / 孤儿 /
+   `stage=grill` 正文完备性 / 另两个 stage 存在即可）不变；**不解析**批次、severity、轮次或
+   出现次数——新模型靠**模板 + 独立审阅者**执行。
 
 ## 非目标
 
-- **不在 `check` 里解析报告正文**（不解析 verdict / 批次 / severity / 轮数）。这是本仓
-  `building` / `grill-adversarial` 两条门禁的既有口径，本 change 不改变。
+- **不在 `check` 里新增报告正文解析**（不新增 verdict / 批次 / severity / 轮数的判据）。
+  既有 `stage=grill` 的正文完备性判据（`Confirmed Decisions` / `Open Questions` /
+  `User Confirmation`）**保持**；`building` / `grill-adversarial` 仍只判存在。
 - **不给「超过 20 轮」加机械判据**：它只在诚实的审阅者/开发者写出的报告上生效；
   与既有「证据存在」门禁一样，属于**防漂移、不防蓄意伪造**。
 - **不回填历史记录**：`docs/reviews/*`、已归档 change 的报告、`docs/tasks.md` 是当时的记录，
   不按新口径改写。
 - **不碰 asterwynd 侧**：其 12 处旧口径由另一个 change 承载，口径以本 change 的 spec 为准。
-- **不改 `BLOCKED` 的既有语义**（阻塞性缺陷停下、报告、不自行修复），只补「超上限」这一成因。
+- **不改 `BLOCKED` 的既有语义**（阻塞性缺陷停下、报告、不自行修复）；补「超上限」以及
+  新模型需要的验证重试终止点 / 安全例外两个成因。
 - 不引入新参数（如每轮验证次数上限、severity 折算规则）；用户已拍板的三个参数之外不再加旋钮。
 
 ## 落点（origin/main `46e45b4` 实测行号）
@@ -97,6 +101,7 @@
 |---|---|---|
 | `templates/review-loop.md:11` | 「有界轮数封顶」 | 批次闭环 + 20 轮上限 + 三种出口 |
 | `templates/review-loop.md:75-81` | 三态 verdict 表（`CHANGES_REQUESTED` 像出口） | 明确它只是轮内状态；出口只有 `PASS`/`BLOCKED` |
+| `templates/review-loop.md:150` | 硬约束「verdict 三态」 | 限定「三态值仍在，但只有 `PASS`/`BLOCKED`/超上限 `BLOCKED` 是出口」 |
 | `templates/review-loop.md:90-102` | 「修复并再审（轮数封顶，默认 3 轮）」 | 「修复并验证（同轮不另计）」+ deferred + 20 上限 |
 | `templates/review-loop.md:153` | 「三轮封顶时该停下交人」 | 超上限 ⇒ BLOCKED + 建议重开设计 |
 | `templates/grill.md:21` | 「直到 PASS 或封顶」 | 「直到 PASS / BLOCKED；对抗环按批次模型」 |
@@ -105,11 +110,13 @@
 | `plugin/commands/grill.md:25` | 「直到 PASS 或轮数封顶」 | 同上 |
 | `plugin/commands/review-loop.md:2` | front-matter「有界轮数」 | 「批次闭环，20 轮上限，三出口」 |
 | `plugin/commands/review-loop.md:29` | 「有界轮数（默认上限 3 轮）」 | 「batch / deferred / 20 / 三出口」接线 |
+| `plugin/commands/review-loop.md:22` | 「按模板步骤 1–6 执行」 | 改成「步骤 1–8」或「按模板全文」 |
+| `plugin/commands/review-loop.md:23` | 「verdict 是三态」 | 限定出口只有三种，`CHANGES_REQUESTED` 是轮内状态 |
 | `plugin/commands/review-loop.md:63` | 「结论是三态」 | 明确 `CHANGES_REQUESTED` 不是出口 |
 | `plugin/README.md:37` | 「轮数封顶」 | 同上 |
 | `README.md:306` | 「有界轮数封顶」 | 批次模型 + 20 + 重开建议 |
 | `docs/design.md:25` | 「PASS 或 N 轮封顶」 | 「批次闭环；20 轮上限；超限 BLOCKED + 重开」 |
-| `docs/gate.md:716` | 「轮数封顶 → 交人判断」 | 「BLOCKED（含超上限建议重开）是规定出口」 |
+| `docs/gate.md:715-716` | 「PASS / CHANGES_REQUESTED 都合格」+「轮数封顶 → 交人判断」 | 「BLOCKED（含超上限建议重开）是规定出口；机械接受 ≠ 终结出口，`CHANGES_REQUESTED` 是轮内状态」 |
 | `tests/test_templates.py:257-258` | 断言「轮 + 封顶」 | 断言批次 / 20 / medium+ / deferred / 三出口 |
 | `tests/test_plugin.py:174-176` | 断言「轮 + 封顶/上限」 | 同上（适配器接线层） |
 
@@ -131,14 +138,16 @@
   `templates/review-loop.md` 的实现环写明同一模型；grill frontier 追问轮显式豁免。
 - **测试**：新增/改写的文档守卫变红 → 改文档 → 变绿；变异验证（改回旧措辞必须变红）；
   `uv run pytest -q` 全绿（基线 723 passed）。
-- **机械边界**：`witnessloop check` 判据零变化（不解析正文）；新增的只是文本与文档守卫。
+- **机械边界**：`witnessloop check` **不新增**正文解析（既有判据不变；`stage=grill` 仍校验
+  正文结构）；新增的只是文本与文档守卫。
 
 ## 测试策略
 
 TDD。先写文档守卫（substring / 反 substring）让它们红，再改模板与文档让它们绿。
 新增 `tests/test_convergence_stop.py` 钉住新模型的七个要素；改写 `tests/test_templates.py` 与
-`tests/test_plugin.py` 里两条旧的「封顶」断言。反断言**只扫显式规范面**（模板 / 适配器 /
-README / docs design+gate / 两条测试 / 本 spec），**排除**历史记录与夹具（见验收）。
-加一条**变异验证**：临时把 `templates/review-loop.md` 的新措辞改回旧口径，测试必须变红。
+`tests/test_plugin.py` 里两条旧的「封顶」断言。反断言**只扫显式 allowlist**（见验收的 11 个
+文件，不做「全仓减排除」）；词表含 `N 轮封顶` / `或封顶` / `**封顶**` 与裸 `封顶` 行级规则。
+加一条**变异验证**：临时把 `templates/grill.md:21` 的新措辞改回旧口径，指定测试
+`test_normative_surfaces_drop_the_old_round_cap` **至少 1 failed**；改回后复绿。
 不写「用自然语言判断语义」的测试——文档守卫只能钉**措辞在场**，真正执行靠独立审阅者；
 这条诚实边界写进 design §6。
