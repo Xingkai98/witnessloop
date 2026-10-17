@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "convergence-based-stop",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-convergence-2026-10-17",
+  "author_run_id": "convergence-based-stop-author-2026-10-17",
+  "base_sha": "46e45b446ca92ea84838490e535a41c529994526",
+  "head_sha": "88ec8a77c1c8c1aa97bfad9cb94287495711a775",
+  "tasks_hash": "2d31738a10d766c359582f441f30c9066b2f57070a77905e9413947ad1d2197c",
+  "spec_hash": "e1f977dfacc960e72311dbec88ce69d7c4517a2765ccb2c023188d8ba25f4086",
+  "diff_hash": "5214ce1a6ced148224735576885c21193adcdfa5be20e86ea67baf81444a00cc",
+  "report_hash": "0c7fadf22a36f03fd6194d67e04674429dbd3f69a5cade9650f9c4403063b909",
+  "report_path": "reviews/grill-design.md"
+}

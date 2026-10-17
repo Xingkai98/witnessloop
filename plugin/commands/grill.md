@@ -21,9 +21,11 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
    **不要阻塞**在某个事实探查上——只有它下游的问题顺延，其余先照处理，
    别把整条 frontier 扣下。
 5. **对抗验证**（仍在停轮**之前**）：**另起一个独立零记忆的 run** 默认这些结论有错、
-   逐条证伪 → verdict → `CHANGES_REQUESTED` 就修 `grill-review.md` 再审，
-   直到 `PASS` 或轮数封顶；被证伪的决策**回写 `grill-review.md`**。
-   产物 `<change-dir>/reviews/grill-adversarial.md`。
+   逐条证伪 → 按 `templates/grill.md` 第 5 步的**批次模型**处理（开批 / 全修 / 只验证 /
+   收口；验证期新问题只进 `deferred`（下一批），不得当场提；20 上限；三出口；frontier
+   豁免）；`CHANGES_REQUESTED` 是轮内状态，修该 change 的设计制品并在同一轮逐条验证，
+   不是开新一轮。被证伪的决策**回写 `grill-review.md`**。产物
+   `<change-dir>/reviews/grill-adversarial.md`。
 6. **才停轮**：把**收敛后**的 `## Open Questions` **一次性**交给用户确认
    （每条附推荐答案与具体例子）。**不要替用户拍板。**
    `## User Confirmation` 没写齐之前，**不要开始实现**。
@@ -34,7 +36,7 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
 
    ```
    witnessloop manifest build --root . --change <change-id> --stage grill \
-     --report reviews/grill-review.md \
+     --report reviews/grill-design.md \
      --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
 
    witnessloop manifest build --root . --change <change-id> --stage grill-adversarial \

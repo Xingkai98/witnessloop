@@ -7,8 +7,13 @@
 
 ## 目的
 
-实现完成后，由**独立零记忆**的审阅者审一遍；不通过就修，修完再审——
-**有界轮数封顶**，避免「永远在修」和「自评通过」。
+实现完成后，由**独立零记忆**的审阅者审一遍；不通过就修，修完再验证——
+**一轮 = 一个非空 medium+ 批次的闭环**：开批 → 开发者全修 → 审阅者**只做修复验证**
+→ 全部通过 ⇒ 本轮结束；下一轮才提新一批。**最多 20 轮**；超过 ⇒ `BLOCKED` +
+「**建议推倒重开（revise the design）**」。
+
+**批次冻结、验证期发现的新问题只进下一批（deferred）**——**不许边改边提**；否则轮次不可数、
+工作量无界。
 
 ## 参与者
 
@@ -22,6 +27,7 @@
 - `<change-dir>/tasks.md` 与 `design.md`（声称要做什么、怎么做）
 - 实际的代码改动（本次 PR 的 diff）
 - `<change-dir>/reviews/` 下已有的证据
+- **上一轮的 `deferred` 与 low/nit 登记表**（若有；开批时必须先读）
 
 ## 审阅维度
 
@@ -57,37 +63,20 @@ git merge-base HEAD <主干>         # base，manifest 用
 若分支**落后主干**（diff 里出现「删除已合入代码」这类假象），先
 `git rebase <主干>` 并解决冲突，**再审**——否则审的是个不存在的差异。
 
-### 3. 起零记忆审阅者（第 N 轮）
+### 3. 开批（第 n 轮）
 
-**另起一个 run**，零记忆、不继承开发上下文。交给它：
+**另起一个零记忆审阅者**（第 n 轮），做一次完整审阅，产出本轮**批次**：
 
-- change 目录的绝对路径 + `change-id`；
-- 审阅对象：`git diff <base>...HEAD` + change 文档；
-- 上面 8 个**审阅维度**；
-- **任务逐项验证**：对照 `tasks.md` 每个 `[x]` 读代码确认真实存在；
-- **批次 aware**：`tasks.md` 里标了「后续批」的 `[ ]` **不算缺陷**，
-  别据此打 CHANGES_REQUESTED（只验证本批的 `[x]`）；
-- **verdict 判定规则**（见下）；
-- 跑相关测试并把结果写进报告；
-- 产出报告 `<change-dir>/reviews/<stage>-review.md`，含 Verdict / Tasks
-  Verification / Issues / Test Results / 结论。
+- 批次**只列 medium 及以上**（`blocker` / `high` / `medium`）；
+- `low` / `nit` **另列登记表**，不进入阻塞批次；
+- **批次为空** ⇒ **`PASS`**（不进入修复，不消耗轮数）：在报告里写
+  `### 初次开批 · 收口确认`（或 `### 第 <n> 轮后 · 收口确认`；审阅时间 / 范围 / 0 条
+  medium+），跳到第 7 步并继续第 8 步（收尾）；
+- 若已收口 **20 个轮**、下一次开批仍非空 ⇒ **超上限 `BLOCKED`** +「建议推倒重开
+  （revise the design）」，跳到第 7 步；
+- 否则批次冻结，作为第 n 轮；**批次成员与 severity 一并冻结**。
 
-**verdict 三态**（不许模糊）：
-
-| verdict | 含义 |
-|---|---|
-| `PASS` | 所有 `[x]` 有真实实现，无未解决的中等以上问题，测试通过 |
-| `CHANGES_REQUESTED` | 有需修复的问题，但不阻塞整体 |
-| `BLOCKED` | **阻塞性缺陷**：核心功能缺失 / 安全漏洞 / 测试大面积失败 |
-
-### 4. 判定并闭环
-
-- `PASS` → 跳到第 6 步。
-- `CHANGES_REQUESTED` → 进第 5 步。
-- `BLOCKED` → **停下，向用户报告阻塞项，等指示；不自行修复**。
-  阻塞性缺陷不是「作者顺手补一下」的事——它是设计或范围出了问题。
-
-### 5. 修复并再审（**轮数封顶**，默认 3 轮）
+### 4. 全修
 
 - 逐条修复审阅报告的问题，每条都给出**具体**处置：文件与行、为什么是问题、
   改成什么样。笼统的「已优化」不算处置。
@@ -96,27 +85,96 @@ git merge-base HEAD <主干>         # base，manifest 用
 - **同步更新 change 文档**：在 `tasks.md` 追加一节「审阅修复」，注明每条问题与
   对应修复（审阅报告引用的行号就是修复的目标）。
 - 跑相关测试确认全绿，**提交修复**。
-- 回到第 3 步再审（第 N+1 轮）。
 
-**封顶**：到第 3 轮仍 `CHANGES_REQUESTED`，**停下**向用户报告剩余阻塞项，
-升级到人判断——不得无限循环，也不得在第 N 轮悄悄放水。
+### 5. 只做修复验证
 
-### 6. 收尾
+审阅者**只**逐条确认本轮批次 `B_n` 的每一项：
 
-- 报告已在上一步写好：`<change-dir>/reviews/<stage>-review.md`
-  （结论、轮次、每条问题的处置、未决项）。
-- 跑 `witnessloop manifest build` 产出 manifest：
+- **已修好** ⇒ 记录 `已修好`（修复提交 + 回归测试）；
+- **未修好** ⇒ 记录 `未修好`，开发者继续修；**仍是第 n 轮**，**不另计一轮**；
+- **验证重试的终止点**：同一项被再次（第二次及以后）判 `未修好`、且开发者拿不出**新的、
+  可验证的修复方案**时，审阅者 SHALL 以 `BLOCKED` + 成因终结（记录验证次数、每次的修复提交与
+  测试）；第一次判 `未修好` 时开发者就明确拿不出新方案，也立即触发。
+  「新的、可验证的修复方案」= 实现环：新 commit + 一条修复前红、修复后绿的回归测试
+  （或可复现失败的命令）；设计环：具体文本修改 + 可复现反例 / 文档守卫 / 逐条决策记录。
+  不新增数字上限。**第 20 轮触发该终止点 ⇒ 超上限 `BLOCKED`，不是通用 `BLOCKED`。**
+- **验证期间发现的新问题不许当场提**：
+  - medium+ ⇒ 只写入 `### 第 <n> 轮 · 下一批（deferred）`，**不得**当场要求修复，
+    **不得**扩大 `B_n`；
+  - low/nit ⇒ 只写入登记表；
+  - **例外**：该新问题使当前轮验证失去意义，或继续实现/验证本身不安全 ⇒ SHALL 以
+    `BLOCKED` + 成因终结，并在成因里写明为什么不能 deferred；其余安全漏洞仍进 deferred。
+  - **延后理由**：所有 deferred medium+ 都要在 `延后理由` 列写「为什么可以延后一轮」；
+    安全项额外写「为什么晚一轮仍安全」。
+- **不得静默降级**：验证期认为某条定级错误，只能按原 severity 要求修完，或 `BLOCKED`
+  并把争议写进成因；不得把它移出批次或降为 low/nit。
 
-  ```
-  witnessloop manifest build \
-    --root . --change <change-id> --stage <stage> \
-    --report reviews/<stage>-review.md \
-    --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
-  ```
+### 6. 收口与下一轮
 
-- **先内容提交、后证据提交**（`docs/gate.md §3.1`）：内容一个提交，
-  报告 + manifest + 解释事件单独一个提交。审阅之后再落任何非证据文件，
-  `check` 会判「审阅的是旧 revision」。
+- `B_n` **全部**为 `已修好` ⇒ 本轮结束。
+- 下一次开批（完整审阅）**先读上一轮的 deferred 与 low/nit 表**：上一轮 deferred 的每个
+  medium+ **必须以原 id** 进入下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
+- 空批 ⇒ `PASS`；非空且已收口 20 个轮 ⇒ 超上限 `BLOCKED` +「建议推倒重开」；否则进入下一轮。
+- **轮数按 change（且按环）累计**：后续报告保留前序轮次，或引用同一份叠写报告；
+  换审阅者 run / 另写一份从第 1 轮开始的新报告不得重置计数。
+
+### 7. 出口
+
+**出口只有三种**：
+
+| 出口 | 条件 |
+|---|---|
+| `PASS` | 收口确认批次为空 |
+| `BLOCKED` + 成因 | 阻塞性缺陷 / 同一批反复无法收口；停下报告、不自行修复 |
+| 超上限 `BLOCKED` | 20 个轮已收口且收口确认仍有 medium+，或第 20 轮自身达到验证重试终止点；附「建议推倒重开（revise the design）」 |
+
+`CHANGES_REQUESTED` **不是出口**：它只表示「本批仍有未验证通过的项」，是轮内状态；
+对应动作是继续修/继续验证，不是停下交人。
+
+报告至少包含：
+
+```markdown
+## 本轮判定（verdict）
+PASS | CHANGES_REQUESTED | BLOCKED（轮内可见；不是终结出口）
+
+### 第 <n> 轮 · 批次
+| id | severity | 锚点（文件:行） | 问题 |
+
+### 第 <n> 轮 · 验证
+| id | 结果 | 修复提交 | 回归测试 / 设计环对应物 |
+
+### 第 <n> 轮 · 下一批（deferred）
+| id | severity | 锚点 | 问题 | 来源 | 延后理由 |
+
+### low / nit 登记（累积：含前序轮次，或逐项链接 `#第-<n>-轮--low--nit-登记`）
+| id | severity | 处置（已修 / 登记不修） | 理由 |
+
+### 第 <n> 轮后 · 收口确认
+- 审阅时间 / 范围 / 结论：0 条 medium+ ⇒ PASS；或 N 条 medium+ ⇒ 下一轮 / 超上限 BLOCKED
+- 仅在本轮收口或下一次开批时记录；BLOCKED / 超上限 BLOCKED 报告改记
+  「终止状态 / 验证账本 / 未通过项」，不伪造收口确认
+
+## 闭环出口（仅在终结时填写；轮内写「未定」）
+PASS | BLOCKED（成因：…） | BLOCKED（超上限：20 个轮已收口仍有 medium+，或第 20 轮自身未收口；建议重开设计）
+```
+
+`id` 形如 `R<首次出现轮次>-<序号>`；deferred 项进入下一轮批次时沿用原 id。初次开批的
+low/nit 用 `R0-<序号>`；第 20 轮收口后的收口确认用 `C-<序号>`（或 `R20-C<序号>`）。
+
+### 8. 收尾
+
+跑 `witnessloop manifest build` 产出 manifest：
+
+```
+witnessloop manifest build \
+  --root . --change <change-id> --stage <stage> \
+  --report reviews/<stage>-review.md \
+  --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
+```
+
+**先内容提交、后证据提交**（`docs/gate.md §3.1`）：内容一个提交，
+报告 + manifest + 解释事件单独一个提交。审阅之后再落任何非证据文件，
+`check` 会判「审阅的是旧 revision」。
 
 ## 怎么取 run id
 
@@ -140,17 +198,26 @@ git merge-base HEAD <主干>         # base，manifest 用
 
 - `<change-dir>/reviews/<stage>-review.md`（报告）
 - `<change-dir>/reviews/<stage>.manifest.json`（manifest，由 `manifest build` 产出）
-- `tasks.md` 的「审阅修复」节（`CHANGES_REQUESTED` 时）
+- `tasks.md` 的「审阅修复」节（有修复时）
 
 ## 硬约束
 
+- **批次冻结（含 severity）**：本轮内不得增加、删除、替换成员，也不得静默降级。
+- **验证只做修复确认**：验证期发现的新 medium+ 只进 deferred，不得当场提；low/nit 只进登记表。
+- **medium+ 必须全修**；low/nit 可登记不修，但**必须逐条写理由**；最终 `PASS` 报告带累积登记。
+- **最多 20 个已收口的轮（按 change/环累计）**；第 20 轮自身达到验证重试终止点也 ⇒
+  超上限 `BLOCKED` +「建议推倒重开（revise the design）」——这不是「到轮数就停」。
+- **`CHANGES_REQUESTED` 不是出口**；出口只有 `PASS` / `BLOCKED` + 成因 / 超上限 `BLOCKED`。
 - `reviewer_run_id != author_run_id` 是**机械校验**——兜底路径下它**结构性恒真**，
   只挡「显式把同一个值喂给两个角色」。**审阅者必须独立于作者**是**流程要求**，
   上一行不代你保证它（要见证真身份就设 `WITNESSLOOP_RUN_ID`）。
-- **verdict 三态**：`BLOCKED` 时停下报告、**不自行修复**。
-- **门禁口径（甲案）**：`check` 的 `building` 门禁只要求**证据存在**（manifest + 报告）且**审在最终 revision 上**，
-  **不解析报告里的 verdict 文本** ⇒ 它不替代本闭环的判定：`CHANGES_REQUESTED` 该修还是要修，
-  三轮封顶时该停下交人判断还是要停（`docs/gate.md §9`）。
+- **verdict 三态值仍在，但只有 `PASS` / `BLOCKED` / 超上限 `BLOCKED` 是出口**；
+  `CHANGES_REQUESTED` 是轮内状态。`BLOCKED` 时停下报告、**不自行修复**；
+  `CHANGES_REQUESTED` 继续同轮修复/验证。
+- **门禁口径**：本 change **不新增**正文解析；`building` 门禁只要求**证据存在**
+  （manifest + 报告）且**审在最终 revision 上**，**不解析** verdict / 批次 / severity /
+  轮数 / deferred（`stage=grill` 的既有正文判据另计）⇒ 它不替代本闭环的判定；
+  20 上限、批次冻结、deferred 都是**流程规定**，不是机械判据。
 - **批次 aware**：`tasks.md` 标「后续批」的 `[ ]` 不是缺陷。
 - **manifest 是权威证据**：审阅结论以它为准，报告与它成对。
 - 审阅者对 change 状态**只读**，**不得持有自己的状态文件**。

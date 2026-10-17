@@ -34,8 +34,8 @@ claude --plugin-dir /path/to/witnessloop/plugin
 - `grill <change-id>`：独立零记忆审阅者读 design，逐轮追问，产出决策记录，
   **停轮**等你确认 Open Questions。确认写齐之前不得进入实现。
 - `review-loop <change-id> [stage]`：独立零记忆审阅者审实现，
-  判 `PASS` / `CHANGES_REQUESTED`，不通过则修并补回归测试，**轮数封顶**，
-  收尾写报告并跑 `witnessloop manifest build` 落 manifest。
+  按**批次模型**（轮 = 非空 medium+ 批次；验证期新问题只进下一批；最多 20 轮，
+  超限 ⇒ `BLOCKED` + 建议重开设计），收尾写报告并跑 `witnessloop manifest build` 落 manifest。
 
 ## 环境变量
 

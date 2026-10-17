@@ -254,8 +254,9 @@ def test_review_loop_template_covers_the_algorithm():
     assert "CHANGES_REQUESTED" in text
     # 修复要补回归测试
     assert "回归测试" in text
-    # 有界轮数封顶
-    assert "轮" in text and "封顶" in text
+    # 批次模型（完整守卫见 tests/test_convergence_stop.py）
+    assert "批次" in text and "medium" in text
+    assert "20" in text
 
 
 @pytest.mark.parametrize("template", [GRILL, REVIEW_LOOP], ids=["grill", "review-loop"])
