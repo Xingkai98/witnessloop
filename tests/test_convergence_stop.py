@@ -14,7 +14,20 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = REPO_ROOT / "templates"
 PLUGIN = REPO_ROOT / "plugin"
-CHANGE = REPO_ROOT / "openspec/changes/convergence-based-stop"
+
+
+def _resolve_change_dir() -> Path:
+    """change 归档后，测试仍能找到它：active 优先，其次 archive/*-<id>。"""
+    active = REPO_ROOT / "openspec/changes/convergence-based-stop"
+    if active.is_dir():
+        return active
+    archived = sorted(
+        (REPO_ROOT / "openspec/changes/archive").glob("*-convergence-based-stop")
+    )
+    return archived[0] if archived else active
+
+
+CHANGE = _resolve_change_dir()
 
 REVIEW_LOOP = TEMPLATES / "review-loop.md"
 GRILL = TEMPLATES / "grill.md"
