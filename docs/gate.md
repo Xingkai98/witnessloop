@@ -432,6 +432,18 @@ OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifes
 | active 目录内改名（含改名 manifest） | ❌ 仍要 |
 | 把受保护 spec 挪进 `archive/`（**旧侧不在 active change 目录里**） | ❌ 仍要 |
 
+⚠️ **配不上 rename 的旧侧（issue #31，用户 2026-10-17 裁定 B）**：git 在**被搬文件于本次 diff 内被改写过**时，
+会把它记成**一条 `D`（旧 active 路径）+ 一条 `A`（archive 路径）**——那条 `D` 进不了到达组，
+于是它照旧要解释事件（**本仓不为此发豁免**：任何「看起来像搬移」的**结构**判据都能被伪造，
+五轮对抗各造出一条绕过，见 `openspec/changes/archive/archive-arrival-d-side/`）。
+
+`check` 会把那条红**写得可行动**：若同一次 diff 里存在一条 `A` 落在**本次到达**的归档目录下、
+且**相对子路径逐字相同**，finding 的文案会点名**两侧的实际路径**，并给出**一行事件**的补救与
+**可直接复制的 JSON 示例**（`event_type` 取自本仓 policy 的允许集；`artifact_path` 是那条 `D` 的真实路径）。
+**成本：一行事件、同一个 PR**——把事件写进该 change 归档后的 `workflow-events.jsonl`（或任一既有
+change 目录的该文件）；⚠️ **不要**为它新建「只有事件文件」的 change 目录（那会触发 change 目录契约，红会变多，见 §1.2）。
+**纯搬移**（被搬文件一个字节不改 ⇒ 全部 `R100`）**不需要任何事件**（本仓第一次归档实测：58×`R100`、0 findings）。
+
 配套：归档 move 的两端都不计入 **active** change id（否则 `archive` 会被当成一个 change
 id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在」）；`archive/**` 同时
 进 `stale_exempt_paths`（归档不改内容，不该触发「审阅的是旧 revision」）。
@@ -541,6 +553,11 @@ verb 是 `guard` ⇒ **4**（fail-open）；其余 verb ⇒ **1**（`check` = �
 - 另有一条**明写的误伤面**：到达目录里某个非空证据文件与 `<changes_root>/**` 下某文件**逐字节相同**、
   且不是本次搬来的 ⇒ **fail-closed 拒绝**（finding 同时点名两侧路径）。`proposal.md` / `design.md`
   不参与比对；空文件豁免。
+
+- **搬移诊断是**启发式**、不改变任何判定**（issue #31 的裁定 B）：`check` 只会在「一条 `D` 与一条
+  同相对子路径的 `A`（落在**本次到达**的目录下）」同时出现时，把「**可能**是搬移的一半 + 一行补救 + 示例」
+  追加到那条 finding 的**消息**里。**findings 的有无 / 路径 / 条数、退出码、豁免面**全部与改动前相同——
+  照它补事件补的也是**那个被删路径**的解释，语义上仍然成立（那确实是一次删除，除非它真是搬移的一半）。
 
 hash 绑定证明**证据之间没漂移**；`reviewer_run_id` / `approved_by` 是自由文本，
 v1 不做语义绑定、**不造签名**。因此：**默认只防漂移，不防蓄意伪造**——

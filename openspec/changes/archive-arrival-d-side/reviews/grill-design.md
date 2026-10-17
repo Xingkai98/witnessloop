@@ -128,7 +128,10 @@ issue #31 正文（`gh api repos/Xingkai98/witnessloop/issues/31 --jq .body`）�
 
 ## User Confirmation
 
-（留空 —— 本仓规矩：停轮之后由主 session / 用户填。）
+> 停轮已于 **2026-10-17** 解除：用户对 `## Open Questions` 的 **Q1** 拍板如下（非「按推荐」类占位）。
+> ⚠️ 本节落盘后本报告的 `report_hash` 已变化 ⇒ grill manifest 必须**重建**。
+
+- **Q1**: 用户答复：**选 B —— 不发豁免**。那条掉队的 `D` 记录**照旧要求解释事件**（判定与改动前逐字相同）；由接入方在**同一个开发 PR 内**补**一行** `protected_artifact_explained` 事件（`artifact_path` 指向该文件），**不允许因此增加 PR 数量**。用户明确确认：「**纯搬移不用写，只有归档时顺手改了被搬文件才需要；仍然一个 change 一个 PR**」。⇒ 本 change 的交付改为「**让 finding 可行动**」（诊断依据 + 一行补救 + 可直接复制的 JSON 示例），**不新增任何豁免面**（`design.md §2`）。；确认时间: 2026-10-17
 
 ## 风险
 

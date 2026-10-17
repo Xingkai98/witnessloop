@@ -365,6 +365,11 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes, arrivals) -> 
     except events_mod.EventError as exc:
         return [contract.Finding(".", f"事件文件无法解析：{exc}")]
 
+    # issue #31 / user 2026-10-17 裁定 B：**只喂文案**——`D` 记录照旧要求解释事件，
+    # 但「它看起来像一次搬移的一半」时，把对侧路径、一行补救与示例写进 finding 的消息里。
+    # 它**不参与**下面任何 if、不影响 findings 的有无 / 路径 / 条数（`contract.move_half_candidates`）。
+    move_half = contract.move_half_candidates(changes, pol, arrivals)
+
     findings: list[contract.Finding] = []
     for change in changes:
         # 到达 = 把 change 搬进一个**本次新到达**的归档目录（`R100` 与 `R<100` 都算），
@@ -398,10 +403,45 @@ def _protected_writes(root: Path, pol: policy_mod.Policy, changes, arrivals) -> 
                     "受保护路径被写入，但没有结构化解释事件"
                     f"（需 {pol.events_file} 里有 event_type="
                     f"{'/'.join(pol.protected_write_event_types)}、"
-                    "artifact_path 指向该文件、reason/approved_by 非空的事件）",
+                    "artifact_path 指向该文件、reason/approved_by 非空的事件）"
+                    + _move_half_hint(path, move_half, pol),
                 )
             )
     return findings
+
+
+def _move_half_hint(path: str, move_half: dict[str, str], pol: policy_mod.Policy) -> str:
+    """issue #31 / 用户裁定 **B**：把「这可能是搬移的一半」写成**可行动**的一行补救。
+
+    ⚠️ 只拼文案——**不**改变任何判定（本函数不在任何 `if` 里，finding 照旧成立）。
+
+    * `event_type` 取自 `pol.protected_write_event_types[0]`（**不硬编码**接入方 policy 里
+      `protected_artifact_explained` 那种名字：witnessloop 自己的 policy 只有 `protected_path_write`）；
+      允许集为空 ⇒ **不给示例**（只给文字补救），否则会印出一条 `event_type` 为空的废示例。
+    * `artifact_path` 是那条 `D` 的**真实路径**（`events.covers` 不接受通配）。
+    """
+    counterpart = move_half.get(path)
+    if counterpart is None:
+        return ""
+    hint = (
+        "（⚠️ 这可能是**一次搬移的一半**："
+        f"`{path}` 被删，而同一次 diff 里 `{counterpart}` 是它在到达目录下的**同相对子路径新增**。"
+        "若确属搬移，请在**同一个 PR** 内补**一条**解释事件即可——写进该 change 归档后的 "
+        f"`{pol.events_file}`（或任一既有 change 目录的该文件）；**不要**为它新建一个"
+        "只有事件文件的 change 目录（那会触发 change 目录契约，红会变多）。"
+    )
+    types = [t for t in pol.protected_write_event_types if t]
+    if types:
+        example = {
+            "schema": C.SCHEMA_EVENT,
+            "event_type": types[0],
+            "change_id": "<归档目录名>",
+            "artifact_path": path,
+            "reason": "归档时与 change 一起搬进 archive/（git 未配成 rename）",
+            "approved_by": "<你的名字或 run id>",
+        }
+        hint += "可直接复制的示例：" + json.dumps(example, ensure_ascii=False)
+    return hint + "）"
 
 
 def _report(base, head, changes, targets, findings) -> None:

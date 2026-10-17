@@ -1,118 +1,75 @@
-# archive-awareness — 配不上 rename 的旧路径也 SHALL 被认成搬移的一半（issue #31）
+# archive-awareness — 搬移形状的 `D` finding SHALL 可行动（issue #31）
 
-> 本 change 对 `archive-awareness` 做**一条新增**（不修改既有 Requirement、不放松任何到达判据）：
-> 到达组按**新路径**收集 ⇒ `git` 配不上 rename 时那条 **`D`（旧 active 路径）** 掉队，
-> 被误报「受保护路径被写入，但没有结构化解释事件」。
+> 本 change 对 `archive-awareness` 做**一条新增**：**不新增任何豁免面**、**不修改任何既有 Requirement**。
 >
-> ⚠️ **会反转的旧行为**：issue #31 的复现形态**改前红 1 项、改后 0 项**。
-> ⚠️ **不会反转的**：**纯 `D`+`A` 搬移**（一个 `R` 都没有）**改前改后都要事件**（见下面最后一条 Scenario）——
-> 本 change 只**减少**红、不新增，也**不**用「放宽判据」换绿。
+> ⚠️ **用户 2026-10-17 裁定 B**：那条掉队的 `D` 记录**照旧要求解释事件**（判定与改动前**逐字相同**）；
+> 本 change 只让那条红**可行动**——说清「这可能是搬移的一半」、给出**一行事件**的补救与**可直接复制**的 JSON 示例。
+> 成本是**一行事件、同一个 PR**（用户原话：「纯搬移不用写，只有归档时顺手改了被搬文件才需要；仍然一个 change 一个 PR」）。
 >
-> ⚠️ **承诺面（三轮对抗之后写死）**：本判据只承诺两条——① 放行 issue #31 的形态；
-> ② **单调性**（任何输入下都不比改动前更宽 ⇒ 不新增红、不误伤）。**蓄意伪造 = 非目标**
-> （本 capability 的既有边界：**防漂移、不防伪造**，真锚是远端 branch protection + required check）。
-> 已实测出来的**蓄意**路径（自造到达目录当钥匙的 P7、再把源删干净的 PFIVE）**逐条登记**在
-> `design.md §3` 的 N-l / N-n，**不假装挡住**。
+> ⚠️ **留档（为什么不是「发豁免」）**：把那条 `D` 认成「搬移的另一半 ⇒ 免事件」的判据试了四版，
+> **每一版都被独立对抗轮造出一条绕过**（G1 / S2 / S8 / P7 / PFIVE / **X1**）；最后一版「覆盖」也不是充分条件
+> （把源的每个相对子路径用**全新内容**造齐 + 删源 ⇒ 仍然通过）。⇒ **A 不是没做好，是做不完**（`design.md §3`）。
 
-## Requirement: `D` 记录 SHALL 能成为一次到达搬移的另一半
+## Requirement: 搬移形状的 `D` finding SHALL 可行动，且 SHALL NOT 改变判定语义
 
-一条 `D` 记录（`status[:1] == "D"`，被删路径在 `change.path`、`change.old_path` 为空——
-见 `gitutil._parse_name_status`）SHALL 被认成**某次到达搬移的另一半**，
-当且仅当**存在一个到达目录 `A`**（`archive_arrivals(...)` 的结果，判据 1/2/3/5 一条不放松）同时满足：
+当一条**受保护路径**的 `D` 记录（`status[:1] == "D"`，被删路径在 `change.path`、`change.old_path` 为空——
+见 `gitutil._parse_name_status`）**看起来是一次搬移的一半**时，`check` SHALL 在**该条 finding 的消息里**给出：
 
-1. `normalize(change.path)` 形如 `<changes_root>/<id>/<sub>`，**`<sub>` 非空**，
-   且该路径**不在** `<changes_root>/archive/**` 下；
-2. **覆盖**：`<id>` 在**基准树**（`M = git merge-base(base, head)`）里的**每一个**文件
-   `<changes_root>/<id>/<sub'>`，都有一条**落在 `A` 之下、相对子路径逐字相同**
-   （`f"{A.directory}/{<sub'>}"`）的记录——该记录可以是
-   **一条 `R`/`C`**（`old_path` = 源路径），**或**一条 **`A`**（且该源路径在本次 diff 里有一条 `D`）。
+1. **判定依据**：同一次 diff 里那条 `A` 的**实际路径**，以及它所在的**到达目录** `A_dir`；
+2. **补救**：在**同一个 PR** 内补**一条**解释事件即可（不新增目录、不新增 PR）；
+3. **可直接复制的 JSON 示例**——其 `event_type` SHALL 取自**本仓 policy 的允许集**
+   （`policy.protected_write_event_types`；**SHALL NOT** 硬编码某个接入方 policy 里的类型名），
+   `artifact_path` SHALL 是那条 `D` 的**真实路径**（`events.covers` **不接受通配**）。
 
-满足时：
+「看起来是一次搬移的一半」的判据（**诊断用，不参与判定**）：
 
-- 该 `D` 记录 SHALL 免于「受保护路径被写入，但没有结构化解释事件」（**两档**受保护路径都适用：
-  `policy.protected_paths` 命中的，与不变集）；
-- 它的源 id SHALL 与 rename 的旧侧一样，从「active change id」的取值里**排除**
-  ⇒ SHALL NOT 产生幽灵 active id、SHALL NOT 让该 change 按 active 契约被重复校验。
+- `normalize(change.path)` 形如 `<changes_root>/<id>/<sub>`，`<sub>` **非空**，且**不在** `<changes_root>/archive/**` 下；
+- 同一次 diff 里存在一条 `A` 记录，其路径落在**某个到达目录 `A_dir`** 之下（`archive_arrivals` 的判据 1/2/3/5
+  一条不放松），且**相对子路径逐字相同**（`normalize(A.path) == f"{A_dir}/{<sub>}"`）。
 
-⚠️ **为什么是「覆盖」而不是「给单条 `D` 找一条配得上的 `A`」**：后者（无论再加多少合取项）**四轮独立审阅各被造出一条绕过**：
+**判定面（承重）**：
 
-- **G1**：任何 change 目录的骨架（`proposal.md`/`design.md`/`tasks.md`/`specs/…`/`reviews/…`）彼此重合 ⇒
-  「删掉整个 active change `b`」+「同一次 diff 里另有一次正当搬移」就能凑齐（实测 `✗9 → ✗3`）；
-- **S2**：在**仍活着**的 `b` 里 `git mv` 一个小文件进到达目录（污染身份锚）⇒ `check` **rc=0 全绿**；
-- **S8**：**零蓄意**——删整个 change + 别处重建 manifest ⇒ git 自给的跨 change `R055` 配对；
-- **P7 / PFIVE**：**自造**一个过判据的到达目录，把源的**一个**文件搬进去当「钥匙」（PFIVE 还把源的其余部分删干净）；
-- **X1**（A5）：把源的每一个**相对子路径**都用**全新内容**造齐 + 删源 —— ⚠️ **这一条覆盖挡不住**（见上）。
+- 该 finding **SHALL 仍然产生**（红照旧、退出码照旧、`path` 字段照旧）；
+- 本能力 SHALL NOT 改变**任何**豁免语义：对**任何**输入，`check` 的**退出码**与 **findings 的 path 集合**
+  SHALL 与改动前**逐字相同**；唯一允许的差异是**消息正文末尾多一段诊断与示例**；
+- 免于解释事件的集合 SHALL 保持为：`R`/`C` 记录的**到达搬移**（`checkcmd._archive_move_exempt` 的既有两条件）。
+  **`D` 记录 SHALL NOT 因本能力获得任何豁免**。
 
-**覆盖把它们全部挡住**，因为它们的共同点都是「**只搬了一两个文件**」。
-⚠️ **但它不是充分条件**（**A5 的 X1 实测证伪了这句**）：覆盖**只比相对子路径、不比内容** ⇒
-把源的**每一个相对子路径**都用**全新内容**造齐（+ 删源）同样成立 ⇒ 仍被豁免。
-⇒ 覆盖是「**更贵但仍然可伪造**的结构判据」；这一点是本 change 的**停轮问题 Q1**（见 `design.md §6`）。
+⚠️ **诊断是启发式**（如实登记）：一条 `D` 恰好与一条无关的 `A` 同相对子路径时，文案会写「**可能**是」——
+它只多一句提示、不改判定；照它补事件补的也是**那个被删路径**的解释，语义上仍然成立。
+⚠️ **`protected_write_event_types` 为空**（policy 显式关掉）时 SHALL **不给示例**（只给文字补救）——
+避免印出一条 `event_type` 为空的废示例。
 
-⚠️ **代价（如实登记）**：**部分搬移**（源 change 仍在 head，只搬走一部分文件）⇒ 覆盖不成立 ⇒
-那些 `D` 仍要事件（**与改动前同结论**，本 change 只**减少**红、不新增）。
-⚠️ **单调性承诺**：对**任何**输入，本 change 判出的 findings SHALL ⊆ 改动前的 findings（不新增红、不误伤）。
-⚠️ **边界（如实、不夸大）**：本判据**不宣称**「任何伪造都挡得住」——那是本 capability 的既定边界
-（`docs/gate.md §7`：**防漂移、不防伪造**，真锚是远端 branch protection + required check）。
-**已实测的五条绕过里，前四条（G1/S2/S8/P7/PFIVE）被覆盖挡住；第五条 X1 挡不住**，
-**逐条登记**，并作为**停轮问题 Q1** 交用户拍板（`design.md §6`）。
-⚠️ **另外两项已登记的低危面**：① **只含 gitlink / 空目录的源**会让覆盖**空真**成立（A5 的 X3）；
-② `<sub>` 为空与「源在基准树里为空」两个退化输入的答案**相反**（前者不配对、后者空真），
-两者 SHALL 由**纯函数级**用例分别钉住。
+### Scenario: 搬移形状 ⇒ 红照旧，但文案给出可用的补救
+- **Given** 一次 diff：`<changes_root>/<id>/workflow-events.jsonl` 是 `D`，同一次 diff 里
+  `<changes_root>/archive/<name>/workflow-events.jsonl` 是 `A`，且 `archive/<name>/` **是到达目录**
+- **When** 跑 `check`
+- **Then** 该 finding **仍然存在**（EXIT≠0、`path` = 那条 `D` 的路径）；
+  且它的消息里含 `archive/<name>/workflow-events.jsonl`、「同一个 PR」、「一条」以及一个 JSON 示例；
+  **把该示例解析出来喂给 `events.covers` SHALL 为真**（示例是**能直接用**的）
 
-### Scenario: issue #31 的复现形态改后判绿（**行为变化**）
-- **Given** base 里该 change **已是 active**（docs-first 形态），head 里它整体在 `archive/<name>/` 下，
-  其中一个受保护文件（如 `workflow-events.jsonl`）在 range 内被改写过 ⇒ git 报 **`D`（旧路径）+ `A`（archive 路径）**、不配对成 rename，
-  而**其余文件配对正常**（⇒ 覆盖成立：源的每个文件都有落点）
-- **When** 运行 `check`
-- **Then** SHALL **不**报该 `D` 记录的「受保护路径被写入，但没有结构化解释事件」（**改动前红 1 项**）
-- **And** 该 change 的源 id SHALL NOT 出现在 active change id 里
+### Scenario: 照文案补一行事件之后 ⇒ 绿（同一个 PR）
+- **Given** 上一条的 diff，**并且在同一次 diff 里**、在归档后那份 `workflow-events.jsonl` 末尾追加了那条事件
+- **When** 跑 `check`
+- **Then** `check：通过 ✓`——**没有新增任何 change 目录、没有新增 PR**
 
-### Scenario: **纯 `D`+`A` 搬移**（一个 `R` 都没有）⇒ **豁免**（覆盖成立）
-- **Given** 一次整目录搬移里**所有**文件都是 `D`+`A`（没有任何 `R`/`C`），**源的每个文件都有对应的 `A`**
-- **When** 运行 `check`
-- **Then** SHALL 免解释事件（封面上覆盖成立）
-- ⚠️ **这一条是相对早先版本的修正**：甲/乙/丙 那几版要求「身份锚」（`source_ids` 非空）⇒ 反而把这一形态判成要事件；
-  **覆盖把它改对了**
+### Scenario: 纯搬移不带诊断（也不需要事件）
+- **Given** 一次**纯 move**（被搬文件一个字节不改 ⇒ 全部 `R100`；本仓第一次归档实测 58 条全 `R100`）
+- **When** 跑 `check`
+- **Then** `check：通过 ✓`、**0 条 finding**——纯搬移**不需要**任何事件，也**不**出现诊断
 
-### Scenario: 只搬了**一两个**文件 ⇒ 不豁免（**四轮绕过统一被挡**）
-- **Given** 任一条：(a) 删掉整个 active change `b` 而另有一次正当搬移（**G1**）；
-  (b) 在仍活着的 `b` 里 `git mv` 一个文件进到达目录再删它的受保护文件（**S2**）；
-  (c) 删整个 change + 别处重建 manifest 让 git 给出跨 change 的 `R055`（**S8**）；
-  (d) 自造一个到达目录、只搬源的一个文件当钥匙（**P7**），再把源的其余部分删干净（**PFIVE**）
-- **When** 运行 `check`
-- **Then** 这些 `D` 记录 SHALL **仍然**要解释事件（**覆盖不成立**：源里有文件在 `A` 下没有落点）
-  ⇒ ⚠️ **逐条都是「改造之前会漏」的形态**（G1 实测 `✗9 → ✗3`、S2 实测 `rc=0 全绿`、PFIVE 实测 `rc=0 全绿`）
+### Scenario: 单独删一个受保护文件 ⇒ 照旧红，且**不**触发诊断
+- **Given** 一次 diff 只删 `<changes_root>/<id>/workflow-events.jsonl`（同一次 diff 里**没有**任何到达目录）
+- **When** 跑 `check`
+- **Then** 该 finding **仍然存在**（与改动前同结论），且消息里**没有**「搬移的一半」那段诊断
 
-### Scenario: **部分搬移** ⇒ 不豁免（**与改动前同结论**）
-- **Given** 源 change **仍在 head**（只搬走了它的一部分文件）
-- **When** 运行 `check`
-- **Then** 那些 `D` 记录**照旧**要解释事件（覆盖不成立）——本 change **只减少红、不新增**
+### Scenario: 往**已存在**的归档目录搬 ⇒ 照旧红，且**不**触发诊断
+- **Given** `archive/<name>/` 在**基准树里已经存在**（不是到达），本次 diff 把某个 active 文件搬进去
+- **When** 跑 `check`
+- **Then** 照旧红（与改动前同结论）；诊断**不**触发（它不是「到达目录」）
 
-### Scenario: 往**已存在**的归档目录搬 ⇒ 不豁免（否定面，回归）
-- **Given** `archive/<name>/` 在**基准树里已有 entry**（不是本次到达），本 PR 把某个 active change 的文件搬进去
-- **When** 运行 `check`
-- **Then** 仍报「受保护路径被写入，但没有结构化解释事件」（它不在到达组里）
-
-### Scenario: **单独**删一个 active change 的文件 ⇒ 不豁免（否定面，回归）
-- **Given** 本 diff 删掉 `<changes_root>/<id>/reviews/grill.manifest.json`，且**没有任何**配得上的 `A`
-- **When** 运行 `check`
-- **Then** 仍报该记录的「受保护路径被写入，但没有结构化解释事件」（覆盖不成立）
-
-### Scenario: 受保护文件从 active change **外**搬进到达目录 ⇒ 不豁免（回归）
-- **Given** 本 PR 删掉 `openspec/specs/x.md` 并在到达目录里新增 `archive/<name>/x.md`
-- **When** 运行 `check`
-- **Then** 仍报该 `D` 记录的「受保护路径被写入，但没有结构化解释事件」（第 1 条不满足）
-
-### Scenario: 到达目录**不是真到达**（缺必需件 / 符号链接 / 内容来源存疑）⇒ 不豁免（回归）
-- **Given** `archive/<name>/` 缺必需件、或是符号链接、或其内容来源不过判据 5
-- **When** 运行 `check`
-- **Then** 它**不在**到达组里 ⇒ 覆盖那条判据无对象 ⇒ 仍要事件（到达判据本 change **一条不放松**）
-
-### Scenario: `<sub>` 为空 / 尾斜杠 ⇒ 不配对（回归；**纯函数级**钉子）
-- ⚠️ 端到端构造不出来（`git` 不会把「目录本身」报成 `D`）⇒ SHALL 由**纯函数级**用例钉住
-  （`d_move_halves` 对 `<sub>` 为空 / 以 `/` 结尾的输入返回空集）。
-
-### Scenario: 重建**已存在**的 `reviews/*.manifest.json`（`M`）⇒ 仍要事件（回归，与本 change 无关）
-- **Given** 本 diff 不含任何归档到达，只有一个既有 manifest 被重建（`M`）
-- **When** 运行 `check`
-- **Then** 恰好 **1 条**「受保护路径被写入，但没有结构化解释事件」（`D` 侧判据对 `M` 一概不适用）
+### Scenario: 示例的事件类型跟随 policy
+- **Given** 一个 policy 把 `protected_write_event_types` 设为 `["protected_artifact_explained"]`
+- **When** 触发上一条诊断
+- **Then** 示例里的 `event_type` SHALL 是 `protected_artifact_explained`（**不是**硬编码的某个值）；
+  置空时 SHALL 不给示例
