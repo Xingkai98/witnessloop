@@ -18,7 +18,7 @@
   **不得出现**「按审阅 pass 计轮」的旧口径。
 - [x] A5a 旧 `reviews/grill-design.md` 已被 2026-10-17 的新报告**覆盖**（报告内含
   「旧记录作废」节；git 历史 `9acdf2b` / `20f1089` 可查）。
-- [ ] A5b 旧 `reviews/grill-adversarial.md` 必须由 B2 用新模型报告**覆盖**后再建
+- [x] A5b 旧 `reviews/grill-adversarial.md` 必须由 B2 用新模型报告**覆盖**后再建
   `stage=grill-adversarial` manifest；或从 `reviews/` 移出（git 历史保留）。
   **禁止**为旧文件建 manifest（那会同时制造孤儿规则冲突与旧模型假证据）。
 
@@ -46,7 +46,7 @@
 
 ## C. TDD 实现（本批）
 
-- [ ] C1 **先写红测试**：新增 `tests/test_convergence_stop.py`，钉住新模型七要素：
+- [x] C1 **先写红测试**：新增 `tests/test_convergence_stop.py`，钉住新模型七要素：
   ① 轮 = 非空 medium+ 批次闭环；② 验证期间新问题只进 deferred、不得当场提；③ 20 轮上限；
   ④ 超上限 `BLOCKED` +「建议推倒重开（revise the design）」；⑤ medium+ 全修；
   ⑥ low/nit 登记不修须写理由；⑦ 三种出口（`PASS` / `BLOCKED`+成因 / 超限 `BLOCKED`）。
@@ -62,22 +62,38 @@
   其它 change 目录、`tests/test_grill_adversarial_gate.py` 的夹具）**不进入反断言**。
   另加适配器守卫：不得出现 `步骤 1–6`，必须出现 `1–8`。
   另加七要素 → 文件映射，避免对一行摘要过度断言（见 design §4.4）。
-- [ ] C2 跑 `uv run pytest -q`，确认新测试**红**（记录原始输出到 `reviews/building-review.md` 的测试节）。
-- [ ] C2b 变异验证：临时把 `templates/grill.md:21` 的新措辞改回旧口径，指定测试
+- [x] C2 跑 `uv run pytest -q`，确认新测试**红**（记录原始输出到 `reviews/building-review.md` 的测试节）。
+- [x] C2b 变异验证：临时把 `templates/grill.md:21` 的新措辞改回旧口径，指定测试
   `test_normative_surfaces_drop_the_old_round_cap` **至少 1 failed**；改回后复绿
   （变异不提交，结果记入 building 报告）。
-- [ ] C3 改 `templates/review-loop.md`：目的、执行步骤（开批/全修/验证/收口/上限）、硬约束。
-- [ ] C4 改 `templates/grill.md`：时序图、对抗环步骤、写码硬条件 #2、frontier 豁免。
-- [ ] C5 改 `plugin/commands/review-loop.md`：front-matter、步骤 5–7、约束。
-- [ ] C6 改 `plugin/commands/grill.md`：步骤 5。
-- [ ] C7 改 `plugin/README.md:37`（命令说明）。
-- [ ] C8 改 `README.md:306`（核心卖点句）。
-- [ ] C9 改 `docs/design.md:25`（目标第 4 条）。
-- [ ] C10 改 `docs/gate.md:715-716`（§10 诚实边界：`BLOCKED` 是规定出口，含超上限建议重开；
+- [x] C3 改 `templates/review-loop.md`：目的、执行步骤（开批/全修/验证/收口/上限）、硬约束。
+- [x] C4 改 `templates/grill.md`：时序图、对抗环步骤、写码硬条件 #2、frontier 豁免。
+- [x] C5 改 `plugin/commands/review-loop.md`：front-matter、步骤 5–7、约束。
+- [x] C6 改 `plugin/commands/grill.md`：步骤 5。
+- [x] C7 改 `plugin/README.md:37`（命令说明）。
+- [x] C8 改 `README.md:306`（核心卖点句）。
+- [x] C9 改 `docs/design.md:25`（目标第 4 条）。
+- [x] C10 改 `docs/gate.md:715-716`（§10 诚实边界：`BLOCKED` 是规定出口，含超上限建议重开；
   `CHANGES_REQUESTED` 是轮内状态；机械判据不新增正文解析）。
-- [ ] C11 跑 `uv run pytest -q` 全绿；运行 `grep` 核对旧口径不再出现在规范面。
-- [ ] C12 全仓 grep 复核：`docs/gate.md:407/554` 的「常量封顶 / 路径深度封顶」与本规则无关，
+- [x] C11 跑 `uv run pytest -q` 全绿；运行 `grep` 核对旧口径不再出现在规范面。
+- [x] C12 全仓 grep 复核：`docs/gate.md:407/554` 的「常量封顶 / 路径深度封顶」与本规则无关，
   不误改；`docs/reviews/*`、已归档 change 不回填。
+
+### 测试证据（TDD，2026-10-17）
+
+```text
+# 先红（实现前）
+$ ~/.local/bin/uv run pytest -q tests/test_convergence_stop.py tests/test_templates.py tests/test_plugin.py
+18 failed, 61 passed in 0.34s
+
+# 变异验证：临时把旧措辞塞回 templates/grill.md
+$ ~/.local/bin/uv run pytest -q tests/test_convergence_stop.py::test_normative_surfaces_drop_the_old_round_cap
+1 failed, 10 passed in 0.12s
+
+# 恢复后全绿
+$ ~/.local/bin/uv run pytest -q
+743 passed in 63.07s
+```
 
 ## D. 实现后独立审阅（本批）
 

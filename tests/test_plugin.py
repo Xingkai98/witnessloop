@@ -171,9 +171,10 @@ def test_review_loop_adapter_is_batch_aware_and_syncs_docs():
     assert "审阅修复" in text
 
 
-def test_review_loop_adapter_states_the_bounded_rounds():
+def test_review_loop_adapter_states_the_batch_model():
     text = (PLUGIN / "commands" / "review-loop.md").read_text(encoding="utf-8")
-    assert "轮" in text and ("封顶" in text or "上限" in text)
+    assert "批次" in text and "20" in text
+    assert "deferred" in text or "下一批" in text
 
 
 @pytest.mark.parametrize("command", COMMANDS)

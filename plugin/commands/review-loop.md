@@ -1,5 +1,5 @@
 ---
-description: 独立审阅闭环——零记忆审阅者审实现，不通过就修并补回归测试，有界轮数，收尾落 manifest
+description: 独立审阅闭环——零记忆审阅者按批次模型审实现，最多 20 轮，超限 BLOCKED + 建议重开设计，收尾落 manifest
 ---
 
 # /review-loop <change-id> [stage]
@@ -19,15 +19,18 @@ description: 独立审阅闭环——零记忆审阅者审实现，不通过就�
    作 `author_run_id`。两者必须不同，否则 `manifest build` 会直接拒写。
    审阅者零记忆，并要求它**逐项验证 `tasks.md` 的每个 `[x]`**（读代码确认真实存在），
    且**对「后续批」的 `[ ]` 不报缺陷**。
-5. 按 `templates/review-loop.md` 的步骤 1–6 执行，产出
-   `<change-dir>/reviews/<stage>-review.md`。verdict 是**三态**：
-   - `PASS` → 走收尾；
-   - `CHANGES_REQUESTED` → 逐条修、每条补回归测试、在 `tasks.md` 追加
-     「审阅修复」节、**提交修复**，然后再审；
-   - `BLOCKED` → **停下、向用户报告阻塞项、不自行修复**（阻塞性缺陷是设计或范围的
-     问题，不是顺手补一下的事）。
-6. **有界轮数**（默认上限 3 轮）：到顶仍不通过就停下来交人判断，
-   不要无限循环、也不要悄悄放宽断言让自己过。
+5. 按 `templates/review-loop.md` 的**步骤 1–8**执行，产出
+   `<change-dir>/reviews/<stage>-review.md`。**轮 = 一个非空 medium+ 批次的闭环**：
+   - **开批**：只列 medium+；空批 ⇒ `PASS`；批次冻结（含 severity）；
+   - **全修**：逐条修 + 回归测试（先红后绿）；
+   - **只做修复验证**：验证期新问题只进 `deferred`（下一批），不得当场提；
+     未修好 ⇒ 同轮继续，不另计轮；
+   - **收口**：全部验证通过 ⇒ 本轮结束；下一次开批再判断 `PASS` / 下一轮。
+   verdict 三态值仍在，但**出口只有三种**：`PASS` / `BLOCKED` + 成因 /
+   超上限 `BLOCKED` + 建议重开设计；`CHANGES_REQUESTED` 是轮内状态，不是出口。
+6. **20 轮上限**：只有非空 medium+ 批次算轮（按 change/环累计）；第 20 轮自身达到验证重试
+   终止点，或第 20 轮收口后的收口确认仍有 medium+ ⇒ **超上限 `BLOCKED` + 建议推倒重开
+   （revise the design）**，不是「到轮数就停」。`BLOCKED` 时停下、向用户报告、不自行修复。
 7. 收尾落证据（**内容提交之后、证据提交之前**）：
 
    ```
@@ -60,8 +63,11 @@ description: 独立审阅闭环——零记忆审阅者审实现，不通过就�
 - **只读**：审阅者不改实现；修复由作者 run 做。
 - **无状态**：本命令不创建、不维护自己的状态文件；状态一律以
   `reviews/*.manifest.json` 为准。
-- 结论是**三态**：`PASS` / `CHANGES_REQUESTED` / `BLOCKED`，不许模糊；
+- **出口只有三种**：`PASS` / `BLOCKED` + 成因 / 超上限 `BLOCKED` + 建议重开；
+  三态值仍在，但 `CHANGES_REQUESTED` 只是轮内状态，不是出口；
   `BLOCKED` 时本命令只负责停下来把阻塞项讲清楚，**不自行修复**。
+- **批次冻结（含 severity）**；验证期新问题只进 `deferred`；medium+ 全修；
+  low/nit 登记不修须逐条写理由。
 - **批次 aware**：`tasks.md` 里标「后续批」的未勾项不是缺陷，别据此打回。
 - `CHANGES_REQUESTED` 的修复要同步更新 change 文档（`tasks.md` 追加「审阅修复」节）并提交。
 - 身份字段是自由文本——本工具**防漂移、不防蓄意伪造**，别当成签名。

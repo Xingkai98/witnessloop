@@ -18,7 +18,8 @@
 ```
 grilling pass（审阅者独立求完备，用户不参与）
       ↓
-设计阶段对抗验证 loop（另起审阅者，证伪 → 修 → 再审，直到 PASS 或封顶）
+设计阶段对抗验证 loop（另起审阅者，按批次模型：开批 → 全修 → 只验证 → 收口；
+见 `templates/review-loop.md` 的同构流程）
       ↓
 停轮：把收敛后的 Open Questions 一次性交用户确认
       ↓
@@ -130,16 +131,30 @@ grilling pass（审阅者独立求完备，用户不参与）
 
 ### 5. 设计阶段对抗验证 loop（**在停轮之前**跑完）
 
-这个 loop 与实现后的审阅闭环**同构**：另起独立零记忆审阅者 → 对抗 → verdict →
-修 → 再审。
+这个 loop 与实现后的审阅闭环**同构**（`templates/review-loop.md`）：另起独立零记忆审阅者
+→ 开批 → 全修 → **只做修复验证** → 收口。
 
+- **轮 = 一个非空 medium+ 批次的闭环**：开批时只列 medium+；批次冻结（含 severity）；
+  验证期发现的新问题只进下一批（deferred），**不得当场提**；medium+ 全修，
+  low/nit 登记不修须写理由。
 - **另起一个独立零记忆的审阅者**，**默认上面的结论有错**，逐条去**证伪**
   Confirmed Decisions 与 Open Questions——不是复述，是尝试推翻。能实测/复现的就去实测。
-- 出 **verdict**：`PASS` / `CHANGES_REQUESTED`。
-- `CHANGES_REQUESTED` 则**修 `grill-review.md`（grill-design.md）** 并**再审**，
-  直到 `PASS` 或**轮数封顶**（默认 3 轮，到顶交人判断）。
-- 产物 `<change-dir>/reviews/grill-adversarial.md`（verdict + 逐条 issue `文件:行号`
-  + 对抗结论 + Code-Resolved 答案）。
+- 出 **verdict**：`PASS` / `CHANGES_REQUESTED` / `BLOCKED`。**出口只有 `PASS` /
+  `BLOCKED` + 成因 / 超上限 `BLOCKED` + 建议推倒重开**；`CHANGES_REQUESTED` 只是轮内状态，
+  不是出口。
+- `CHANGES_REQUESTED` 则**修该 change 的设计制品**（`design.md`、`proposal.md`、
+  `specs/<capability>/spec.md`、`tasks.md`、决策记录 `grill-review.md` / `grill-design.md`）
+  并按同一批逐条验证，**不是**开新一轮；本轮批次全部验证通过后才进入下一轮。
+- **最多 20 个已收口的轮**（按 change/环累计）；第 20 轮自身达到验证重试终止点，或第 20 轮
+  收口后的收口确认仍有 medium+ ⇒ **超上限 `BLOCKED`** +「建议推倒重开（revise the design）」。
+- **设计环的 `BLOCKED` 成因**：核心需求缺失 / 设计自相矛盾 / 依赖不可满足 / 同一批反复
+  无法收口；作者负责改上述设计制品。
+- **设计环的修复证据**：验证表填可复现反例 / 改前失败改后通过的文档守卫 / 逐条决策记录
+  （三选一），不得填 `N/A`。
+- **frontier 豁免**：本文件第 3 步的 frontier 追问轮**仅指进入本对抗环之前**的求完备阶段；
+  由本环批次项驱动的设计探索属于该轮修复，不得改标为 frontier。
+- 产物 `<change-dir>/reviews/grill-adversarial.md`（逐轮批次 / 验证 / deferred / low/nit /
+  收口确认 / 出口 + 逐条 issue `文件:行号` + 对抗结论 + Code-Resolved 答案）。
 - **被证伪的决策要回写 `grill-review.md`**——这一步必须在**停轮之前**做完，
   别把没经证伪的结论拿去让用户拍板。
 
@@ -212,7 +227,8 @@ witnessloop manifest build --change <id> --stage grill-adversarial \
 
 - **缺证据不得进入实现**。四件事**全部**满足之前，**不得**开始写代码：
   1. `frontier` 为空（设计树求完备）；
-  2. 对抗验证已到 `PASS`（或轮数封顶并交人）；
+  2. 对抗验证已到 `PASS`，或 `BLOCKED` + 成因 + **用户已明确裁决继续**；
+     `BLOCKED` 本身**不能**作为写码许可；
   3. `## Open Questions`（**逐字标题、小节必须存在**）已由用户逐条确认、记入 `## User Confirmation`；
   4. `## Confirmed Decisions` ≥3 条且每条带 `来源:`。
   这是门禁的前置条件，不是建议。
