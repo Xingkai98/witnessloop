@@ -42,12 +42,12 @@
 
 ### D2 诊断面：一个纯函数，**只喂文案**
 
-新增 `contract.move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, str]`：
+新增 `contract.move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, tuple[str, str]]`：
 
 ```python
 """诊断用（**不参与任何判定**）：`D` 记录 ↔ 同一次 diff 里「同相对子路径」的 `A` 落点。
 
-返回 {normalize(D.path): normalize(A.path)}；同一个 D 有多条候选时取**字典序最小**的一条（确定性）。
+返回 {normalize(D.path): (normalize(A.path), normalize(A_dir))}；同一个 D 有多条候选时按 **A 路径**字典序取最小（确定性）。
 """
 ```
 
@@ -162,6 +162,7 @@ range 内被改写过**）⇒ 不能用。
 | R3 | 有人把事件写进「只有事件文件」的新目录 ⇒ 7 条红；或写进**别的既有** change 目录 ⇒ 红转移 | 文案**只**指定「该 change 归档后那份」，并引 `docs/gate.md §1.2` / `§5.1` 的实跑记录 |
 | R4 | `move_half_candidates` 被误用在判定里 | 它是**纯函数**且**只**在 `_protected_writes` 的拼文案处被调用；§7 的「判定不变」表 + 变异测试钉住 |
 | R5 | 诊断漏报（该提示的没提示） | 只影响可行动性、不影响判定；N-i 的正向用例钉住 issue #31 的形态**一定**触发 |
+| R6 | **诊断只覆盖 `D` 侧**（BR-7，登记不修）：对 **`policy.protected_paths` 命中**（非不变集）的路径，到达搬移本来就**不**豁免（既有规则：`A` 也要事件）⇒ 那种形态下 `A` 侧的 finding **没有**搬移诊断，照 `D` 侧的示例补一条之后 `A` 侧仍红（再补一条即可） | 本 change 只诊断 `D` 侧；issue #31 的形态（不变集）不受影响。**判定面零改动** ⇒ 这条是既有规则的可行动性边界，不是本 change 引入的 |
 
 ## 6. 停轮问题（**Q1 已由用户裁定 = B，无遗留**）
 

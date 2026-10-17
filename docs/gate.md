@@ -435,7 +435,7 @@ OpenSpec 的归档就是一次 `git mv`（active → `archive/`），而 manifes
 ⚠️ **配不上 rename 的旧侧（issue #31，用户 2026-10-17 裁定 B）**：git 在**被搬文件于本次 diff 内被改写过**时，
 会把它记成**一条 `D`（旧 active 路径）+ 一条 `A`（archive 路径）**——那条 `D` 进不了到达组，
 于是它照旧要解释事件（**本仓不为此发豁免**：任何「看起来像搬移」的**结构**判据都能被伪造，
-五轮对抗各造出一条绕过，见 `openspec/changes/archive/archive-arrival-d-side/`）。
+五轮对抗各造出一条绕过，见 `openspec/changes/archive-arrival-d-side/`）。
 
 `check` 会把那条红**写得可行动**：若同一次 diff 里存在一条 `A` 落在**本次到达**的归档目录下、
 且**相对子路径逐字相同**，finding 的文案会点名**两侧的实际路径**，并给出**一行事件**的补救与

@@ -244,7 +244,8 @@ def test_pairs_a_D_with_an_A_at_the_same_relative_subpath():
     d = _change(f"{CHANGES}/b/{EVENTS}")
     a = _change(f"{ARCHIVE_REL}/x/{EVENTS}", status="A")
     got = contract.move_half_candidates([d, a], _pol(), [_arrival()])
-    assert got == {f"{CHANGES}/b/{EVENTS}": f"{ARCHIVE_REL}/x/{EVENTS}"}
+    # 值 = (A 的实际路径, 它所在的到达目录) —— `A_dir` 是 spec 要求的「判定依据」之一（BR-4）
+    assert got == {f"{CHANGES}/b/{EVENTS}": (f"{ARCHIVE_REL}/x/{EVENTS}", f"{ARCHIVE_REL}/x")}
 
 
 def test_requires_an_arriving_directory():
@@ -277,7 +278,10 @@ def test_is_deterministic_with_several_candidates():
     a2 = _change(f"{ARCHIVE_REL}/a/{EVENTS}", status="A")
     arrivals = [_arrival(name="z"), _arrival(name="a")]
     got = contract.move_half_candidates([d, a1, a2], _pol(), arrivals)
-    assert got[f"{CHANGES}/b/{EVENTS}"] == f"{ARCHIVE_REL}/a/{EVENTS}"  # 字典序最小
+    assert got[f"{CHANGES}/b/{EVENTS}"] == (
+        f"{ARCHIVE_REL}/a/{EVENTS}",
+        f"{ARCHIVE_REL}/a",
+    )  # 按 **A 路径**字典序取最小
 
 
 def test_a_blank_laden_policy_prints_no_example_but_says_why(repo: Path, cli):
@@ -294,7 +298,7 @@ def test_a_blank_laden_policy_prints_no_example_but_says_why(repo: Path, cli):
 
     assert old in err
     assert '"event_type"' not in err, "不能印一个过不了 covers 的示例"
-    assert "不可满足" in err and "过不了" in err
+    assert "没有一个" in err and "covers" in err
 
 
 def test_the_remedy_names_only_the_archived_changes_events_file(repo: Path, cli):
@@ -316,7 +320,50 @@ def test_empty_types_print_no_example_at_the_unit_level():
 
     pol = dataclasses.replace(_pol(), protected_write_event_types=())
     hint = checkcmd._move_half_hint(
-        f"{CHANGES}/b/{EVENTS}", {f"{CHANGES}/b/{EVENTS}": f"{ARCHIVE_REL}/x/{EVENTS}"}, pol
+        f"{CHANGES}/b/{EVENTS}",
+        {f"{CHANGES}/b/{EVENTS}": (f"{ARCHIVE_REL}/x/{EVENTS}", f"{ARCHIVE_REL}/x")},
+        pol,
     )
     assert "搬移的一半" in hint
     assert '"event_type"' not in hint
+
+
+def test_normalizes_dot_slash_prefixes():
+    """`./` 前缀会被 `pathutil.normalize` 剥掉 ⇒ 照样配对。"""
+    d = _change(f"./{CHANGES}/b/{EVENTS}")
+    a = _change(f"./{ARCHIVE_REL}/x/{EVENTS}", status="A")
+    assert contract.move_half_candidates([d, a], _pol(), [_arrival()]) == {
+        f"{CHANGES}/b/{EVENTS}": (f"{ARCHIVE_REL}/x/{EVENTS}", f"{ARCHIVE_REL}/x")
+    }
+
+
+def test_respects_the_changes_root_prefix_boundary():
+    """`openspec/changesX/…` **不是** `<changes_root>/<id>/…` ⇒ 不配对（前缀按路径分量比）。"""
+    d = _change("openspec/changesX/b/" + EVENTS)
+    a = _change(f"{ARCHIVE_REL}/x/{EVENTS}", status="A")
+    assert contract.move_half_candidates([d, a], _pol(), [_arrival()]) == {}
+
+
+def test_an_empty_status_is_ignored():
+    d = _change(f"{CHANGES}/b/{EVENTS}", status="")
+    a = _change(f"{ARCHIVE_REL}/x/{EVENTS}", status="A")
+    assert contract.move_half_candidates([d, a], _pol(), [_arrival()]) == {}
+
+
+def test_a_mixed_policy_uses_the_first_type_that_actually_works():
+    """BR-5：允许集是 `["  bad  ", "good"]` 时，**有好项可用**——示例要用 `good`，
+    不能报「没有一个能过 covers」。"""
+    import dataclasses
+
+    from witnessloop import checkcmd
+
+    pol = dataclasses.replace(
+        _pol(), protected_write_event_types=("  bad  ", "good")
+    )
+    hint = checkcmd._move_half_hint(
+        f"{CHANGES}/b/{EVENTS}",
+        {f"{CHANGES}/b/{EVENTS}": (f"{ARCHIVE_REL}/x/{EVENTS}", f"{ARCHIVE_REL}/x")},
+        pol,
+    )
+    assert '"event_type": "good"' in hint
+    assert "没有一个" not in hint

@@ -324,15 +324,15 @@ def archive_arrivals(
     return arrivals
 
 
-def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, str]:
+def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, tuple[str, str]]:
     """诊断用（**不参与任何判定**）：`D` 记录 ↔ 同一次 diff 里「同相对子路径」的 `A` 落点。
 
     user 2026-10-17 裁定 B ⇒ **不发豁免**：这条 `D` 照旧要求解释事件；本函数只把
     「它看起来像搬移的一半」这件事**喂给 finding 的文案**（`checkcmd._move_half_hint`），
     让那条红**可行动**。
 
-    返回 ``{normalize(D.path): normalize(A.path)}``；同一个 `D` 有多条候选时取**字典序最小**
-    的一条（确定性）。不收：
+    返回 ``{normalize(D.path): (normalize(A.path), normalize(A_dir))}``；同一个 `D` 有多条候选时
+    取 **A 路径字典序最小**的一条（确定性）。不收：
 
     * 不是 `D` 侧唯一形态（`status[:1] == "D"` 且 `old_path` 为空——见 `gitutil._parse_name_status`）；
     * 路径不在 ``<changes_root>/<id>/<sub>`` 下（`<sub>` 非空、且不在 ``archive/**`` 下）；
@@ -345,7 +345,7 @@ def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, str]:
     archive_root = f"{root}/{C.ARCHIVE_DIR_NAME}"
     prefix = root + "/"
     # 索引：每个到达目录 → {相对子路径: A 的实际路径}
-    by_dir: list[dict[str, str]] = []
+    by_dir: list[tuple[str, dict[str, str]]] = []
     for arrival in arrivals:
         directory = pathutil.normalize(arrival.directory)
         rel: dict[str, str] = {}
@@ -357,9 +357,9 @@ def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, str]:
             if path == directory or not under_path(path, directory):
                 continue
             rel[path[len(directory) + 1 :]] = path
-        by_dir.append(rel)
+        by_dir.append((directory, rel))
 
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, str]] = {}
     for change in changes:
         if change.status[:1] != "D" or change.old_path:
             continue
@@ -372,9 +372,10 @@ def move_half_candidates(changes, policy: Policy, arrivals) -> dict[str, str]:
         sub = rest.split("/", 1)[1]
         if not sub:
             continue
-        candidates = sorted(rel[sub] for rel in by_dir if sub in rel)
+        candidates = sorted((rel[sub], directory) for directory, rel in by_dir if sub in rel)
         if candidates:
-            out[path] = candidates[0]
+            a_path, a_dir = candidates[0]
+            out[path] = (a_path, a_dir)
     return out
 
 
