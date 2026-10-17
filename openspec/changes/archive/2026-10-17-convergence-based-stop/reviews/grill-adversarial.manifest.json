@@ -5,10 +5,10 @@
   "reviewer_run_id": "grill-adversarial-reviewer-convergence-2026-10-17",
   "author_run_id": "convergence-based-stop-author-2026-10-17",
   "base_sha": "6a37262626cfe9784e2101e99f4aa5e4bf1a8407",
-  "head_sha": "e56596d6fb3ff9963e83bd1b2b517b7f7c096739",
+  "head_sha": "305877b88248fcd458a5d24dca0f351e5ccca744",
   "tasks_hash": "2d31738a10d766c359582f441f30c9066b2f57070a77905e9413947ad1d2197c",
   "spec_hash": "e1f977dfacc960e72311dbec88ce69d7c4517a2765ccb2c023188d8ba25f4086",
-  "diff_hash": "f28e2c40325d5c9eb2c5770dc8b3734e43279f5c100c896e12990cecf1816bd1",
+  "diff_hash": "badd0344d9de21131d6a7b751cf4b09b11a34fcdd279fb00b25f346655578f9f",
   "report_hash": "2e068f015abfc4e78ddd4a7e4de905e299a58af33d13a94619966b85228ceb45",
   "report_path": "reviews/grill-adversarial.md"
 }
