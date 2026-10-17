@@ -36,7 +36,7 @@ description: 设计对抗式追问——独立审阅者对 design 逐轮追问�
 
    ```
    witnessloop manifest build --root . --change <change-id> --stage grill \
-     --report reviews/grill-review.md \
+     --report reviews/grill-design.md \
      --reviewer-run-id <审阅者 run> --author-run-id <作者 run> [--base <ref>]
 
    witnessloop manifest build --root . --change <change-id> --stage grill-adversarial \

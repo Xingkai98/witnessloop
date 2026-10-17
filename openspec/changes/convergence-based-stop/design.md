@@ -358,7 +358,7 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
   - 全部七要素：`templates/review-loop.md`、spec；
   - 批次 / 20 / 建议重开：`templates/grill.md`、`plugin/README.md`、`README.md`、
     `docs/design.md`、`docs/gate.md`；
-  - 批次 / deferred / 20 / 三出口：两个 `plugin/commands/*.md`。
+  - 批次 / deferred / 20 / 三出口（或等价「出口只有三种」）：两个 `plugin/commands/*.md`。
 - 改 `tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 的旧断言。
 - 新增 `tests/test_convergence_stop.py`：上述 allowlist、词表、映射、以及「适配器不得出现
   `步骤 1–6`、必须出现 `1–8`」。
@@ -428,7 +428,7 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 - **必须修改（已整合）**：
   - **R1** 第 20 轮自身无法收口 → 明写超上限 `BLOCKED` + 建议重开（§2.3、D3、spec Requirement 4）。
   - **R2** 验证重试无上限 → 统一为 `SHALL`：无新可验证修复方案 ⇒ `BLOCKED` + 记录验证次数（§2.2、§2.5）。
-  - **R3** 验证期安全漏洞二义 → 收紧例外：只有「验证失去意义/继续不安全」才 `BLOCKED`，否则 deferred 并写延后理由（§2.2、D2）。
+  - **R3** 验证期安全漏洞二义 → 收紧例外：「验证失去意义/继续不安全」⇒ `SHALL` `BLOCKED`，否则 deferred 并写延后理由（§2.2、D2）。
   - **R4** 旧 review 与孤儿规则冲突、A5 假 `[x]` → D8 写明「覆盖或移出，不得绑旧文件」；tasks A5 拆成 A5a/A5b（A5b 待 B2）。
   - **R5** grill 写码硬条件 #2 把 `BLOCKED` 当许可 → 改成「`PASS`，或 `BLOCKED` + 成因 + 用户明确裁决继续」（§4.2）。
   - **R6** frontier 豁免边界 → 仅限进入对抗环之前；批次项驱动的探索属于该轮修复（D5、§4.2）。

@@ -59,8 +59,8 @@ def _read(path: Path) -> str:
 FILE_MAPPING = (
     (REVIEW_LOOP, ("批次", "medium", "deferred", "20")),
     (GRILL, ("批次", "20", "frontier")),
-    (ADAPTER_REVIEW_LOOP, ("批次", "deferred", "20")),
-    (PLUGIN / "commands/grill.md", ("批次", "deferred")),
+    (ADAPTER_REVIEW_LOOP, ("批次", "deferred", "20", "出口只有三种")),
+    (PLUGIN / "commands/grill.md", ("批次", "deferred", "20", "三出口")),
     (PLUGIN / "README.md", ("批次", "20")),
     (REPO_ROOT / "README.md", ("批次", "20")),
     (REPO_ROOT / "docs/design.md", ("批次", "20")),
@@ -151,12 +151,26 @@ def test_review_loop_template_has_eight_execution_steps():
         assert f"### {index}." in text, f"templates/review-loop.md 缺第 {index} 步"
 
 
-def test_review_loop_template_security_exception_is_shall():
-    """安全例外命中时是 SHALL BLOCKED，不是可选的 MAY（building R1-2）。"""
-    text = _read(REVIEW_LOOP)
-    assert "验证失去意义" in text
-    assert "SHALL 以" in text and "BLOCKED" in text
-    assert "可 `BLOCKED`" not in text
+def _exception_paragraph(text: str, start_marker: str) -> str:
+    """取「验证失去意义」所在的例外段，归一空白——守卫必须绑到这一段本身。"""
+    index = text.index("验证失去意义")
+    begin = text.rfind(start_marker, 0, index)
+    end = text.index("其余安全漏洞", index)
+    return " ".join(text[begin:end].split())
+
+
+def test_security_exception_is_shall_in_template_and_design():
+    """安全例外命中时是 SHALL BLOCKED，不是可选的 MAY（building R1-2）。
+
+    ⚠️ 只断言全文出现 `SHALL 以` 不够——模板别处也有这句；必须绑到例外段。
+    """
+    template = _exception_paragraph(_read(REVIEW_LOOP), "**例外**")
+    assert "SHALL 以 `BLOCKED`" in template
+    assert "可 `BLOCKED`" not in template
+
+    design = _exception_paragraph(_read(CHANGE / "design.md"), "**安全漏洞的例外")
+    assert "SHALL 以 `BLOCKED`" in design
+    assert "可 `BLOCKED`" not in design
 
 
 @pytest.mark.parametrize(

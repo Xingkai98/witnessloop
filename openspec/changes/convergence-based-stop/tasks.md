@@ -111,6 +111,17 @@ $ ~/.local/bin/uv run pytest -q
 - [ ] E3 归档提交后重跑 `witnessloop check` 判绿。
 - [ ] E4 issue #24 写完成说明并关闭。
 
+## F. 审阅修复（building R1，2026-10-17）
+
+| 问题 | 处置 | 落点 / 提交 |
+|---|---|---|
+| R1-1 模板 7 步 vs 适配器「1–8」 | 模板拆出第 8 步「收尾」；测试加 `### 1.`–`### 8.` 八步守卫 | `templates/review-loop.md:164`；`tests/test_convergence_stop.py`；`6c914ff` + 本轮 |
+| R1-2 安全例外 SHALL/MAY 冲突 + 守卫太弱 | 模板/design 统一 `SHALL 以 BLOCKED`；守卫绑到例外段（模板 + design），不再只断言全文 | `templates/review-loop.md:105-106`；`design.md:87-88,223-224`；本轮 |
+| R1-3 首份 dogfood 报告 schema 不规范 | 报告按新 schema 重排：`## Reviewer`、`## 本轮判定`、同轮验证、`## 第 1 轮后 · 收口确认（空批）`、`## 闭环出口`；id 改 `R1-*` / `C-*` | `reviews/grill-adversarial.md`；`6c914ff` |
+| R1-4 七要素 → 文件映射只部分落地 | 补 `plugin/commands/grill.md` 的 `deferred`/下一批、`docs/gate.md` 的「批次」；加 8 文件参数化映射测试 | `tests/test_convergence_stop.py`；`6c914ff` + 本轮 |
+| R1-12 修复提交没在 tasks 追加「审阅修复」节 | 本节 | 本轮 |
+| R1-5 / R1-6 / R1-13 / R1-14 / R1-15（low/nit） | 顺手修：出口标签覆盖第 20 轮自身未收口、manifest 示例用 `grill-design.md`、适配器映射词条、跳转措辞、R3 摘要 `SHALL` | `templates/review-loop.md`、`plugin/commands/grill.md`、`tests/test_convergence_stop.py`、`design.md`；本轮 |
+
 ## 验收清单（对应 spec）
 
 - [ ] V1 `templates/review-loop.md` 逐条含新模型七要素。
