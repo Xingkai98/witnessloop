@@ -2,13 +2,13 @@
   "schema": "witnessloop/review-manifest@v1",
   "change_id": "archive-arrival-d-side",
   "stage": "grill-adversarial",
-  "reviewer_run_id": "grill-adversarial-reviewer-archive-arrival-d-side-cdeede0b6f5c",
-  "author_run_id": "grill-adversarial-author-archive-arrival-d-side-cdeede0b6f5c",
+  "reviewer_run_id": "grill-adversarial-reviewer-archive-arrival-d-side-36bfd84d0797",
+  "author_run_id": "grill-adversarial-author-archive-arrival-d-side-36bfd84d0797",
   "base_sha": "e88c5b2b91e65653a320972c0a199059b73b6001",
-  "head_sha": "cdeede0b6f5ccaabfa965d17bd547736d1202a7b",
-  "tasks_hash": "7a3fafd5e3383e241db474cff6a6e21c0f490b10c04d9c5ce040f9567cc4b7c5",
+  "head_sha": "36bfd84d0797cb270e64df8be177722d1ebe6e9d",
+  "tasks_hash": "b77a868a3f1090341a07ef097e575756904afa15f363fda88fde9911b575610d",
   "spec_hash": "6328212a220465ee762aa1812dce136e72cadfe5465bd65d9ca69d2fa5d61e0c",
-  "diff_hash": "ca2b8aeaceb7e69150fd9a26a568c0ee97e46ee4441797ce2c98974d4c07c210",
+  "diff_hash": "d99974a94c0d44d52c2f375e9a3e11d61f25dce044f8fc3660897968a859c963",
   "report_hash": "4710ad660e9d1e7fc57ac076d879c42126fb69b3203e44a0428b3aaeeee0dce0",
   "report_path": "reviews/grill-adversarial-a1.md"
 }
