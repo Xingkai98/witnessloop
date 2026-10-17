@@ -13,7 +13,7 @@
 - [x] 0.3 对抗轮 A1–A5（独立零记忆）→ `reviews/grill-adversarial-a1.md` … `a5.md`（各造出一条绕过；A5 的 X1 证明
       「覆盖」也不是充分条件）。**这五轮的产出是本 change 选 B 的直接依据**（`design.md §3` 留档）。
       ⚠️ **B 之后不再需要满轮重跑**，另跑 1 轮确认「B 形态下无未解决的可证伪项」（见 0.4）。
-- [ ] 0.4 **B 形态的对抗确认（1 轮，独立零记忆）** → `reviews/building-review-b1.md` 或
+- [x] 0.4 **B 形态的对抗确认（1 轮，独立零记忆）** → `reviews/building-review-b1.md` 或
       `reviews/grill-adversarial-b1.md`：重点确认「只改文案/文档」**没有**意外改变判定语义。
 
 ## 1. 规格
@@ -51,13 +51,14 @@
 - [x] 4.1 `uv run pytest -q` 全绿（含既有 18 条 F + 6 条 N + `test_archive.py`）。
 - [x] 4.2 **issue #31 的形态**：仍然 `✗ 1 项`（判定不变），且文案含诊断 + 可用的示例；
       **照文案补一行事件**之后 ⇒ `check：通过 ✓`（同一个 PR，零新增目录）。
-- [ ] 4.3 本仓自举 `check` 判绿。
+- [x] 4.3 本仓自举 `check` 判绿（`通过 ✓` / EXIT=0，在**已提交**的 revision 上跑）。
 - [x] 4.4 **纯搬移回归**：本仓第一次归档的形态（58×`R100`）⇒ 仍然 0 findings、不需要任何事件
       （可用 `git log` 的 `3d600aa` 复算，或既有 `test_archive.py` 的归档用例）。
 
 ## 5. 收尾
 
-- [ ] 5.1 实现后独立审阅闭环（reviewer ≠ author，收敛才停）→ `reviews/building-review.md`。
+- [x] 5.1 实现后独立审阅闭环（reviewer ≠ author）→ `reviews/building-review.md`：**有条件通过**，
+      放行条件 BR-1（簿记）与 BR-2/3/4（文档）已全部闭合；BR-5/6 已修，BR-7/8 登记不修（无行为后果）。
 - [ ] 5.2 三份（+多轮）stage manifest；回链并**关闭** issue #31（comment 里引用裁定 B、成本、以及
       「纯 move 58×`R100` 全绿」的证据）。
 - [x] 5.3 ~~（本 change 之后）用本修复做 witnessloop 第一次真实归档~~ —— **已提前完成且不依赖本 change**：
