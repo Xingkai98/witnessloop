@@ -483,5 +483,14 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 - **R1-4** 七要素 → 文件映射只部分落地 → `plugin/commands/grill.md` 补 `deferred`/下一批、
   `docs/gate.md` 补「批次」；`tests/test_convergence_stop.py` 加参数化映射测试（8 个文件）。
 
+**Building 复验（`reviews/building-review.md`，run `building-reviewer-convergence-2026-10-17`）**：
+
+- 第 1 轮 R1-1–R1-4：R1-1/R1-3/R1-4 首轮已修好；R1-2 首个守卫无效（只断言全文有
+  `SHALL 以`），补成「例外段 + 模板/design 双绑定」的守卫后第 2 次验证通过。
+- 第 2 轮：验证期 deferred 的 `R1-12`（缺「审阅修复」节）以原 id 进入批次，
+  `tasks.md` 的 `## F. 审阅修复（building R1）` 已验证。
+- 第 3 次开批为空（0 条 medium+）⇒ **`PASS`**；deferred 0 条；low/nit 10 条登记不阻塞。
+- 全量测试：`753 passed`（HEAD `1dffc29`）。
+
 **停轮门**：无新增待拍板问题。用户 2026-10-17 的四个事项已记入 `grill-design.md` 的
 `## User Confirmation`。

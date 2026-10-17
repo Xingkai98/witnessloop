@@ -97,11 +97,13 @@ $ ~/.local/bin/uv run pytest -q
 
 ## D. 实现后独立审阅（本批）
 
-- [ ] D1 独立零记忆 building 审阅：另起 run，逐项验证本 tasks.md 的 `[x]`（读代码/文档确认真实存在），
+- [x] D1 独立零记忆 building 审阅：另起 run，逐项验证本 tasks.md 的 `[x]`（读代码/文档确认真实存在），
   跑测试，产出 `reviews/building-review.md`（Verdict / Tasks Verification / Issues / Test Results）。
-- [ ] D2 `CHANGES_REQUESTED` ⇒ 按批次模型修 + 验证，直到 `PASS`；每次修复补回归测试/文档守卫。
-- [ ] D3 三份 stage manifest：`grill`、`grill-adversarial`、`building` 各一份，绑定最终 revision。
-- [ ] D4 `witnessloop check --base origin/main --head HEAD` 判绿（记录原始输出）。
+- [x] D2 `CHANGES_REQUESTED` ⇒ 按批次模型修 + 验证，直到 `PASS`；每次修复补回归测试/文档守卫。
+  **结果：building R1 `CHANGES_REQUESTED`（R1-1–R1-4）→ 修复 `6c914ff` → R1-2 首个守卫无效，
+  补 `1dffc29` → 第 2 轮 `R1-12` 修好 → 第 3 次开批为空 ⇒ `PASS`。**
+- [x] D3 三份 stage manifest：`grill`、`grill-adversarial`、`building` 各一份，绑定最终 revision。
+- [x] D4 `witnessloop check --base origin/main --head HEAD` 判绿（记录原始输出）。
 
 ## E. 合入与归档（本批）
 
@@ -124,20 +126,20 @@ $ ~/.local/bin/uv run pytest -q
 
 ## 验收清单（对应 spec）
 
-- [ ] V1 `templates/review-loop.md` 逐条含新模型七要素。
-- [ ] V2 `templates/grill.md` 的对抗环写明「与 review-loop 同构」+ 20 上限 + 三出口；
+- [x] V1 `templates/review-loop.md` 逐条含新模型七要素。
+- [x] V2 `templates/grill.md` 的对抗环写明「与 review-loop 同构」+ 20 上限 + 三出口；
   frontier 追问轮显式豁免。
-- [ ] V3 适配器（`plugin/commands/*.md`）不复制模板正文，只接线；同步新口径。
-- [ ] V4 规范面（`templates/`、`plugin/`、`README.md`、`docs/design.md`、`docs/gate.md`）
+- [x] V3 适配器（`plugin/commands/*.md`）不复制模板正文，只接线；同步新口径。
+- [x] V4 规范面（`templates/`、`plugin/`、`README.md`、`docs/design.md`、`docs/gate.md`）
   不再有旧口径；裸 `封顶` 行按 design §4.4 的规则判（允许 `常量` / `路径深度` 行）。
-- [ ] V5 `specs/review-termination/spec.md` 无「按审阅 pass 计轮」旧口径。
-- [ ] V5b grill R1–R13 的文本落点齐全：第 20 轮自身未收口、验证重试终止点、安全漏洞例外、
+- [x] V5 `specs/review-termination/spec.md` 无「按审阅 pass 计轮」旧口径。
+- [x] V5b grill R1–R13 的文本落点齐全：第 20 轮自身未收口、验证重试终止点、安全漏洞例外、
   severity 冻结、deferred 传递、轮数累计、收口确认、累积 low/nit、frontier 边界、
   两环 `BLOCKED` 映射、旧 review/孤儿处置。
-- [ ] V5c 对抗 R1 的 I1–I12 的文本落点齐全：B2 无「无轮数上限」；第 20 轮终止点收窄；
+- [x] V5c 对抗 R1 的 I1–I12 的文本落点齐全：B2 无「无轮数上限」；第 20 轮终止点收窄；
   反断言词表含裸「封顶」；扫描口径为 allowlist；适配器步骤 1–8；`check` 如实写既有 grill
   正文判据；零轮/收口确认 id；deferred 延后理由列；轮内 verdict 与出口分开；
   设计环回归测试对应物；设计环修复面含 proposal/spec/tasks。
-- [ ] V6 `uv run pytest -q` 全绿。
-- [ ] V7 三份 manifest + `witnessloop check` 绿。
+- [x] V6 `uv run pytest -q` 全绿。
+- [x] V7 三份 manifest + `witnessloop check` 绿。
 - [ ] V8 PR 已 `--merge` 合入；归档为纯 move；issue #24 已关闭。
