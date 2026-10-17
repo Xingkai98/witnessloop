@@ -1,8 +1,9 @@
 # Proposal: convergence-based-stop（审阅闭环的终止条件：有界批次 × 20 轮上限）
 
-> **状态：按用户 2026-10-17 拍板的新模型重写。** 旧版（2026-10-15）的「消解式收敛判据 /
-> 问题账本 / 无限轮」文档**全部作废**；其评审产物也不适用于新口径（见 `reviews/grill-design.md`
-> 的「旧记录作废」一节）。关联 issue：witnessloop **#24**。
+> **状态：按用户 2026-10-17 拍板的新模型重写；grill（`reviews/grill-design.md`）的
+> R1–R13 已逐条整合。** 旧版（2026-10-15）的「消解式收敛判据 / 问题账本 / 无限轮」文档
+> **全部作废**；其评审产物也不适用于新口径（见 `reviews/grill-design.md` 的「旧记录作废」
+> 一节）。关联 issue：witnessloop **#24**。
 >
 > **用户已拍板、本 change 不再重开的三个参数**：
 > 1. 轮的定义 = **一个批次闭环**（不是「审阅者给一次 PASS」）；
@@ -69,8 +70,13 @@
 3. 把 medium+ / low / nit 的处置口径写死：medium+ 全修；low/nit 登记不修须写理由。
 4. 把三种出口写死：`PASS` / `BLOCKED` + 成因 / 超上限 `BLOCKED` + 建议重开。
 5. 设计阶段对抗验证环与实现后审阅环**共用**同一套轮次模型；grill 的 frontier 追问轮
-   **不**属于审阅轮，不受 20 上限约束（显式豁免）。
-6. 机械门禁口径**不变**：`check` 仍只判「证据存在 + 绑在最终 revision」，
+   **仅限进入对抗环之前**，不属于审阅轮，不受 20 上限约束（显式豁免）；
+   对抗环批次项驱动的设计探索属于该轮修复。
+6. **第 20 轮自身无法收口**也落到超上限 `BLOCKED` + 建议重开；轮数按 change（且按环）累计，
+   后续报告保留前序轮次。
+7. **deferred 传递是开批硬规则**：下一次开批先读上一轮 deferred/low-nit 表；每个 deferred
+   medium+ 以原 id 进入下一轮批次，或出现在 `BLOCKED` 成因里。
+8. 机械门禁口径**不变**：`check` 仍只判「证据存在 + 绑在最终 revision」，
    **不解析**批次、severity、轮次或出现次数——新模型靠**模板 + 独立审阅者**执行。
 
 ## 非目标
@@ -90,14 +96,16 @@
 | 文件:行 | 现状 | 改成 |
 |---|---|---|
 | `templates/review-loop.md:11` | 「有界轮数封顶」 | 批次闭环 + 20 轮上限 + 三种出口 |
+| `templates/review-loop.md:75-81` | 三态 verdict 表（`CHANGES_REQUESTED` 像出口） | 明确它只是轮内状态；出口只有 `PASS`/`BLOCKED` |
 | `templates/review-loop.md:90-102` | 「修复并再审（轮数封顶，默认 3 轮）」 | 「修复并验证（同轮不另计）」+ deferred + 20 上限 |
 | `templates/review-loop.md:153` | 「三轮封顶时该停下交人」 | 超上限 ⇒ BLOCKED + 建议重开设计 |
 | `templates/grill.md:21` | 「直到 PASS 或封顶」 | 「直到 PASS / BLOCKED；对抗环按批次模型」 |
 | `templates/grill.md:130-141` | 对抗环「PASS 或轮数封顶（默认 3 轮，到顶交人）」 | 对抗环与 review-loop 同构：批次 / 验证 / deferred / 20 |
-| `templates/grill.md:215` | 写码硬条件「PASS（或轮数封顶并交人）」 | 「PASS（或 BLOCKED + 成因，含超上限建议重开）」 |
+| `templates/grill.md:215` | 写码硬条件「PASS（或轮数封顶并交人）」 | 「PASS，或 BLOCKED + 成因 + **用户已明确裁决继续**」 |
 | `plugin/commands/grill.md:25` | 「直到 PASS 或轮数封顶」 | 同上 |
 | `plugin/commands/review-loop.md:2` | front-matter「有界轮数」 | 「批次闭环，20 轮上限，三出口」 |
 | `plugin/commands/review-loop.md:29` | 「有界轮数（默认上限 3 轮）」 | 「batch / deferred / 20 / 三出口」接线 |
+| `plugin/commands/review-loop.md:63` | 「结论是三态」 | 明确 `CHANGES_REQUESTED` 不是出口 |
 | `plugin/README.md:37` | 「轮数封顶」 | 同上 |
 | `README.md:306` | 「有界轮数封顶」 | 批次模型 + 20 + 重开建议 |
 | `docs/design.md:25` | 「PASS 或 N 轮封顶」 | 「批次闭环；20 轮上限；超限 BLOCKED + 重开」 |
@@ -111,17 +119,26 @@
   ① 轮 = 非空 medium+ 批次闭环；② 验证期间新问题只进 deferred；③ 20 轮上限；
   ④ 超上限 `BLOCKED` +「建议推倒重开（revise the design）」；⑤ medium+ 全修；
   ⑥ low/nit 登记不修须写理由；⑦ 三种出口。
+- **grill 的 R1–R13 已整合**：第 20 轮自身未收口 ⇒ 超上限 `BLOCKED`；验证重试终止点；
+  安全漏洞例外收紧；禁静默降级；deferred 传递硬规则；轮数累计；收口确认记录位；
+  累积 low/nit 登记；frontier 边界；两环 `BLOCKED` 映射；旧 review/孤儿处置。
 - **旧口径不再出现在规范面**：`templates/`、`plugin/`、`README.md`、`docs/design.md`、
   `docs/gate.md` 中不再有「3 轮封顶」「有界轮数」「轮数封顶」这类旧表述
   （`docs/gate.md:407/554` 的「常量封顶 / 路径深度封顶」与本规则无关，不动）。
+- **排除名单明确**：`docs/tasks.md`、`docs/reviews/**`、`openspec/changes/archive/**`、
+  其它 change 目录、`tests/test_grill_adversarial_gate.py:180`（夹具）不在反断言扫描面内。
 - **两个环都覆盖**：`templates/grill.md` 的设计对抗环明确「与 review-loop 同构」，
   `templates/review-loop.md` 的实现环写明同一模型；grill frontier 追问轮显式豁免。
-- **测试**：新增/改写的文档守卫变红 → 改文档 → 变绿；`uv run pytest -q` 全绿。
+- **测试**：新增/改写的文档守卫变红 → 改文档 → 变绿；变异验证（改回旧措辞必须变红）；
+  `uv run pytest -q` 全绿（基线 723 passed）。
 - **机械边界**：`witnessloop check` 判据零变化（不解析正文）；新增的只是文本与文档守卫。
 
 ## 测试策略
 
 TDD。先写文档守卫（substring / 反 substring）让它们红，再改模板与文档让它们绿。
 新增 `tests/test_convergence_stop.py` 钉住新模型的七个要素；改写 `tests/test_templates.py` 与
-`tests/test_plugin.py` 里两条旧的「封顶」断言。不写「用自然语言判断语义」的测试——
-文档守卫只能钉**措辞在场**，真正执行靠独立审阅者；这条诚实边界写进 design §6。
+`tests/test_plugin.py` 里两条旧的「封顶」断言。反断言**只扫显式规范面**（模板 / 适配器 /
+README / docs design+gate / 两条测试 / 本 spec），**排除**历史记录与夹具（见验收）。
+加一条**变异验证**：临时把 `templates/review-loop.md` 的新措辞改回旧口径，测试必须变红。
+不写「用自然语言判断语义」的测试——文档守卫只能钉**措辞在场**，真正执行靠独立审阅者；
+这条诚实边界写进 design §6。

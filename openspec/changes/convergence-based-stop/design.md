@@ -1,7 +1,9 @@
 # Design: convergence-based-stop（有界批次 × 20 轮上限）
 
-> **状态：按用户 2026-10-17 拍板的新模型重写。** 旧版设计（收敛判据 / 问题账本 / 无限轮）
-> 与其评审产物**全部作废**；旧文件保留在 git 历史（本分支首个提交 `9acdf2b`），不参与本 change 的证据。
+> **状态：按用户 2026-10-17 拍板的新模型重写；grill（`reviews/grill-design.md`）的 R1–R13
+> 已逐条整合（见文末 `## Pre-Implementation Review`）。** 旧版设计（收敛判据 / 问题账本 /
+> 无限轮）与其评审产物**全部作废**；旧文件保留在 git 历史（旧分支提交 `9acdf2b` 与重写提交
+> `20f1089`），不参与本 change 的证据。
 > 关联 issue：witnessloop **#24**；基线：`origin/main` `46e45b4`（2026-10-17 fetch）。
 >
 > **用户已经拍板、本设计不再重开的参数**：
@@ -70,9 +72,16 @@
 3. **验证**：审阅者只逐条确认 `B_n` 的每一项：
    - 已修好 ⇒ 记录 `已修好`（修复提交 + 回归测试）；
    - 没修好 ⇒ 记录 `未修好`，开发者继续修；**仍是第 `n` 轮**，不另计轮；
+   - **验证重试的终止点（R2）**：同一项在本轮内被再次判 `未修好`，且开发者拿不出
+     **新的、可验证的修复方案**时，审阅者 SHALL 以 `BLOCKED` + 成因终结（记录验证次数与
+     未通过项）；不新增数字上限，但「同一批反复无法收口」是 **SHALL**，不是可选。
    - 验证期间发现的新问题 ⇒ 只写入 `deferred`（medium+）或 low/nit 登记表；
      **不得**当场作为本轮阻塞项提出，**不得**扩大 `B_n`。
+     **安全漏洞的例外（R3）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身
+     不安全」才可 `BLOCKED`；否则仍进 `deferred`，并在 deferred 行写明「为什么可以延后一轮」。
 4. **收口**：`B_n` 全部为 `已修好` ⇒ 本轮结束，回到第 1 步做下一次开批（含 deferred）。
+   **下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表**：每个 deferred medium+ SHALL
+   以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里（R9）。
 
 > **「不许边改边提」是硬约束**：`B_n` 在开批时冻结。验证轮里唯一允许改变的是
 > 「`B_n` 各项的验证状态」和「deferred / low/nit 登记表」；批次成员本身不变。
@@ -80,6 +89,10 @@
 ### 2.3 轮数上限 = 20
 
 - 最多存在 **20 个已结束的轮**（`n = 1..20`）。
+- **第 20 轮自身无法收口（R1）**：若 `B_20` 仍有任何一项为 `未修好`，本轮不会结束，
+  收口确认不会发生——此时出口 SHALL 是**超上限 `BLOCKED`**（不是通用 `BLOCKED`）：
+  报告 SHALL 写「**建议推倒重开（revise the design）**」+ 第 20 轮批次/验证账本 +
+  未收口 medium+ 列表；SHALL NOT 开启第 21 轮。
 - 第 20 轮收口后，审阅者仍要做一次**收口确认**（下一次开批）：
   - 批次为空 ⇒ `PASS`；
   - 批次非空 ⇒ **超上限 `BLOCKED`**：报告 SHALL 写「**建议推倒重开（revise the design）**」，
@@ -87,6 +100,9 @@
 - **不是「到轮数就停」**：停下来的原因是「20 轮有界修复仍不能收口，说明问题在设计层」，
   不是「时间到了」。报告不得把超上限写成普通的交人/照合。
 - **收口确认不算一轮**：它只允许两种结果——`PASS`，或超上限 `BLOCKED`；不会产生第 21 轮修复。
+- **累计口径（R10）**：轮数是**按 change（且按环）累计**的。后续报告 SHALL 保留前序轮次，
+  或引用同一份叠写报告；换审阅者 run / 另写一份从第 1 轮开始的新报告 SHALL NOT 重置计数。
+  重置只能来自用户的明确裁决，并记为 `BLOCKED` / 建议重开设计。
 
 ### 2.4 严重度与处置
 
@@ -97,9 +113,14 @@
 
 - **定级由审阅者做**。开发者不得自行把 medium+ 降为 low 以跳过修复；若认为定级错误，
   SHALL 在报告中提出具体理由，由审阅者复核并给出结论。复核不得为了放行而改级。
+- **severity 随批次冻结（R8）**：验证期若审阅者认为某条定级错误，只能记录争议并二选一：
+  （a）按原 severity 要求修完；或（b）`BLOCKED` 并把争议写进成因。SHALL NOT 静默把
+  批次项移出批次或降为 low/nit。
 - 验证期间发现的新 `low/nit` 进登记表；新 `medium+` 进 deferred（下一批）。
 - **low/nit 永不阻塞**：它们既不影响本轮收口，也不影响 `PASS`；但「登记不修」缺理由
   视为报告不完备（流程缺陷，不是机械门禁判据）。
+- **累积登记（R13）**：最终 `PASS` 报告 SHALL 携带**累积** low/nit 登记表，或逐项链接到
+  首次登记的轮次小节——不得只留最后一轮、让更早的登记从报告面消失。
 
 ### 2.5 三种出口（只有这三种）
 
@@ -112,8 +133,9 @@
 - `BLOCKED` 不自行修复：它是**终结态**，把问题交回用户。
 - `CHANGES_REQUESTED` **不是出口**：它只描述「本批仍有未验证通过的项」，是轮内状态；
   对应动作是继续修/继续验证，不是停下交人。
-- 「同一批反复无法收口」可以按 `BLOCKED` 结束并写成因；本模型**不加**「每轮最多验证几次」
-  的新参数（用户没有拍板这个旋钮），但要求报告如实记录验证次数与未通过项。
+- 「同一批反复无法收口」**SHALL** 按 `BLOCKED` 结束并写成因（R2）：触发点是「同一项再次
+  被判 `未修好`，且开发者拿不出新的、可验证的修复方案」，报告要如实记录验证次数与未通过项。
+  本模型**不加**「每轮最多验证几次」的新参数（用户没有拍板这个旋钮）。
 
 ### 2.6 例子（逐字按用户口径）
 
@@ -140,13 +162,19 @@
 | id | severity | 锚点 | 问题 | 来源 |
 …
 
-### low / nit 登记
+### low / nit 登记（累积：含前序轮次，或逐项链接）
 | id | severity | 处置（已修 / 登记不修） | 理由 |
 …
+
+### 第 <n> 轮后 · 收口确认
+- 审阅时间 / 审阅范围 / 结论：0 条 medium+ ⇒ PASS；或 N 条 medium+ ⇒ 下一轮 / 超上限 BLOCKED
 
 ## 出口
 PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计）
 ```
+
+⚠️ **PASS 必须引用 `### 第 <n> 轮后 · 收口确认`**：空的批次表与「没做这次审阅」在文本上
+不可区分（R12）。收口确认是 `PASS` 的证据位，不是可省略的装饰。
 
 - `id` = `R<首次出现轮次>-<序号>`；deferred 项沿用首次出现的轮次编号，进入下一轮批次时
   不换 id（便于第三方追同一问题）。
@@ -165,13 +193,19 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 ### D2：验证轮禁提新问题，deferred 进下一批
 
 - **理由**：这是「一轮有界」的关键；否则审阅者可以在验证时不断追加，轮次仍不可数。
-- **边界**：验证只允许改「验证状态」和 deferred / low-nit 登记表；批次成员不变。
-- **例外**：整体不可继续的阻塞性缺陷可以按 `BLOCKED` 终结（它不是「新批次项」，是出口）。
+- **边界**：验证只允许改「验证状态」和 deferred / low/nit 登记表；批次成员不变。
+- **例外（R3）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」才可
+  按 `BLOCKED` 终结；其余安全漏洞仍进 deferred，并在行内写明「为什么可以延后一轮」。
+- **传递硬规则（R9）**：下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表；每个 deferred
+  medium+ SHALL 以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
 
 ### D3：20 轮上限 + 超限建议重开
 
 - **理由**：用户拍板；有界模型下 20 轮足够大，再大说明该推倒重开。
-- **计数**：只有非空 medium+ 批次算轮；收口确认（空批）不占轮。
+- **计数**：只有非空 medium+ 批次算轮；收口确认（空批）不占轮；按 change（且按环）累计，
+  后续报告保留前序轮次（R10）。
+- **第 20 轮自身无法收口（R1）**：若 `B_20` 仍有 `未修好`，出口 SHALL 是**超上限 `BLOCKED`**
+  +「建议推倒重开（revise the design）」+ 第 20 轮账本，不得开启第 21 轮。
 - **超限处理**：第 20 轮收口后的收口确认若仍有 medium+ ⇒ `BLOCKED` +「建议推倒重开
   （revise the design）」。这不是「到轮数就停」——停的原因是 20 轮有界修复仍未收口。
 - **备选**：无限轮（旧版设计）——用户已否决；把收口确认也计一轮——会让第 20 轮恰好收敛的
@@ -179,16 +213,21 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 ### D4：medium+ 全修；low/nit 登记不修须写理由（采纳用户裁定）
 
-- 严重度由审阅者定；开发者不得自行降级。
-- low/nit 不阻塞收口与 `PASS`；「登记不修」缺理由 = 报告不完备。
+- 严重度由审阅者定；开发者不得自行降级；**severity 随批次冻结（R8）**——验证期认为定级
+  错误时，只能按原 severity 修完，或 `BLOCKED` 并记录争议，不得静默移出批次。
+- low/nit 不阻塞收口与 `PASS`；「登记不修」缺理由 = 报告不完备；
+  最终 `PASS` 报告要带**累积** low/nit 登记（R13）。
 
 ### D5：设计对抗环与实现审阅环共用同一模型
 
 - `templates/grill.md` 的对抗验证环与 `templates/review-loop.md` 的 building 环同构：
   另起独立零记忆审阅者、开批、验证、deferred、20 上限、三出口。
-- **显式豁免**：grill 的 frontier 追问轮（求设计树完备的内部轮）不是审阅轮，
-  不受 20 上限与「验证禁提新问题」约束——它产出的是决策记录 `grill-design.md`，
-  不是 verdict 报告。
+- **设计环的 `BLOCKED` 成因映射（R11）**：核心需求缺失 / 设计自相矛盾 / 依赖不可满足 /
+  同一批反复无法收口；作者负责改 `design.md` / `grill-design.md`；报告同样带
+  「批次 / 验证 / deferred / low/nit / 收口确认 / 出口」。
+- **显式豁免（R6）**：grill 的 frontier 追问轮**仅指进入对抗环之前**、为求设计树完备而做的
+  内部轮；它不是审阅轮，不受 20 上限与「验证禁提新问题」约束。**由对抗环批次项驱动的设计
+  探索属于该轮修复**，SHALL NOT 改标为 frontier。
 
 ### D6：机械门禁零变化
 
@@ -204,10 +243,16 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 - `docs/reviews/*`、已归档 change 的历史报告、`docs/tasks.md` 是当时的记录，不改写。
 - asterwynd 的 12 处旧口径由镜像 change 承载；本 change 只在 proposal 里点名，不碰对方仓库。
 
-### D8：本 change 自身的旧评审记录作废
+### D8：本 change 自身的旧评审记录作废（R4）
 
 - 2026-10-15 的 `reviews/grill-design.md`、`reviews/grill-adversarial.md` 是**旧模型**产物，
-  不适用于新口径，不绑定 manifest、不作为本 change 的证据；git 历史保留（`9acdf2b`）。
+  不适用于新口径，不作为本 change 的证据。
+- **孤儿规则冲突的处置**：`check` 要求 `reviews/**/*.md` 的每个报告都被 manifest 绑定
+  （`src/witnessloop/contract.py:636-666`）——「留着旧文件但不绑 manifest」会变成孤儿报告，
+  「绑旧文件」会变成旧模型假证据。⇒ 旧 `grill-design.md` 已被 2026-10-17 的新报告**覆盖**；
+  旧 `grill-adversarial.md` 必须由 B2 用新模型报告**覆盖**后再建 manifest，或从 `reviews/`
+  **移出**（git 历史保留），且**不得**为旧文件建 `stage=grill-adversarial` manifest。
+- 旧内容可从 git 历史 `9acdf2b`（首次落盘）与 `20f1089`（重写时再次落盘）查。
 - 本 change 的新证据从 2026-10-17 的新 grill 报告开始。
 
 ## 4. 落点与改法
@@ -220,36 +265,54 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
   4. **全修**；5. **只做修复验证**（未通过 ⇒ 继续修，同轮；新问题 ⇒ deferred，不得当场提）；
   6. **收口**（全通过 ⇒ 本轮结束；下一次开批）；7. 20 上限与三出口；
   8. 收尾落 manifest。
-- 硬约束：批次冻结 / 验证禁提新问题 / medium+ 全修 / low-nit 登记须理由 / 20 上限 /
+- **三态 verdict 表（`templates/review-loop.md:75-81`）也要改**：`CHANGES_REQUESTED` 从
+  「出口」降为「轮内状态」；`BLOCKED` 仍是出口；`PASS` 来自收口确认。
+- 报告形态加 `### 第 <n> 轮后 · 收口确认`，`PASS` 必须引用它（R12）。
+- 硬约束：批次冻结核 severity（R8）/ 验证禁提新问题 / medium+ 全修 / low/nit 登记须理由 /
+  20 上限（含第 20 轮自身未收口，R1）/ deferred 传递（R9）/ 总账累计（R10）/
   `CHANGES_REQUESTED` 不是出口 / `check` 不解析正文。
 
 ### 4.2 `templates/grill.md`（对抗环）
 
 - 时序图与第 5 步改成「批次模型，与 review-loop 同构」。
-- 写码硬条件 #2 改成「对抗验证已 `PASS`（或 `BLOCKED` + 成因，含超上限建议重开）」。
-- 明确 frontier 追问轮豁免。
+- 写码硬条件 #2 改成「对抗验证已 `PASS`，或 `BLOCKED` + 成因 + **用户已明确裁决继续**」；
+  `BLOCKED` 本身 SHALL NOT 作为写码许可（R5）。
+- 明确 frontier 追问轮豁免的起止：仅限进入对抗环之前的求完备阶段；对抗环批次项驱动的
+  设计探索属于该轮修复（R6）。
+- 设计环的 `BLOCKED` 成因映射与修复面见 D5（R11）。
 
 ### 4.3 适配器与自述
 
-- `plugin/commands/review-loop.md`：front-matter、步骤 5/6、约束同步。
+- `plugin/commands/review-loop.md`：front-matter、步骤 5/6、约束同步；
+  **`:63` 的「结论是三态」也要改**，否则 `CHANGES_REQUESTED` 仍被当出口。
 - `plugin/commands/grill.md`：步骤 5 同步。
 - `plugin/README.md`：命令说明同步。
 - `README.md:306`、`docs/design.md:25`、`docs/gate.md:716`：自述同步。
 
-### 4.4 测试
+### 4.4 测试（R7 的扫描面）
 
 - 改 `tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 的旧断言。
 - 新增 `tests/test_convergence_stop.py`：
-  - 模板/适配器/自述含新模型七要素；
-  - 规范面不再出现旧口径（`3 轮封顶`、`有界轮数`、`轮数封顶`）；
-  - `specs/review-termination/spec.md` 不出现「按审阅 pass 计轮」的旧口径。
+  - **规范面清单**（显式列出）：`templates/review-loop.md`、`templates/grill.md`、
+    `plugin/commands/review-loop.md`、`plugin/commands/grill.md`、`plugin/README.md`、
+    `README.md`、`docs/design.md`、`docs/gate.md`、`tests/test_templates.py`、
+    `tests/test_plugin.py`、`specs/review-termination/spec.md`。
+  - **排除名单**（历史/夹具，不得被反断言误伤）：`docs/tasks.md`、`docs/reviews/**`、
+    `openspec/changes/archive/**`、`openspec/changes/<其它 change>/**`、
+    `tests/test_grill_adversarial_gate.py:180`（夹具里的旧措辞是「check 不解析正文」的输入）。
+  - 模板/适配器/自述含新模型七要素；规范面不再出现旧口径（`3 轮封顶`、`三轮封顶`、
+    `有界轮数`、`轮数封顶`）。
+  - **变异验证**：把 `templates/review-loop.md` 的一处新措辞改回旧口径，测试必须 1 failed
+    （可在本地手动验证并记入 building 报告；不把变异提交进仓）。
 
 ## 5. 测试策略（TDD）
 
 1. 先写 `tests/test_convergence_stop.py` 与两条旧断言的改写版，跑 `uv run pytest -q` 确认**红**；
 2. 再改模板/适配器/文档；
-3. 目标：全量 `uv run pytest -q` 全绿（基线记录在 tasks.md）。
-4. 文档守卫只钉**措辞在场**，不证明语义执行；语义由独立零记忆审阅者按 tasks 逐项核对。
+3. 目标：全量 `uv run pytest -q` 全绿（基线 `723 passed`，2026-10-17 实测）。
+4. **变异验证**（R7）：临时把 `templates/review-loop.md` 的一处新措辞改回旧口径，
+   确认新测试**变红**；改回后复绿。变异不提交。
+5. 文档守卫只钉**措辞在场**，不证明语义执行；语义由独立零记忆审阅者按 tasks 逐项核对。
 
 ## 6. 诚实边界
 
@@ -280,12 +343,38 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 ## 9. 风险
 
-- **R1｜措辞扩散**：旧口径散落在 9 个文件 + 2 条测试；漏一处就会出现两套规则。
+- **DR1｜措辞扩散**：旧口径散落在 9 个文件 + 2 条测试；漏一处就会出现两套规则。
   → 用文档守卫 + 全仓 grep（tasks.md 的验收项）逐处核对。
-- **R2｜`CHANGES_REQUESTED` 语义漂移**：旧模板把它当出口；新模型必须写明它**不是出口**，
+- **DR2｜`CHANGES_REQUESTED` 语义漂移**：旧模板把它当出口；新模型必须写明它**不是出口**，
   否则读者仍会「三轮 CR 就停下」。→ 模板与适配器各写一条反断言，测试钉住。
-- **R3｜20 上限被误读成「到点收工」**：报告与模板必须写「超限 = 建议重开设计」，不是照合。
+- **DR3｜20 上限被误读成「到点收工」**：报告与模板必须写「超限 = 建议重开设计」，不是照合。
   → spec 的 Scenario 与模板逐字写。
-- **R4｜`check` 绿 ≠ 模型被执行**：D6 的诚实边界必须写进 spec 与 README，避免过度承诺。
-- **R5｜旧评审记录被误当证据**：本 change 的 `reviews/` 只保留新口径报告；旧文件从工作树移除
+- **DR4｜`check` 绿 ≠ 模型被执行**：D6 的诚实边界必须写进 spec 与 README，避免过度承诺。
+- **DR5｜旧评审记录被误当证据**：本 change 的 `reviews/` 只保留新口径报告；旧文件从工作树移除
   （git 历史可查），并在新报告中写明作废。
+
+## Pre-Implementation Review
+
+**Grill（`reviews/grill-design.md`，run `grill-reviewer-convergence-2026-10-17`）**：
+
+- 7 条 Confirmed Decisions，`Open Questions` 为「（无）」；本 change 无新增待拍板问题。
+- **必须修改（已整合）**：
+  - **R1** 第 20 轮自身无法收口 → 明写超上限 `BLOCKED` + 建议重开（§2.3、D3、spec Requirement 4）。
+  - **R2** 验证重试无上限 → 统一为 `SHALL`：无新可验证修复方案 ⇒ `BLOCKED` + 记录验证次数（§2.2、§2.5）。
+  - **R3** 验证期安全漏洞二义 → 收紧例外：只有「验证失去意义/继续不安全」才 `BLOCKED`，否则 deferred 并写延后理由（§2.2、D2）。
+  - **R4** 旧 review 与孤儿规则冲突、A5 假 `[x]` → D8 写明「覆盖或移出，不得绑旧文件」；tasks A5 拆成 A5a/A5b（A5b 待 B2）。
+  - **R5** grill 写码硬条件 #2 把 `BLOCKED` 当许可 → 改成「`PASS`，或 `BLOCKED` + 成因 + 用户明确裁决继续」（§4.2）。
+  - **R6** frontier 豁免边界 → 仅限进入对抗环之前；批次项驱动的探索属于该轮修复（D5、§4.2）。
+  - **R7** 反子串测试扫描面/排除名单 → 显式清单 + 变异验证（§4.4、§5）。
+  - **R8** 验证期降级无对称规则 → severity 随批次冻结；只能按原级修或 `BLOCKED`（§2.4、D4）。
+  - **R9** deferred 传递只有 Scenario → 写成开批硬规则（§2.2、D2、spec Requirement 2）。
+  - **R10** 20 轮累计口径 → 按 change（且按环）累计，报告保留前序轮次（§2.3、D3）。
+  - **R11** 两环 `BLOCKED` 语义不同构 → 设计环成因映射 + 修复面 + 报告节（D5、§4.2）。
+  - **R12** 报告缺收口确认记录位 → 加 `### 第 <n> 轮后 · 收口确认`，`PASS` 必须引用（§2.7）。
+  - **R13** low/nit 登记是否累积 → 最终 `PASS` 报告带累积登记或链接（§2.4、D4）。
+- **Code-Resolved**：落点行号全部核对；旧口径在规范面内无漏网；`tests/test_grill_adversarial_gate.py:180`
+  的旧措辞是夹具，不改成断言；`check` 的正文判据只在 `evidence.py:259-330`，`building`/`grill-adversarial`
+  只判存在（`evidence.py:373-380`）。
+
+**停轮门**：无新增待拍板问题。用户 2026-10-17 的四个事项已记入 `grill-design.md` 的
+`## User Confirmation`。

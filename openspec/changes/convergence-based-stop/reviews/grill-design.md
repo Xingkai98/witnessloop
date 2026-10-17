@@ -1,138 +1,276 @@
 # Grill: convergence-based-stop 设计追问
 
-> 独立零记忆审阅者产出（2026-10-15）。**READ-ONLY**：未改动 `src/`、未 commit、未改被审 worktree 的 git 状态。
-> 全部实验在 `/tmp` 下跑（`/tmp/term/*.py` 为本轮的判据模型）。
-> 立场：**默认设计有问题，逐条证伪**；结论按「挑战而非确认」写，下面每条 Confirmed Decision 都是**我自己重跑出来的**，
-> 与被审文档的出入写在「订正」与「必须修改项」里。
-
 ## Reviewer
 
-- run id: `grill-reviewer-convergence-based-stop-ef8b3ab73d39`（未设 `WITNESSLOOP_RUN_ID` ⇒ 走 `templates/grill.md`「怎么取 run id」的确定性兜底形态 `<stage>-<role>-<anchor>`）
-- 时间: 2026-10-15
-- 被审 revision: `ef8b3ab`（`origin/main`；change 目录 `openspec/changes/convergence-based-stop/` **未提交**，工作区唯一变更）
-- 方法（可复现）：
-  1. **落点逐行核对**：`grep -n '封顶\|轮数\|有界轮' templates/*.md plugin/**/*.md plugin/README.md README.md docs/gate.md docs/design.md`（**计数取全量、不用 `head` 截断**）；再对 `docs/gate.md:432-461`（§9 全节）单独 `grep -n '轮'` 求证「§9 无轮数字样」。
-  2. **判据建模与反例搜索**：`/tmp/term/ledger.py`（把 `design.md §1.3.2` 的五条形状规则、§1.3.3 的判据 A/B、§1.3.4 的 floor 逐条落成可执行模型）+ `/tmp/term/t2.py`（四类攻击用例）——**用真跑代替推理**。
-  3. **旁证仓实测**：`/home/happy/wl-wt/confirm-gate-fail-closed`（**兄弟 worktree**，change 目录**未提交**）逐节读 `reviews/grill-adversarial.md`；`openspec/changes/*/reviews/grill-adversarial.md` 逐份抽轮次与 verdict。
-  4. **接入方镜像复核**：`/home/happy/my-agent` 逐处 `sed -n '<n>p'` 读 9 个落点，并用 `find … | xargs grep -ln` 扫**全量文件**（⚠️ 我第一遍用 `grep -rn` 时它**跳过了 `.claude/`**，差点漏报，见 M7）。
-  5. **回归基线**：`uv run pytest -q` = **521 passed**（44.93s，与被审稿一致）。
-- 基线复核: `uv run pytest -q` = **521 passed**；本 change **零 `src/` 改动**的口径复核为真（`grep -rn '轮\|封顶' src/` 只命中 `policy.py` 的不变集常量上限）。
+- run id: `grill-reviewer-convergence-2026-10-17`
+- 时间: 2026-10-17（UTC）
+- 被审 revision: `20f1089`（工作树；基线 `origin/main` `46e45b4`）
+- 审阅方式: **只读**。逐条 `sed -n` 核对落点行号；全仓 `grep -n` 扫旧口径；读
+  `src/witnessloop/{evidence,contract,checkcmd}.py` 核实 `check` 的实际判据；读
+  `gh issue view 24` 仅作背景。未改 change 文档（本文除外）、模板、适配器、测试或生产代码；未 commit。
+- 零记忆声明: 不引用作者会话；以下结论全部可由仓库文本与命令输出复核。本文替换
+  2026-10-15 的旧 `reviews/grill-design.md`（旧模型产物，见文末「旧记录作废」）。
 
 ## Confirmed Decisions
 
-- **决策：13 处落点逐条复核结果与立案稿**逐字一致**（11 处未漂 + 2 处漂移），「§9 全节无轮数字样」也成立。**
-  理由（我的实测）: 全量 `grep -n` 命中 `templates/grill.md:21/131/206`、`templates/review-loop.md:11/90/101/153`、`plugin/commands/grill.md:25`、`plugin/commands/review-loop.md:2/29`、`plugin/README.md:37`、`README.md:236`、`docs/gate.md:478`、`docs/design.md:25`——**前 11 处行号逐条命中**；`README.md:213` 那段今天是 archive-awareness 的接入方行为变更（漂移为真）；`docs/gate.md:423` 是 §8 的「证据读不出」表，那句在 `:478`（**§10**）而不在 §9（漂移为真）。对 §9（`:432-461`）单独 `grep -n '轮'` ⇒ **唯一命中是 `:437` 的「两端证据」**（非「轮数」）⇒「§9 全节无『轮数』字样」为真。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
-- **决策：两条机械钉子逐字在场，且它们钉的正是要被删掉的说法；`tests/test_grill_adversarial_gate.py:180` 的 fixture 是**第三种**东西，必须排除而不能改。**
-  理由: `tests/test_templates.py:257-258` = `# 有界轮数封顶` / `assert "轮" in text and "封顶" in text`；`tests/test_plugin.py:174-176` = `def test_review_loop_adapter_states_the_bounded_rounds(): … assert "轮" in text and ("封顶" in text or "上限" in text)`——**两条都逐字命中**，且都只做**正向子串**断言。`:180` 的 `report_body="# 对抗验证\n\n## Verdict\n**CHANGES_REQUESTED**\n\n三轮封顶，交人判断。\n"` 是 `test_report_whose_verdict_is_changes_requested_is_accepted`（`:167-184`）的输入，钉的是「**`check` 不解析 verdict 文本**」——我另核了实现：`evidence.stage_manifest_findings_in_change`（`src/witnessloop/evidence.py:172-199`）对 `grill-adversarial` 走 `verify_body=False`，而 `verify_body=True`（`grill`）那条也只查「3 条决策 + `来源:` + Q 确认」，**两处都没有任何 verdict 解析**。⇒ 排除它是**对的**。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
-- **决策：判据 A 与 floor 的交互**实测为真**——「第一次再审零位移」确实被挡住，A 最早在第 3 轮触发。**
-  理由: 用 `/tmp/term` 的模型跑「R1 报 2 条 → 之后每轮 `新增=∅ ∧ 已关闭=∅`」：直接按 `design.md §1.3.3` 不设 floor 判，**R2 就触发 A**；按 §1.3.4 的 floor（`n ≥ 3`）判，**R2 不触发、R3 触发 A**。⇒ 作者「floor 挡『第一次再审零位移就停』」的说法成立，`spec.md:102-105` 的 Scenario 与实现一致。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
-- **决策：`HANDOFF` 的三段式自我区分（verdict 与「终止原因」两个字段）在既有三态表下**落得下去**，不需要动 verdict 三态。**
-  理由: `templates/review-loop.md:75-81` 的三态表只管「审阅者对代码的判断」，`plugin/commands/review-loop.md:63` 与 `docs/gate.md §9` 引用它的口径也都是这个；`HANDOFF` 写进**另一个字段**（`- 终止原因:`）既不动三态表，也不与 `BLOCKED`（「设计或范围出了问题 ⇒ 停下、不自行修复」，`templates/review-loop.md:87-88`）的语义撞车。`design.md CQ2` 的定案我复核为**正确**。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
-- **决策：接入方 asterwynd 的 9 处引用**行号全部未漂**——但清单**不完整**（见 M7）。**
-  理由: 逐处 `sed -n '<n>p'` 读 `/home/happy/my-agent`：`AGENTS.md:18`、`AGENTS.md:104`、`README.md:148`、`docs/requirements-process.md:45`、`docs/requirements-process.md:189`、`docs/interview-script/questions/Q14-dev-process.md:13`、同文件 `:56`、`scripts/check_openspec_artifacts.py:1139`、`:1623` ⇒ **9/9 逐字命中**（`:56` 就是那句「**3 轮封顶**：审阅不会无限循环…」，`:1623` 与 `:1139` 是同一句报错文案的两处）。但改用 `find … | xargs grep -ln` 的**全量**扫描后另见 `.claude/commands/review-loop.md:78/87/153`（3 处，见 M7）。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
-- **决策：新规则**不会**比旧规则更早停——floor 把 A/B 的最早触发点都钉在第 3 轮，与旧 cap 同点。**
-  理由: 判据 A 要求 `n ≥ 3`；判据 B 的停滞计数从第 2 轮起（`design.md §1.3.4`、`spec.md:91-97`）⇒ 最早也要 R2 与 R3 连续 ≤ 0，即**第 3 轮**。用 `/tmp/term` 遍历：**不存在任何账本形状能让新规则在 R2 停**。⇒ 新规则的净效果是**只放宽、不收紧**（对「还在挖新问题」的环），这一条作者没写下来，但它是这套判据的可取之处，建议写进 `design.md §1.3.4` 作为对照。
-  `来源: grill-reviewer-convergence-based-stop-ef8b3ab73d39`
+- **决策：轮 = 非空 medium+ 批次的完整闭环；空批 = `PASS` 且不占轮；同批验证不通过继续修、不另计轮。**
+  理由：`design.md:55,66,70-75` 与 `spec.md:19-32,34-38` 把「开批 → 全修 → 逐条验证 → 收口」写死，
+  且明确「验证未通过仍是第 n 轮」。这与用户 2026-10-17 拍板的「一轮 = 一个有界闭环」一致。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：轮数只数「已结束的非空 medium+ 批次」；第 20 轮收口后做一次收口确认，空批 ⇒ `PASS`，非空 ⇒ 超上限 `BLOCKED`；不产生第 21 轮修复。**
+  理由：`design.md:82-89` 与 `spec.md:98-108,110-124` 逐条写明；`spec.md:106` 明确
+  「收口确认 SHALL NOT 产生第 21 轮修复」。它把用户拍板的「20 上限」实现为安全上限，而不是
+  固定轮数到点收工。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：验证期禁提新问题；验证期发现的 medium+ 只进 deferred，low/nit 只进登记表；当前批次冻结。**
+  理由：`design.md:70-78,165-169` 与 `spec.md:50-64,66-75` 把「唯一允许变化」限定为
+  「`B_n` 验证状态、deferred 清单、low/nit 登记表」，并规定新 medium+ 不得扩大 `B_n`。
+  这与用户拍板的「验证期间新发现只记入下一批」一致。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：medium+ 必须全修并验证通过；low/nit 可登记不修但必须逐条写理由；severity 由审阅者定，开发者不得自行降级。**
+  理由：`design.md:91-102,180-183` 与 `spec.md:77-96` 写死「medium+ 不得以登记不修放行」；
+  `spec.md:85-86` 把「缺理由」定义为报告不完备（流程缺陷，非机械门禁）。与用户拍板一致。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：出口只有 `PASS` / `BLOCKED` + 成因 / 超上限 `BLOCKED` + 建议推倒重开；`CHANGES_REQUESTED` 不是出口。**
+  理由：`design.md:104-116` 与 `spec.md:126-143` 给出三种终结态，并明确 `CHANGES_REQUESTED`
+  只是轮内状态（`spec.md:136-143`）。超上限出口必须写「建议推倒重开（revise the design）」
+  （`spec.md:104-108`），不是「到轮数就停」。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：设计对抗环与实现审阅环共用同一套批次模型；grill 的 frontier 追问轮显式豁免，不占 20。**
+  理由：`design.md:185-191` 与 `spec.md:170-186` 写明两个环共用「批次 / 验证 / deferred / 20 / 三出口」，
+  且 frontier 内部轮产出的是决策记录 `grill-design.md`，不是 verdict 报告。
+  来源: grill-reviewer-convergence-2026-10-17
+- **决策：机械门禁口径不变——`check` 不解析报告正文；20 上限、批次冻结、deferred 是流程规定，不是机械判据。**
+  理由：设计 D6（`design.md:193-200,254-261`）与 `spec.md:188-205` 明确这条诚实边界。
+  代码侧可复核：`src/witnessloop/evidence.py:341-348` 的 `verify_body` 只对 `grill` 为真；
+  `:373-380` 对 `building` / `grill-adversarial` 只判存在；`src/witnessloop/checkcmd.py:188-204`
+  只要求 stage manifest 存在。⇒ 没有把「机械门禁会执行 20 上限」写成承诺。
+  来源: grill-reviewer-convergence-2026-10-17
 
-### 订正（立项稿里被我的实测改掉的说法）
+## Code-Resolved Questions
 
-1. **`design.md §1.4`（`:169-185`）的终止性论证**不成立**，`2·|O_1| + 2` 这个上界**是假的**。** 见 M1——这是本 change 唯一的**阻塞性**发现。
-2. **`design.md §1.2 ①`（`:31-52`）与 `spec.md:28-36` 把样本 ① 称为「**实测/实录**」，但该文件**不在被审 revision 里**，而且它**已经有 R4**。** 见 M2。
-3. **`design.md D2` 的理由 #2（`:239-240`）是无条件表述，与 §1.4 的诚实边界自相矛盾。** 见 M3。
-4. **issue 举的样本 `archive-awareness` 确实对不上仓内记录（立案稿的方向对），但作者换的 `dogfood-bootstrap` 不是最贴近的那个。** 见 M8。
-5. **`design.md §5.1 T2`（`:452-459`）的反断言写成「子串黑名单 + 7 个硬编码文件」，强度不够。** 见 M4。
-6. **`tasks.md G1-G5`（`:96-103`）不是可执行的测试**——本 change 零 `src/` 改动，而判据只活在 prose 里，这五条没有任何东西可以跑。见 M5。
-
-## Code-Resolved Questions（**建议移出停轮队列**：能由证据/数学定案）
-
-- **作者 Q1〔判据 B 的窗口宽度〕→ 不是「窗口多宽」的取舍，而是「现在的 B 根本给不出终止保证」——已由反例定案。**
-  证据: 我按 `design.md §1.3.2/§1.3.3` 落成模型 `/tmp/term/ledger.py` 后构造了一条**完全合规**的账本（五条形状规则**零违规**）：
-  `R1` 报 `{R1-1}`；此后**偶数轮**不修任何一条、新报 1 条（`净额 = −1`），**奇数轮**修掉上一条、不新报（`净额 = +1`）。
-  实测结果（`/tmp/term/t2.py`）：`|O_n|` 在 `1,2,1,2,…` 之间摆动、净额序列 `[-1,+1,-1,+1,…]`、**跑 10000 轮判据 A 与 B 都不触发**（`停轮 = None / never`），而设计声称的上界是 `2·1+2 = 4`。
-  ⇒ `design.md §1.4` 第 1 步「『净额 > 0』的轮次总数 ≤ `|O_1|`」是**非继**（non sequitur）：`|O|` 只有正净额轮才下降是对的，但**负净额轮会把它抬回去**，「再降就穿到负数」预设了没有负净额轮，是循环论证。§7 自曝 1 请对抗轮验证的就是这一点——**答案是否**。
-  ⇒ 因此「窗口多宽」不是取舍；**「要不要真的给保证」才是**（进 `## Open Questions` Q1）。若选「给」，最小改动是把 B 从「连续两轮**每轮** ≤ 0」改成「最近两轮**累计** ≤ 0」（B′）；我实测同一攻击序列在 B′ 下于**第 3 轮**停轮，上界为 `W·(|O_1|+1) + 1`。
-- **作者 Q2 〔「同一批问题」的粒度由谁定〕→ 由账本规则**结构性**定死，且作者担心的两个方向**都是反的**。**
-  证据: 粒度选择只表现为「沿用旧 id」或「铸新 id」两种，二者都**合规**（规则 1/3）。但它们对判据的效果是可算的：**铸新 id ⇒ `新增 ↑` ⇒ `净额 = |已关闭| − |新增| ↓` ⇒ B 更容易触发**。所以「判成新问题可以无限续命」在**单步**上为假（它让停来得更快）；真正能续命的是**交替**（就是上面 Q1 的反例），而那与「粒度怎么判」无关。⇒ `design.md §8 Q2` 的推荐答案 ③（**显式声明沿用 + 给理由**）是**唯一可实现的答案**（`check` 不解析正文，D5；机械按锚点归并会把「同批」判宽，方向偏向提前停），**不必用户拍板**。
-- **作者 Q2 的另一半〔issue 的两个样本要不要换名〕→ 要换，且**换成哪个**也能由仓内记录定案。**
-  证据: ① `archive-awareness/reviews/building-review.md:24-26` 的 **R1 就是 `**PASS**`**，`reviews/grill-adversarial.md:1` 的标题是「（**第 1 轮 R1**）」且全文只此一轮 ⇒ issue 的样本名确实对不上。② 仓内真正「跑到第 3 轮」的环有 **4 个**（`adopter-test-gate` R3@`:432` `PASS`、`building-review-gate` R3@`:252` `PASS`、`grill-adversarial-gate` R3@`:425` `PASS`、`events-readpoint-fix` R3@`:489` `PASS`），其中 **`events-readpoint-fix` 的 R3 标题逐字写着「第 3 轮（R3 · **轮数封顶** · 最后一轮）」**——它才是 issue 原话「跑到第 3 轮才收敛」的**字面对应物**。见 M8。
-- **作者 Q3 的**例子**（自指）复核为真，但它**不**说明规则形同虚设。**
-  证据: 机制上，一份顶层 `## Verdict` 写 `CHANGES_REQUESTED`、另加 `- 终止原因: 未收敛（判据 B）` 的报告，走 `grill-adversarial` 门禁时 `verify_body=False`（`src/witnessloop/evidence.py:172-199`）⇒ **照样算证据齐备**。`docs/gate.md:476-478` 边界 ① 在**旧规则下就已经是这句**（「机械判据区分不了『封顶后交人』与『跑一轮就收工』」），所以本 change **既没让它变好也没让它变差**。⇒ 「规则形同虚设」这个说法对**门禁**太重、对**「可机械执行」这个宣称**却正好——而 `D5`/`§2.5` 已经照实写了这一点。**Q3 本身仍是用户取舍**（要不要为「人照合」新增一类证据与一类红）。
+- **落点行号是否与当前工作树一致？** → 是，逐条命中。证据：`templates/review-loop.md:11,90,101,153`；
+  `templates/grill.md:21,140,215`；`plugin/commands/review-loop.md:2,29`；`plugin/commands/grill.md:25`；
+  `plugin/README.md:37`；`README.md:306`；`docs/design.md:25`；`docs/gate.md:716`；
+  `tests/test_templates.py:257-258`；`tests/test_plugin.py:174-176`。`proposal.md:96` 写的
+  `templates/grill.md:130-141` 是范围写法，实质旧句在 `:140`，范围覆盖到，不算漂移。
+- **旧口径在规范面是否还有漏网？** → 在 proposal 自己界定的规范面（`templates/`、`plugin/`、
+  `README.md`、`docs/design.md`、`docs/gate.md`）内，没有额外命中；上述 15 处就是全部。
+  规范面之外仍有旧口径，但都属历史/夹具：`docs/tasks.md:43`、`docs/reviews/*`（多处）、
+  `tests/test_grill_adversarial_gate.py:180`。**新测试的扫描面与排除名单没有写进 design/tasks**，
+  见风险 R7。
+- **`tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 两条旧断言是否都列到了？**
+  → 都列到了，且行号精确。证据：`tests/test_templates.py:257` 是注释「有界轮数封顶」、
+  `:258` 是 `assert "轮" in text and "封顶" in text`；`tests/test_plugin.py:174` 是
+  `def test_review_loop_adapter_states_the_bounded_rounds()`、`:176` 是
+  `assert "轮" in text and ("封顶" in text or "上限" in text)`。
+  ⚠️ 另有一处**不能当成断言改**的旧口径：`tests/test_grill_adversarial_gate.py:180` 的
+  `report_body="…三轮封顶，交人判断。…"` 是「`check` 不解析 verdict 文本」的输入夹具
+  （用例在 `:167-184`）。新的反子串测试若扫 `tests/` 全目录，会把它误判为旧口径。
+- **`templates/review-loop.md:75-81` 的三态 verdict 表与 `plugin/commands/review-loop.md:63` 是否在落点表里？**
+  → 不在。proposal 的落点表只列 `templates/review-loop.md:11,90-102,153` 与适配器 `:2,29`；
+  但新模型把 `CHANGES_REQUESTED` 从「出口」降为「轮内状态」，三态表（`:75-81`）与适配器的
+  「结论是三态」（`:63`）必须同步改写，否则读者仍会按旧语义把 `CHANGES_REQUESTED` 当停轮理由。
+  design §4.1 的硬约束提到了这一点，但落点表不完整。
+- **`check` 是否真的不解析 verdict / 批次 / severity / 轮数？** → 是。`grill` 的正文判据只在
+  `src/witnessloop/evidence.py:259-330`，检查 `Confirmed Decisions` ≥3 且每条有 `来源:`、
+  `Open Questions` 小节存在、每个 Qn 有 `User Confirmation`；**不读 verdict、批次、severity、轮数**。
+  `stage_manifest_findings_in_change` 对 `building` / `grill-adversarial` 走 `verify_body=False`
+  （`:341-348`），只解析 `report_path` 并确认文件存在（`:373-380`）。⇒ design D6 诚实。
+- **`grill-design.md` 要过 `grill` 正文判据需要什么？** → `Confirmed Decisions` 至少 3 条顶层 bullet、
+  每条含 `来源:`；`Open Questions` 标题存在；`User Confirmation` 小节存在；若 `Open Questions`
+  有 `Qn`，每个都要在 `User Confirmation` 里有非占位确认。证据：`src/witnessloop/evidence.py:24-29,259-330`。
+  本报告满足：7 条 Confirmed Decisions、Open Questions 为「（无）」、User Confirmation 有四个已拍板事项。
+- **本 change 落实现后，哪些 stage 会被机械要求？** → `templates/**` 与 `plugin/**` 在
+  `.witnessloop/policy.json` 的 `require_change_for` 里；C3–C10 改到它们后 `code_hits` 为真，
+  `src/witnessloop/checkcmd.py:167-204` 会同时要求 `grill-adversarial` 与 `building` 两份 manifest。
+  `grill` 那份由 `grill_evidence_findings_in_change` 另行要求。
+- **孤儿报告的判据是什么？** → `reviews/**/*.md` 里的**每个**报告都必须被某份 manifest 的
+  `report_path` 引用，否则 `check` 报「孤儿报告」。证据：`src/witnessloop/contract.py:636-666`；
+  `docs/gate.md:259-261`。这条判据**只做文件名交叉引用，不解析正文**。
+- **旧 review 与孤儿规则是否冲突？** → **冲突，且当前工作树即可复现。** 当前
+  `reviews/` 下有两份旧模型报告（`grill-design.md` 138 行、`grill-adversarial.md` 939 行），
+  没有任何 `*.manifest.json`。design D8（`design.md:207-211`）说旧记录「不绑定 manifest」，
+  但孤儿规则要求 `reviews/` 下每个 `.md` 都被绑定；两者不能同时成立。若为了消孤儿而把旧
+  `grill-adversarial.md` 绑到 `stage=grill-adversarial`，它又变成旧模型假证据。见风险 R4。
+- **`tasks.md` 的 A5 是否真的完成了？** → **没有。** `tasks.md:19-20` 把 A5 标成 `[x]`
+  「旧版 `reviews/grill-design.md` / `reviews/grill-adversarial.md` 标作废并**从工作树移除**」，
+  但当前工作树里两份旧文件都还在（`wc -l` 分别为 138 / 939）。本报告替换了旧
+  `grill-design.md`；旧 `grill-adversarial.md` 仍需 B2 用新模型报告替换或移出 `reviews/`。
+- **第 20 轮自身无法收口时，是否落到「超上限 `BLOCKED` + 建议重开」？** → **没有写清。**
+  design `:67,83-89` 与 spec `:100-108` 的超上限出口都以「第 20 轮**收口后**」为前提；
+  若第 20 轮的批次在验证中始终有「未修好」，第 20 轮就没结束，收口确认不会发生。此时只能走
+  通用 `BLOCKED`（`design.md:109,115`；`spec.md:62-64,126-134`），而通用 `BLOCKED` 的报告要求
+  是「成因 + 当前批次/验证状态 + 交人决策项」，**不要求**「建议推倒重开」。这与用户原话
+  「到第 20 轮仍有 medium+ 未收口 ⇒ `BLOCKED` + 建议重开」有语义缺口。见风险 R1。
+- **「同一批反复无法收口」是强制出口还是可选出口？** → **design 与 spec 的模态不一致。**
+  `design.md:115` 写「**可以**按 `BLOCKED` 结束并写成因」；`spec.md:62-64` 写「若审阅者判定
+  整体不可继续（…同一批反复无法收口），**SHALL** 以 `BLOCKED` + 成因终结」。若按 design 的
+  「可以」，审阅者可以一直继续修；若按 spec 的「SHALL」，触发条件又完全依赖审阅者对「反复」的
+  主观判断。两者都没有给出可复核的触发点。见风险 R2。
+- **验证期发现新安全漏洞，走 deferred 还是 `BLOCKED`？** → **二义。** 主规则（`spec.md:50-60`）
+  说验证期发现的任何新 medium+ 只进 deferred；例外（`:62-64`）说「安全漏洞」若被判为
+  「整体不可继续」则 `SHALL` 以 `BLOCKED` 终结。设计没有定义「整体不可继续」的边界，也没有说
+  同一个安全漏洞为什么不只是 deferred。`BLOCKED` 又是终结态、不自行修复（`design.md:112`；
+  `spec.md:133`）⇒ 两种处理的后果完全不同（继续本轮修 vs 停下交人）。见风险 R3。
+- **deferred 是否一定进入下一轮批次？** → **只有 Scenario，没有开批的硬规则。**
+  `spec.md:43,70` 的 Scenario 说 deferred 项进入下一轮批次，`:155` 规定 id 沿用；但
+  Requirement 正文没有写「下一次开批 SHALL 读取上一轮 deferred 表并把所有 medium+ 纳入」。
+  且 `spec.md:165-168` 自己承认 deferred 丢掉「只靠人读」可发现，`check` 不设防。
+  见风险 R9。
+- **审阅者能否在验证期把批次项降级为 low/nit？** → **没有对称规则。** `spec.md:83-84` 只禁止
+  **开发者**自行降级；`design.md:98-99` 说复核「不得为了放行而改级」，但这是意图，不是可复核判据。
+  批次冻结（`spec.md:24`）写的是「不得增加、删除或替换成员」，没有明确写「severity 也冻结」。
+  审阅者在验证期把一条 medium 改判为 nit，就能让本轮不带修复地收口——效果等同于用户禁止的
+  「降级跳过修复」。见风险 R8。
+- **spec 是否把「每条修复配回归测试」写成 SHALL？** → **没有。** `design.md:69` 写「每项给出
+  具体处置 + 一条能变红的回归测试」；`spec.md:25` 只写「开发者 SHALL 修完 `B_n` 的每一项」，
+  报告表（`:150`）有「回归测试」列但没有「必须有」的 SHALL。既有模板
+  `templates/review-loop.md:94-95` 是明确要求的。新 spec 作为规范 delta 不应静默弱化这条。
+- **grill 写码硬条件 #2 改成「`PASS`（或 `BLOCKED` + 成因）」是否安全？** → **不安全。**
+  `proposal.md:97` 与 `design.md:229` 计划把 `templates/grill.md:215` 的
+  「`PASS`（或轮数封顶并交人）」改成「`PASS`（或 `BLOCKED` + 成因，含超上限建议重开）」。
+  但硬约束的标题是「缺证据不得进入实现」（`templates/grill.md:213-220`）；`BLOCKED` 不是
+  验证通过，也不是用户放行。按新措辞，设计对抗环 `BLOCKED` 后作者就可以开始写码，绕过了
+  「停轮交人」的原意。见风险 R5。
+- **两个环真的同构吗？** → **声明同构，但 BLOCKED 成因与修复面没有映射。** `spec.md:170-173`
+  说共用同一模型；但通用 `BLOCKED` 成因里的「测试大面积失败」只适用于实现环
+  （`design.md:109`），设计对抗环的 `BLOCKED` 成因没有单独定义。design §4.2（`:226-230`）
+  只说「时序图与第 5 步改成批次模型」与「明确 frontier 豁免」，没有写对抗环由谁修
+  （作者改 `design.md` / `grill-design.md`）、哪些文件允许改、报告要不要同样带六节。
+  见风险 R11。
+- **frontier 豁免的边界是否可被利用？** → **边界未定义。** `design.md:189-191` 与
+  `spec.md:174-176` 豁免「为求设计树完备而做的内部轮」，但没有说 frontier 轮从何时开始、
+  何时结束，也没有说「对抗环某个批次项的设计修复工作」算不算 frontier。若算，作者可以把
+  对抗环的修复工作量标成 frontier，绕过 20 上限。见风险 R6。
+- **报告形态是否记录了「收口确认 / 空批」？** → **没有独立小节。** `design.md:126-149` 与
+  `spec.md:145-153` 的模板只有「批次 / 验证 / deferred / low-nits / 出口」。`PASS` 来自一次
+  空批（`design.md:108`；`spec.md:132`），但模板没有要求写「收口确认：本次开批 0 条 medium+」。
+  空的批次表与「没做这次审阅」在文本上不可区分。见风险 R12。
+- **20 轮计数是否写明跨 run / 跨报告累计？** → **没有。** design `:82-89` 与 spec `:100-108`
+  说「最多 20 个已结束的轮」，但没有说这个计数是**按 change 累计**、必须在后续报告中保留，
+  也没有说换一个审阅者 run / 重写报告是否会重置。id 规则（`spec.md:155`）只保留首次出现轮次，
+  不保留全量账本。`check` 不解析正文，所以重置在机械上不可见。见风险 R10。
 
 ## Open Questions
 
-> **三条**（Q1–Q3），逐条附具体例子。⚠️ 标题**逐字**不加后缀是**刻意的**——本仓 checker
-> （`evidence.OPEN_QUESTIONS_TITLE = "Open Questions"`，`src/witnessloop/evidence.py:25`）按**逐字标题**
-> 取小节，带括号的标题会命中不到 ⇒ 「每个 `Q<n>` 都要有用户确认」那条规则会变成**空真**
-> （`archive-awareness` 的审阅者稿就踩过：它的 `## Open Questions（只有这一条必须用户拍板）` 被 checker 忽略，
-> 主流程只好另加一个逐字小节，见 `openspec/changes/archive-awareness/reviews/grill-design.md:110-124`）。
+（无）
 
-- **Q1**: **终止保证的形态**——「无收敛才停」这句承诺，是要**真的**给出终止上界，还是接受「**条件保证**（账本如实且不交替）」并同步改弱卖点句？
-  **例子（用本 change 自己的场景构造，已实测）**：`templates/review-loop.md` 改完后，某环的账本逐轮长这样——
-  R1 报 `R1-1`（1 条）；R2 审阅者**又发现一条** `R2-1`、作者**一条没修**（`净额 = 0 − 1 = −1`）；R3 作者**修掉 `R2-1`**、审阅者**没发现新的**（`净额 = 1 − 0 = +1`）；R4 同 R2、R5 同 R3……
-  五条形状规则**逐条满足**（`上一轮 ∪ 已关闭` 每轮都守恒），判据 A 永不成立（每轮 `新增` 或 `已关闭` 非空）、判据 B 永不成立（没有连续两轮 ≤ 0）。我实测这条序列跑 **10000 轮不停**。
-  - **备选**：① **改判据 B 为「最近两轮累计净额 ≤ 0」**（我把同一序列喂进去 ⇒ **第 3 轮停**；上界 `W·(|O_1|+1)+1`，仍是导出量不是设定值）；② **保留现 B，把承诺降级**为「条件终止保证」并把 `design.md §6.1` 那句**卖点句**、`spec.md` 的「终止性由良基度量保证」Requirement 一起改弱；③ **补一个 backstop**（作者 D2 明确否决）。
-  - ➡️ **推荐 ①**。理由：**它用一个词的改动换回真正的良基度量**（`Σ` 语义 vs 逐轮语义），不动「不看轮数」这个卖点、也不需要 backstop；②会让 §6.1 那句「轮数有上界（≤ 2 × 首轮问题数 + 2，是推导出来的，不是拍脑袋的数）」变成**已证伪的断言**，对**接入方**是一句假承诺。
-- **Q2**: **判据 B 与 issue 原话的偏差要不要接受**——B 会在「**每一轮都真把上一轮修完了，只是越挖越深**」时停下交人，而 issue 给用户的定义是「**只剩同一批问题反复、没有新的实质发现** ⇒ 停下」。前者**有新发现**，按 issue 的原话**不该停**。
-  **例子（`design.md §8 Q1` 的形态，我按现 B 复算）**：R1 报 5 条；R2 **修掉 5 条、又报 6 条**（`净额 = 5 − 6 = −1`）；R3 **修掉 6 条、又报 7 条**（`净额 = 6 − 7 = −1`）。⇒ 现 B 在 **R3** 停（连续两轮 ≤ 0）。但这两轮**一条都没欠**，且每轮都在挖更深的问题。对照：`confirm-gate-fail-closed` 的真实数字（R2 净额 `+2`、R3 有新增）⇒ 现 B **不会**在 R3 触发。
-  - **备选**：① **接受**（B 只在「未关闭集合没有净缩小」时停，而「越挖越深」按本规格的定义**就不是收敛**；`HANDOFF` 不是收工，人看到「连续两轮净关闭 ≤ 0」这条机械事实后可以显式说「继续跑」）；② **加一条「新增单调不增」才算停滞**（⇒ **放弃终止保证**：可以构造每轮新增都比上轮多 1 的形态，永不满足）；③ **只用 A**（⇒ 完全放弃终止保证）。
-  - ➡️ **推荐 ①**，但要求把话说全：`spec.md` 与 `templates/*.md` 必须写明「**B 比 issue 的原话更严**——它在『有新发现但净关闭 ≤ 0』时也会停」，否则接入方的访谈卖点句会把 B 讲成「没有新发现才停」，那是一句错话。
-- **Q3**: **`HANDOFF` 之后人的「照合」要不要留结构化证据**（作者原文的 Q3，我复核后**维持**为需用户拍板）。
-  **例子（本 change 自己的场景，机制已实测）**：本 change 的设计对抗环在 R3 触发 `HANDOFF`，报告顶层 `## Verdict` = `CHANGES_REQUESTED` + `- 终止原因: 未收敛（判据 B：…）`；用户看后回一句「**这条不是问题，照合**」。此时那份 `reviews/grill-adversarial.md` **照样算证据齐备**（`verify_body=False`，`src/witnessloop/evidence.py:181-186`），CI **绿**；人的裁定只活在 `tasks.md` / PR 描述的自由文本里，**没人读、也不可核**。
-  - **备选**：① 沿用今天（零新红类，与 `docs/gate.md §10` 边界 ① 一致）；② `reviews/<stage>-override.md` + manifest（可审计，但新增硬门 + 对既有非 `PASS` 收尾是**新红类**）；③ 只在报告里加一张 `## 人裁定` 表（被 manifest 绑定、可复核，**不**进门禁判据）。
-  - ➡️ **推荐 ①**（与本仓两次先例 `building-review-gate` 的 Q2 / `grill-adversarial-gate` 的 Q2 逐字同理由）；**若要 ③，必须同时说清它被谁读**——没人读的自由文本是摆设。
+用户已于 2026-10-17 拍板模型、20 上限、medium+/low/nit 口径与三出口；本报告列出的
+未决点都是**设计文本的精确化**（落点、模态、报告形态、孤儿规则冲突），可由审阅者/实现者
+按用户已定参数自行定案，不需要用户再拍板。若实现或评审中要改变 20 这个数、severity 口径
+或出口集合，按停轮门停下报告，不自行编答案。
 
 ## 风险
 
-1. **R1（**阻塞**·终止性论证为假）**：见 M1。这是本 change 的**目标 2**（「保留终止保证」）本身。逐条攻击结果（全部实测，`/tmp/term/t2.py`）：
-   - **攻击 1「审阅者干脆不报新问题」（每轮 `新增=∅ ∧ 已关闭=∅`）**：**被挡住** ✓——R2 被 floor 拦下、**R3 触发判据 A ⇒ `HANDOFF`**。且 `HANDOFF` 不放行 ⇒ 这条攻击**拿不到 ship**。
-   - **攻击 2「id 拆分续命」（`R1-3` → `R2-1` + `R2-2`，不记「已关闭」）**：**形状规则 5 能发现** ✓（我的模型给出 `R2: 集合守恒被破坏 ['R1-1','R1-2','R1-3'] != ['R1-1','R1-2']`），**但 `check` 不解析账本（D5）⇒ 无机械拦截**，只在「有第三方去读」时可见。
-   - **攻击 3「关闭得名不副实」**：⚠️ **方向与作者设想相反**——虚报「已关闭」把 `净额` **推高** ⇒ 只会让 B **更晚**触发（是**续命**工具，不是提前收工工具）。⇒ 该攻击对「提前收工」无效，但它**与攻击 4 叠加**后正是 R1 的主形态。
-   - **攻击 4「交替呼吸」（本文 Q1 的例子）**：**完全绕过** ✗——五条规则零违规、判据 A/B 都不触发、**10000 轮不停**。这是**唯一**能同时绕过 A 与 B 的形状，且**不需要任何伪造**（审阅者每两轮真发现一条新问题、作者每两轮真修掉一条即可）。
-   - **攻击 5「首轮灌水」**：`|O_1| = 50` ⇒ 声称的上界 `102` 轮。⇒ 上界**由审阅者自己选择**，`§6.1` 的卖点句即便修好 B′ 也仍然是**弱**保证（`W·(|O_1|+1)+1`）；建议卖点句**同时**给出「**连续两轮无净进度就停**」这条**与规模无关**的实际刹停条件，别只卖那个上界。
-   - **floor 之前那两轮能做什么**：R1 报问题（或 `PASS`）；R2 若零位移**只被推迟、不被接受**（实测：R2 不触发、R3 触发）⇒ **R2 不会被用来收工** ✓。代价是**恰好多跑一轮**（与旧 cap 同点，见 Confirmed Decision 6）。
-2. **R2（高·证据不可复现）**：见 M2——本 change 的**头号实证**（样本 ①）落在**被审 revision 之外**的**未提交**目录里，且它的关键推论与被引文件**自身的 R4** 相反。对一份卖点就是「证据可复核」的 change，这是自伤。
-3. **R3（中·守卫可被改宽）**：见 M4。反断言是可改写的**子串黑名单**，且扫描面是**硬编码的 7 个文件**——新加一份复述旧口径的文档不会被抓。
-4. **R4（中·判据只活在 prose 里）**：见 M5。本 change **零 `src/` 改动**、`check` 不解析账本（D5 有意为之），而 G1–G5「用例」没有任何东西可跑 ⇒ **A/B、floor、五条规则的全部语义没有任何机械钉子**。这既是「语义随时可被后人改掉」的风险，也是**本次 R1 之所以能溜到设计评审才暴露**的原因。
-5. **R5（中·多轮同文件时账本无锚点）**：见 M6。本仓既有报告**一律把多轮写进同一份文件**（`dogfood-bootstrap/reviews/building-review.md` 的 `## 第 2 轮审阅`/`## 第 3 轮审阅`；`confirm-gate-fail-closed/reviews/grill-adversarial.md` 的 `## R2 复审`/`## R3 复审（封顶）`/`## R4 复审`；`building-review-gate/design.md:53-62` 已把「轮次记法不统一」写成实测结论）⇒ 一份报告里会出现**多个逐字相同的 `## 问题账本`**，而 `evidence._sections`（`src/witnessloop/evidence.py:52-64`）对同名标题是 `setdefault` + 追加 ⇒ **会把它们合并成一个小节**。「第三方只读相邻两轮报告」在**同文件多轮**时**没有可指的锚点**。
-6. **R6（中·账本诱使少报）**：作者已自认（`design.md R4`）——我复核为真且**方向确认**：账本不惩罚多报（只把 `|O_1|` 与上界推大），但**惩罚「漏报后再补」**（补进来算 `新增`，让 B 更易触发）⇒ 净激励朝向「一次报全」。但**它不能防「一开始就少报」**，而首轮少报会**同时**把上界压小、把 B 推后。
-7. **R7（低·镜像清单不全且有一处改不到）**：见 M7。
-8. **R8（低·自打脸）**：本 change 合入后自己的三份报告要按**新规则**产出（`tasks.md H1/H2/H4`）。我逐条核过：**机械上过得去**（`grill` 那条查的是 3 条决策 + `来源:` + Q 确认，与账本无关；`grill-adversarial`/`building` 只查存在），但**格式上现在产不出来**——见 M6。另：`tasks.md H2` 说「若触发 `HANDOFF` ⇒ 按 §3.5 报三节，**别**在 R3 硬停」，这句话在**现 B 下写不出来**（B 恰恰会在「有新增且连续两轮净额 ≤ 0」的 R3 停），改完 M1 才自洽。
+- **R1｜第 20 轮自身无法收口时，没有落到「超上限 `BLOCKED` + 建议重开」。**
+  证据：`design.md:67,83-89,109,115`；`spec.md:100-108,62-64,126-134`。
+  场景：第 20 轮的批次有一项，开发者修了多次仍「未修好」。本轮不结束，收口确认不发生；
+  审阅者只能走通用 `BLOCKED`，报告写「交人决策项（照合 / 缩范围 / 放弃）」，而用户要的是
+  「建议推倒重开（revise the design）」。**收法**：补一条——第 20 轮的批次只要仍有「未修好」，
+  出口就是**超上限 `BLOCKED`**，报告必须带「建议推倒重开」与第 20 轮账本，不得开启第 21 轮。
+- **R2｜验证重试无上限，20 轮的上界不是工作量的上界。**
+  证据：`design.md:70-72,115-116,259-260`；`spec.md:50-59`。
+  场景：第 1 轮只有一条 medium+；开发者每次提交的修复都被审阅者判「未修好」，重复 1000 次。
+  这一轮永远不结束，也永远不产生第 2 轮 ⇒ 20 上限永远不触发。唯一的闸门是审阅者主观的
+  「同一批反复无法收口」，而 design 说「可以」、spec 说「SHALL」，没有一致的可复核触发点。
+  **收法**（不新增用户未拍板的数字参数）：把「同一批反复无法收口」定义为可复核的操作规则——
+  同一项在同一轮内被验证为「未修好」且开发者无法给出新的、可验证的修复方案时，
+  审阅者 SHALL 以 `BLOCKED` 终结，并在报告记录验证次数与未通过项；同时把 design 的「可以」
+  与 spec 的「SHALL」统一。
+- **R3｜验证期发现的安全漏洞，deferred 与 `BLOCKED` 的边界未定义。**
+  证据：`spec.md:50-64`；`design.md:109,165-169`。
+  场景：验证批次项 A 时发现一个 high 级注入漏洞。按主规则进 deferred，本轮继续验证 A；
+  按例外可以是 `BLOCKED`，停下交人、不自行修复。两种都合规，但后果完全不同。
+  **收法**：把例外收紧为「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」；
+  其余安全漏洞仍进 deferred，并在 deferred 行写明为什么可以延后一轮。报告必须写明选择理由。
+- **R4｜旧 review 与孤儿规则冲突；A5 的 `[x]` 与工作树不符。**
+  证据：`design.md:207-211,290-291`；`tasks.md:19-20`；`src/witnessloop/contract.py:636-666`；
+  `docs/gate.md:259-261`。当前工作树：`reviews/grill-adversarial.md` 939 行（旧模型）、
+  `reviews/grill-design.md` 138 行（旧模型，本文已替换）、0 份 manifest。A5 标 `[x]`，
+  但旧对抗报告还在。C3–C10 落地后 `code_hits` 为真，`check` 会要求
+  `stage=grill-adversarial` 的 manifest；不绑旧报告 ⇒ 孤儿；绑它 ⇒ 旧模型假证据。
+  **收法**：B2 必须先用新模型报告覆盖 `reviews/grill-adversarial.md`，再对该新报告
+  `manifest build`；若 B2 尚未完成，就把旧文件移出 `reviews/`（git 历史保留），且**不要**
+  为它建 manifest。旧 `grill-design.md` 已由本文替换，同样只在 git 历史保留。
+- **R5｜grill 写码硬条件 #2 把 `BLOCKED` 写成可写码条件。**
+  证据：`proposal.md:97`；`design.md:229`；`templates/grill.md:213-220`。
+  场景：对抗环以 `BLOCKED` 结束（设计还有未解决的矛盾）；新措辞把它列为硬条件 #2 的满足项，
+  作者据此开始写码。旧措辞「轮数封顶并交人」的语义是「已交给用户判断」，不是「自动放行」。
+  **收法**：硬条件 #2 改成「`PASS`，或 `BLOCKED` + 成因 + **用户已明确裁决继续**」；
+  `BLOCKED` 本身不能作为写码许可。
+- **R6｜frontier 豁免可被用来吸收对抗环的修复工作量。**
+  证据：`design.md:189-191`；`spec.md:174-186`。
+  场景：对抗环批次项说「设计有一个未定义的依赖」；作者做了 10 轮设计树追问，并称之为
+  frontier 轮，于是这 10 轮不占 20。**收法**：把豁免限定在**进入对抗环之前**的
+  frontier 求完备阶段；由对抗环批次项驱动的设计探索属于该轮修复，不能改标为 frontier。
+- **R7｜新的反子串文档守卫没有定义扫描面与排除名单。**
+  证据：`tasks.md:34-39`；`design.md:239-245`。当前树上会撞反断言的旧口径在
+  `tests/test_grill_adversarial_gate.py:180`（夹具「三轮封顶」）、`docs/tasks.md:43`
+  （「有界轮数」）、`docs/reviews/*`（历史记录）。扫全仓 ⇒ 假红；只扫 7 个硬编码文件 ⇒
+  新文件重新引入旧口径也不会被抓。**收法**：在 `tests/test_convergence_stop.py` 里显式列出
+  规范面文件与历史/夹具排除名单（至少包含上述三处），并加一条变异验证：
+  把 `templates/review-loop.md` 改回旧措辞必须 1 failed。
+- **R8｜medium+ 在验证期被降级为 low/nit 没有对称规则。**
+  证据：`design.md:98-99`；`spec.md:24,83-84`。
+  场景：验证时审阅者认为批次里一条 medium 其实是 nit，把它从阻塞集移走；本轮就能在不修它
+  的情况下收口。这与用户在参数 3 中禁止的「medium+ 靠降级跳过修复」效果相同。
+  **收法**：batch 冻结时 severity 一并冻结；验证期若认为定级错误，只能记录争议并二选一：
+  （a）按原 severity 要求修完；或（b）`BLOCKED` 并把争议写进成因。不得静默移出批次。
+- **R9｜deferred 传递只有 Scenario，没有开批的硬规则。**
+  证据：`spec.md:43,70,155,165-168`。
+  场景：第 3 轮 deferred 了 `R3-2`；第 4 轮的开批审阅漏掉它；报告没有任何一行提到它；
+  本轮全部验证通过后继续，最终 `PASS`。第三方只能靠人读发现账本不自洽。
+  **收法**：在 Requirement 里写：第 n+1 轮开批 SHALL 先读第 n 轮的 deferred 与 low/nit 表；
+  每个 deferred medium+ SHALL 以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
+- **R10｜20 轮计数没有写明按 change 跨 run/跨报告累计。**
+  证据：`design.md:82-89`；`spec.md:100-108,155`。
+  场景：跑完第 7 轮后换一个审阅者 run，写一份从第 1 轮开始的新报告，20 上限重新计数；
+  `check` 不解析正文，机械上不可见。**收法**：写明账本是**按 change 累计**的，后续报告
+  必须保留前序轮次（或引用同一份叠写报告）；重置计数只能来自用户的明确裁决，并记为
+  `BLOCKED` / 建议重开设计。
+- **R11｜两个环的 `BLOCKED` 语义与修复面不完全同构。**
+  证据：`spec.md:170-173,62-64`；`design.md:109,185-191,226-230`。
+  场景：设计对抗环发现「设计对某个核心需求没有答案」——这是设计级阻塞，但通用 `BLOCKED`
+  成因表里的「测试大面积失败」是实现环的；设计环的 `BLOCKED` 成因、修复责任人与允许修改的
+  文件都没有写。**收法**：给设计对抗环一张 `BLOCKED` 成因映射（核心需求缺失 / 设计自相矛盾 /
+  依赖不可满足 / 同一批反复无法收口），并写明作者负责改 `design.md` / `grill-design.md`，
+  报告同样带批次 / 验证 / deferred / low-nits / 出口五节。
+- **R12｜报告形态缺少「收口确认 / 空批」的记录位。**
+  证据：`design.md:126-149`；`spec.md:145-153`。
+  场景：第 3 轮批次收口后，下一次开批 0 条 medium+ ⇒ `PASS`；但报告只有空的批次表，
+  读者无法区分「做了这次开批且为空」与「忘了做开批」。**收法**：在报告模板加
+  `### 第 <n> 轮后 · 收口确认`（审阅时间 / 范围 / 0 条 medium+ 的结论），并规定 `PASS`
+  必须引用这一节。
+- **R13｜low/nit 登记是否累积未定义。**
+  证据：`spec.md:145-153`；`design.md:108`。
+  场景：第 2 轮登记一条 low「不修 + 理由」；最终 `PASS` 报告只带最后一轮的 low/nit 表，
+  第 2 轮那条从报告面消失。**收法**：要求最终 `PASS` 报告携带**累积** low/nit 登记表，
+  或逐项链接到首次登记的轮次小节。
 
-## 必须修改项
+## User Confirmation
 
-- **M1〔**阻塞**·`design.md §1.4:169-185`、`spec.md:135-154`（终止性 Requirement）、`spec.md:150-154`（「上界是导出量」Scenario）、`design.md §6.1:515-519`（Q14 卖点句）、`proposal.md:106-107`（目标 2）〕**：**终止性论证不成立，`2·|O_1| + 2` 是假上界。**
-  实测反例（`/tmp/term/ledger.py` + `/tmp/term/t2.py`，五条形状规则**零违规**）：`R1` 报 `{R1-1}`；偶数轮「不修 + 新报 1 条」（`净额 = −1`）、奇数轮「修掉上一条 + 不新报」（`净额 = +1`）⇒ `|O|` 在 `1,2,1,2,…` 摆动、净额 `[-1,+1,…]`、**10000 轮内 A/B 均不触发**（声称上界 = 4）。
-  根因：`§1.4` 第 1 步把「只有正净额轮让 `|O|` 下降」误推成「正净额轮总数 ≤ `|O_1|`」——**负净额轮会把 `|O|` 抬回去**，所以计数无界。§7 的自曝 1 问的正是这一点，答案是**否**。
-  收法（作者/用户择一并在 spec 写清为什么）：
-  (a) **把判据 B 改成「最近两轮（或 W 轮）**累计**净额 ≤ 0」**——同一反例序列在 B′ 下**第 3 轮停**，上界 `W·(|O_1|+1)+1`（我实测）；这是**唯一**既保住「不看轮数」又恢复良基度量的收法；
-  (b) 保留现 B，把目标 2 降级为「**条件**终止保证（账本如实且不交替）」，并**同步**改弱 `§6.1` 的卖点句与 `spec.md` 的上界条款（**不许**把 `2·|O_1|+2` 留给接入方）。
-  **无论选哪个**，`proposal.md` 的「验收」里那条「有净进度即继续」必须补上**反向**用例：**「交替呼吸」序列不得被判为收敛，也不得无限跑**。
-- **M2〔高·`design.md §1.2 ①:31-52`、`design.md:41-49`（重算块）、`spec.md:28-36`（Scenario「同构形态 ⇒ 不停」）、`proposal.md:60-73`（实测 ①）〕**：**样本 ① 的证据面与推论都要订正。**
-  实测：① 该文件**不在被审 revision 里**——它属于**兄弟 worktree** `/home/happy/wl-wt/confirm-gate-fail-closed`，且 `git status --porcelain` 显示 `openspec/changes/confirm-gate-fail-closed/` 是 **`??`（未提交）** ⇒ 任何在 `ef8b3ab` 上审计的第三方**读不到**它，而它**随时可变**。② 四个行号引用（`:52`/`:370`/`:578`/`:782`）**逐字为真** ✓，**但该文件有 `## R4 复审`（`:841`）**，其开头写「（**第 4 轮**；本仓**已废除「3 轮封顶」**⇒ 修到收敛为止）」。
-  ⇒ 所以「**旧规则在 R3 强制停下交人**」是**反事实**，不是 `§1.2` 标题所称的「**实录**」（实录恰恰是：R3 标了「封顶」之后**照旧跑了 R4**）。收法：把该结论改写成它真正支持的命题——「**旧 cap 在实践中没有刹住这一环（R3 → R4）**，所以 cap 不是「收敛」的同义词」，并**把在审用文献指为「兄弟 worktree + 未提交」并附 `sha256sum`**（该文件自己已在用指纹纪律，`design.md` 却漏了）。
-- **M3〔中·`design.md D2:232-243`，尤其理由 #2 `:239-240`〕**：**「B 已经覆盖了『停不下来』的全部形态」是无条件表述，与 `§1.4` 的诚实边界（`:182-185`）自相矛盾。** 由 M1 的反例，B **不**覆盖「交替呼吸」。收法：给理由 #2 补上前提「**在账本如实、且不出现正负交替的前提下**」，或按 M1(a) 改 B。
-- **M4〔中·`design.md §1.5:202-216`、`§5.1 T2:452-459`、`tasks.md E1:60-62`、`E3:65-72`〕**：**「必须加反断言」这条要求本身不够——反断言写成子串黑名单会被改写绕过，扫描面是 7 个硬编码文件会漏新落点。**
-  实测：`"3 轮封顶" not in text` / `"轮数封顶" not in text` / `"有界轮数" not in text` 这一类，**同义改写即逃逸**（例：把 `templates/review-loop.md:101` 改成「本闭环不设**轮数**上的**封顶**」——两个词都在、连写串不在 ⇒ 反断言全绿）。更强的形态（我已核过不误伤）：
-  (a) **逐行断言「同一行不同时含 `轮` 与 `封顶`」**——实测 `docs/design.md:85`（「封顶 ~5 条常量」）与 `docs/gate.md:280`（「4 条常量封顶」）**都不含 `轮`** ⇒ 这条断言**不会误伤**这两处正当用法，却把任何「轮数/封顶」的同义改写都判红；
-  (b) **扫描面改成「全仓 `find` + 显式允许名单」而**不是**硬编码 7 个文件**——允许名单只放四处历史面（`docs/reviews/*`、`docs/tasks.md`、`openspec/changes/<其它 change>/**`、`tests/test_grill_adversarial_gate.py:180`），**新文件默认判红（fail-closed）**；否则「新增一份复述旧口径的文档」永远抓不到。
-  (c) **保留 `E4` 的变异验证**（把 `templates/review-loop.md` 改回旧措辞 ⇒ 必须 1 failed）——这一步是**必须做的**，我认可作者把它写成硬要求；建议再加一条变异：**删掉 floor 那句** ⇒ 也必须 1 failed。
-- **M5〔中·`tasks.md G1-G5:96-103`、`design.md §5.2:470-479`〕**：**N1–N4 目前不可执行，不是「先红用例」。** 本 change 零 `src/` 改动、`check` 不解析账本（D5），文档措辞之外**没有任何东西**能承载 A/B/floor/五条规则的语义 ⇒ 这五条要么**补一个 test-local 参考实现**（在 `tests/` 内实现「读两份账本 → 判 `should_stop`」并跑 N1–N4 + 我这条「交替呼吸」反例），要么**明确降级**为「prose 检查」并承认它们**钉不住任何东西**。⚠️ 这正好是 M1 溜到设计评审才暴露的原因：**没有模型就没有反例搜索**。
-- **M6〔中·`spec.md:53-89`（「每轮审阅报告携带问题账本」Requirement）、`spec.md:115-120`（`HANDOFF` 三节）、`design.md §1.3.1:69-91`、`design.md §3.5:388-398`〕**：**「每轮审阅报告」的**边界**与**锚点**都没定义，本 change 合入后会立刻自造不合规。**
-  ① **哪份报告算「每轮审阅报告」**——`grill-design.md`（决策记录，无「轮」的概念）算不算？按字面算，则它没有账本 ⇒ 不合规；不算，则规格必须写明。
-  ② **多轮同文件时账本怎么分节**——本仓既有报告**一律多轮同文件**（`building-review-gate/design.md:53-62` 实测：`dogfood-bootstrap` 顶层 `## Verdict` 是**第 1 轮**的，后接 `## 第 2 轮审阅`/`## 第 3 轮审阅`；`confirm-gate-fail-closed` 是 `## R2 复审`/`## R3 复审（封顶）`/`## R4 复审`）。若每轮各写一个 `## 问题账本`，同一文件里就有多个逐字相同标题，而 `evidence._sections`（`src/witnessloop/evidence.py:52-64`）会**合并**同名小节 ⇒ 第三方**无法**「只读相邻两轮」。
-  ⇒ 规格必须二选一并**逐字写死**：(a) 每轮**一个**账本小节，标题含轮次（如 `### 第 N 轮 · 问题账本`），**相邻两轮**的定义随之写死；或 (b) 每轮**一份**报告文件（`reviews/<stage>-review-rN.md`）——但这会撞 `.gitignore`/孤儿规则与既有多轮惯例，代价更大。**推荐 (a)**，并同步修订 `design.md §1.3.1` 里「逐字标题 `## 问题账本`」这句。
-- **M7〔低·`proposal.md:135-150`（镜像表）、`design.md §6.2:523-528`、`tasks.md H6:118-122`〕**：**接入方镜像清单**不全**，且其中一处**改不到**。**
-  实测（`find` 全量扫描，**不用 `grep -r`**——它会跳过 `.claude/`，我第一遍就漏了）：现行面共 **12 处**，清单列了 9 处，漏 **`.claude/commands/review-loop.md:78`（`### 5. 修复并再审（≤3 轮封顶）`）、`:87`、`:153`**——这**正是** witnessloop 侧 `plugin/commands/review-loop.md` 的镜像物（本 change 已把它列为落点，见 `design.md:362`），漏掉它就是 `R5` 警告的「两边各编一套」。
-  ⚠️ **两跳后果**：该文件被 asterwynd 的 `.gitignore:9`（`.claude/`）忽略 ⇒ **镜像 change 的 PR 改不到它**，必须走「本地/带外更新 + 在镜像 change 里写明」；否则改完 CI 绿、而 agent 实际读到的仍是旧规则。
-  另：`docs/openspec-change-backlog.md:167`（「已合入归档 2026-09-15…building 审阅闭环 3 轮封顶内收敛」）是**历史记录**，应进**排除**清单（与 `docs/reviews/*` 同款），清单里要**点名**它，否则镜像那侧的「旧口径不再出现」扫描会要么误红、要么被写宽。
-- **M8〔低·`design.md §1.2 ②:53-65`、`proposal.md:75-88`（实测 ②）、`design.md §8 Q2 第二半:584-588`〕**：**样本名要换，且换成 `events-readpoint-fix` 比 `dogfood-bootstrap` 更贴近 issue 的原话。**
-  实测：issue 原话是「**跑到第 3 轮才收敛**」。① 作者换的 `dogfood-bootstrap`：`reviews/building-review.md` 顶层 `## Verdict` = `CHANGES_REQUESTED`（`:15`）→ `## 第 2 轮审阅`（`:124`）→ `## 第 3 轮审阅`（`:179`），据 `building-review-gate/design.md:57` 记 R2 裁定 `PASS` ⇒ **它在 R2 就收敛了**，作者自己也承认这条「是『新规则不更差』的护栏，不是新收益」⇒ 它**证不出** issue 的论点。② 真正贴近的是 **`events-readpoint-fix/reviews/grill-adversarial.md:489`**——标题**逐字**含「**第 3 轮（R3 · 轮数封顶 · 最后一轮）**」、R3 verdict = `PASS`（`:510`），且它与 issue 的样本 ① 同为**设计对抗环**（同一种产物）。
-  ⇒ 建议：样本换成 `events-readpoint-fix`（并保留 `dogfood-bootstrap` 作「不更差」的第二旁证）；**同时如实标注**：仓内**没有**「R3 仍 `CHANGES_REQUESTED`、再跑一轮就收敛」的实录 ⇒「旧规则在未收敛时强制停」在仓内是**风险**（cap 与收敛不等价）而**非已观测缺陷**；而 `guard-crash-exit/reviews/grill-adversarial.md`（R1→**R5**，`:485`/`:593`）是「**旧 cap 在实践中已被突破**」的旁证——这条对「去掉固定轮数」是**强**支持，建议一并收进去。
+- **1｜轮模型**：用户 2026-10-17 拍板（逐字要点）：「一轮 = 一个有界闭环：审阅者开一批
+  medium 及以上的问题 → 开发者全部修完 → 审阅者只做修复验证（逐条确认；验证期间发现的新问题
+  不许当场提，只能记入下一批 deferred）→ 这一批全部修好 ⇒ 本轮结束；下一轮才提新一批。
+  不许边改边提。」确认时间: 2026-10-17
+- **2｜20 上限**：用户 2026-10-17 拍板：「轮数上限 = 20；超过 ⇒ `BLOCKED`，并明确写
+  「建议推倒重开（revise the design）」，不是「到轮数就停」。」确认时间: 2026-10-17
+- **3｜medium+ / low / nit**：用户 2026-10-17 拍板：「批次里的 low / nit 可以登记不修，
+  但必须在报告里写理由；medium 及以上必须全修。」确认时间: 2026-10-17
+- **4｜三出口**：用户 2026-10-17 拍板：「出口只有三种：`PASS` / `BLOCKED` + 写明成因 /
+  超上限 `BLOCKED` + 建议重开。」确认时间: 2026-10-17
+- **本 change 无新增待拍板问题。** 本报告 `## Open Questions` 为「（无）」；上述 R1–R13 是
+  设计文本的精确化与实现风险，不需要用户重新选择参数。确认时间: 2026-10-17
 
-> 说明：本文件按任务要求落在 `reviews/grill-design.md`。⚠️ 它与本仓其余 change 的 `reviews/grill-review.md` **是同一件产物**（`templates/grill.md:91` 明写「`reviews/grill-review.md`（即 `grill-design.md`）」）。无论用哪个名字，**必须由 `stage=grill` 的 manifest 以 `report_path` 绑定**，否则 `check` 的孤儿规则会在本 change 自己身上判红。
-> ⚠️ **停轮前的预期状态**：本文件含逐字标题的 `## Open Questions`（Q1–Q3）而尚无 `## User Confirmation` ⇒ `evidence.grill_evidence_findings` 会报「缺少 `## User Confirmation` 小节」+ 3 条「未经用户确认」。这是**停轮前应有的**状态（与 `confirm-gate-fail-closed` 的 R4 §10 记的同款），停轮答复补齐后消失。**不要**为了让 checker 变绿而给本文件自造红/自造确认。
+## 旧记录作废
+
+- 2026-10-15 的旧 `reviews/grill-design.md`（138 行）与 `reviews/grill-adversarial.md`
+  （939 行）是**旧模型**（收敛判据 / 问题账本 / 无限轮 / 3 轮封顶口径）的产物，
+  **不适用于** 2026-10-17 新口径。它们**不是**本 change 的证据，**不绑定** manifest，
+  也不得在后续报告中当作已确认结论引用。
+- 旧内容可从 git 历史 `9acdf2b`（该文件首次落盘）与 `20f1089`（新模型重写时再次落盘）查。
+- 本文（`grill-reviewer-convergence-2026-10-17`）已替换工作树里的旧 `grill-design.md`；
+  旧 `grill-adversarial.md` 在本审阅开始时仍在工作树。按 A5 与新模型，B2 必须用新报告
+  覆盖它，或把它移出 `reviews/`（git 历史保留）；**不得**直接为旧文件建
+  `stage=grill-adversarial` manifest——那会同时制造孤儿规则冲突与旧模型假证据（见风险 R4）。

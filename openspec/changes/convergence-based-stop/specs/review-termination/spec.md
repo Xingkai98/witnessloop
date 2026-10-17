@@ -1,7 +1,7 @@
 # review-termination — 审阅闭环的终止条件：有界批次 × 20 轮上限
 
-> 本 change 的能力增量：把审阅闭环（实现后的 `review-loop` 与设计阶段的对抗验证环）的轮次口径
-> 从「一次审阅 verdict 算一轮、3 轮封顶」改成「**一个非空 medium+ 批次的闭环算一轮**」。
+> 本 change 的能力增量：审阅闭环（实现后的 `review-loop` 与设计阶段的对抗验证环）的轮次口径
+> SHALL 为「**一个非空 medium+ 批次的闭环算一轮**」。
 > 轮内冻结批次、验证只做修复确认、新问题进下一批；最多 20 轮，超限 ⇒
 > `BLOCKED` +「建议推倒重开（revise the design）」。
 >
@@ -22,9 +22,12 @@
 
 1. 审阅者开批，只列 severity 为 `medium` / `high` / `blocker` 的问题；
 2. 批次 `B_n` 在开批后 SHALL **冻结**——本轮内 SHALL NOT 增加、删除或替换成员；
-3. 开发者 SHALL 修完 `B_n` 的每一项；
+3. 开发者 SHALL 修完 `B_n` 的每一项；每项 SHALL 附一条**能变红的回归测试**（先红后绿）——
+   既有模板的这条要求 SHALL NOT 被静默弱化；
 4. 审阅者 SHALL 逐条验证 `B_n` 的每一项是否修好；
 5. `B_n` 全部验证通过 ⇒ 本轮结束；否则开发者继续修，**仍是同一轮**，SHALL NOT 另计一轮。
+6. **验证重试的终止点**：同一项再次被判 `未修好`、且开发者拿不出**新的、可验证的修复方案**时，
+   审阅者 SHALL 以 `BLOCKED` + 成因终结（记录验证次数与未通过项）；不新增数字上限。
 
 `B_n = ∅`（开批时没有任何 medium+）⇒ 审阅闭环 SHALL 以 `PASS` 结束，不进入修复，也不消耗轮数。
 
@@ -59,9 +62,13 @@ SHALL NOT 各自计为一轮。
 验证阶段的唯一允许变化是：`B_n` 各项的验证状态、`deferred` 清单、low/nit 登记表。
 批次成员 SHALL 保持不变。
 
-⚠️ **例外不是「新问题」**：若审阅者判定整体不可继续（核心功能缺失 / 安全漏洞 /
-测试大面积失败 / 同一批反复无法收口），SHALL 以 `BLOCKED` + 成因终结；这不是扩批，
-而是三种出口之一。
+⚠️ **例外不是「新问题」**：若审阅者判定整体不可继续，SHALL 以 `BLOCKED` + 成因终结；
+这不是扩批，而是三种出口之一。**「整体不可继续」SHALL 限定为**：该新问题使当前轮的验证
+失去意义，或继续实现/验证本身不安全。其余安全漏洞 SHALL 进 `deferred`，并在行内写明
+「为什么可以延后一轮」。
+
+**deferred 传递的硬规则**：下一次开批 SHALL 先读上一轮的 `deferred` 与 low/nit 表；
+每个 deferred medium+ SHALL 以**原 id** 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
 
 ### Scenario: 验证期间发现新 medium+ ⇒ 只登记
 - **Given** 第 3 轮批次 `B_3` 有 4 项，验证到第 2 项时发现一个 medium+ 新问题
@@ -82,6 +89,11 @@ SHALL NOT 各自计为一轮。
   - **登记不修**，并在报告中逐条写明**理由**。
 - severity SHALL 由审阅者定级；开发者 SHALL NOT 自行把 medium+ 降级以跳过修复。开发者若认为
   定级错误，SHALL 在报告中提出具体理由，由审阅者复核并给出结论。
+- **severity SHALL 随批次冻结**：验证期若审阅者认为定级错误，只能记录争议并二选一：
+  （a）按原 severity 要求修完；或（b）`BLOCKED` 并把争议写进成因。
+  SHALL NOT 静默把批次项移出批次或降为 low/nit。
+- **累积登记**：最终 `PASS` 报告 SHALL 携带累积 low/nit 登记表，或逐项链接到首次登记的
+  轮次小节——不得只留最后一轮。
 - 「登记不修」缺理由 SHALL 视为报告不完备（流程缺陷）；本判据 SHALL NOT 被表述为由
   `check` 机械执行。
 
@@ -95,9 +107,26 @@ SHALL NOT 各自计为一轮。
 - **When** 审阅者验证
 - **Then** 该项 SHALL 判为**未修好**；本轮不结束，直到它被修完并验证通过
 
+### Scenario: 验证期想把 medium 降为 nit ⇒ 不得静默移出批次
+- **Given** 批次里有一条 severity = medium 的项，验证时审阅者认为它其实是 nit
+- **When** 审阅者处置
+- **Then** 只能二选一：按原 severity 要求修完，或 `BLOCKED` 并把争议写进成因；
+  SHALL NOT 把它从批次静默移出后收口
+
+### Scenario: 最终 PASS 报告保留前序 low/nit 登记
+- **Given** 第 2 轮登记一条 low「登记不修 + 理由」，第 4 轮收口确认空批 ⇒ `PASS`
+- **When** 第三方读最终报告
+- **Then** 第 2 轮那条 low 仍可查（累积登记表或链接到第 2 轮小节）
+
 ## Requirement: 轮数上限 SHALL 为 20；超限 SHALL 以 BLOCKED + 建议重开设计结束
 
 - 审阅闭环 SHALL 最多存在 **20 个已结束的轮**（非空 medium+ 批次）。
+- **轮数 SHALL 按 change（且按环）累计**：后续报告 SHALL 保留前序轮次，或引用同一份叠写
+  报告；换审阅者 run / 另写一份从第 1 轮开始的新报告 SHALL NOT 重置计数。重置只能来自
+  用户的明确裁决，并记为 `BLOCKED` / 建议重开设计。
+- **第 20 轮自身无法收口**：若 `B_20` 仍有任何一项为 `未修好`，出口 SHALL 是
+  **超上限 `BLOCKED`**（不是通用 `BLOCKED`）：报告含「建议推倒重开（revise the design）」、
+  第 20 轮批次/验证账本与未收口 medium+ 列表；SHALL NOT 开启第 21 轮。
 - 第 20 轮收口后，审阅者 SHALL 做一次**收口确认**（下一次开批）：
   - 批次为空 ⇒ `PASS`；
   - 批次非空 ⇒ **超上限 `BLOCKED`**。
@@ -106,6 +135,12 @@ SHALL NOT 各自计为一轮。
 - 收口确认 SHALL NOT 产生第 21 轮修复；它只允许 `PASS` 或超上限 `BLOCKED`。
 - 超上限的停轮原因 SHALL 被表述为「20 轮有界修复仍未收口，说明问题在设计层」，
   SHALL NOT 被表述为「到轮数就停」或「照合交人」。
+
+### Scenario: 第 20 轮自身就有未修好项 ⇒ 超上限 BLOCKED
+- **Given** `B_20` 有 1 项，验证多次仍为 `未修好`，开发者拿不出新的可验证修复方案
+- **When** 判定出口
+- **Then** **超上限 `BLOCKED`**；报告含「建议推倒重开（revise the design）」+ 第 20 轮账本
+- **And** 不会开启第 21 轮，也不会退化成不带「建议重开」的通用 `BLOCKED`
 
 ### Scenario: 第 20 轮收口后仍有 medium+ ⇒ 超上限 BLOCKED
 - **Given** 第 1–20 轮均已结束；收口确认发现 2 条 medium+
@@ -130,8 +165,8 @@ SHALL NOT 各自计为一轮。
 | 出口 | 条件 |
 |---|---|
 | `PASS` | 收口确认批次为空 |
-| `BLOCKED` + 成因 | 阻塞性缺陷 / 同一批无法收口；停下报告、不自行修复 |
-| 超上限 `BLOCKED` | 20 轮已结束且收口确认仍有 medium+；附「建议推倒重开（revise the design）」 |
+| `BLOCKED` + 成因 | 阻塞性缺陷 / 同一批反复无法收口（触发点见 Requirement 1 第 6 条）；停下报告、不自行修复 |
+| 超上限 `BLOCKED` | 20 轮已结束且收口确认仍有 medium+，或第 20 轮自身仍有 `未修好`；附「建议推倒重开（revise the design）」 |
 
 `CHANGES_REQUESTED` SHALL NOT 被视为出口；它只表示「本批仍有未验证通过的项」，对应动作是
 继续修 / 继续验证。
@@ -150,7 +185,10 @@ SHALL NOT 各自计为一轮。
 2. **验证表**：`id` / 结果（已修好 / 未修好）/ 修复提交 / 回归测试；
 3. **deferred 表**：`id` / severity / 锚点 / 问题 / 来源；
 4. **low/nit 登记表**：`id` / severity / 处置（已修 / 登记不修）/ 理由；
-5. **出口**：`PASS` 或 `BLOCKED`（成因）或超上限 `BLOCKED`（建议重开设计）。
+   最终 `PASS` 报告 SHALL 带**累积**登记表，或逐项链接到首次登记的轮次小节；
+5. **收口确认**：`### 第 <n> 轮后 · 收口确认`（审阅时间 / 范围 / 0 条 medium+ 或 N 条）；
+   `PASS` 出口 SHALL 引用这一节——空的批次表与「没做这次审阅」在文本上不可区分；
+6. **出口**：`PASS` 或 `BLOCKED`（成因）或超上限 `BLOCKED`（建议重开设计）。
 
 `id` SHALL 形如 `R<首次出现轮次>-<序号>`；deferred 项进入下一轮批次时 SHALL 沿用原 id。
 多轮同文件时，每轮小节标题 SHALL 带轮次（例：`### 第 3 轮 · 批次`），以便第三方只读相邻轮次
@@ -171,9 +209,12 @@ SHALL NOT 各自计为一轮。
 
 - `templates/review-loop.md` 的实现后审阅环与 `templates/grill.md` 的设计阶段对抗验证环
   SHALL 使用同一套轮次模型（批次 / 验证 / deferred / 20 / 三出口）。
-- `grill` 的 **frontier 追问轮**（为求设计树完备而做的内部轮）SHALL NOT 算作审阅轮，
-  SHALL NOT 受 20 上限或「验证禁提新问题」约束；它产出的是决策记录 `grill-design.md`，
-  不是 verdict 报告。
+- **设计环的 `BLOCKED` 成因映射**：核心需求缺失 / 设计自相矛盾 / 依赖不可满足 /
+  同一批反复无法收口；作者负责改 `design.md` / `grill-design.md`；报告同样带
+  「批次 / 验证 / deferred / low-nit / 收口确认 / 出口」。
+- `grill` 的 **frontier 追问轮** SHALL 仅指**进入对抗环之前**、为求设计树完备而做的内部轮；
+  它 SHALL NOT 算作审阅轮，SHALL NOT 受 20 上限或「验证禁提新问题」约束。
+  **由对抗环批次项驱动的设计探索属于该轮修复**，SHALL NOT 改标为 frontier。
 
 ### Scenario: 对抗环的验证期发现新问题
 - **Given** 设计对抗环第 2 轮批次已全部修完，验证时又发现一条必须修改
@@ -198,11 +239,11 @@ SHALL NOT 各自计为一轮。
 **不证明**报告按新模型执行；20 上限、批次冻结、deferred 都是**流程规定**，
 不是机械判据（与本仓 §9/§10 的既有口径一致）。
 
-### Scenario: 报告写着旧口径也能过机械门禁
-- **Given** 一份被 manifest 绑定的报告，正文仍写「3 轮封顶」
+### Scenario: 报告写着过时措辞也能过机械门禁
+- **Given** 一份被 manifest 绑定的报告，正文仍写一句过时的轮次口径
 - **When** 跑 `check`
 - **Then** 机械判据仍可能判绿——因此本 change 必须同时提供**文档守卫**与**独立审阅**，
-  SHALL NOT 宣称 `check` 能识别旧口径
+  SHALL NOT 宣称 `check` 能识别过时措辞
 
 ### Scenario: 新模型不新增任何 `check` finding
 - **Given** 同一份 diff（只改模板/适配器/自述/测试，不碰 `src/`）

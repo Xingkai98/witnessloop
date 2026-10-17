@@ -16,15 +16,22 @@
 - [x] A3 重写 `tasks.md`（本文件）：按批次组织，验收项覆盖新模型七要素。
 - [x] A4 重写 `specs/review-termination/spec.md`：Requirement + Scenario；
   **不得出现**「按审阅 pass 计轮」的旧口径。
-- [x] A5 旧版 `reviews/grill-design.md` / `reviews/grill-adversarial.md` 标作废并从工作树移除
-  （git 历史 `9acdf2b` 可查）；在**新**的 `reviews/grill-design.md` 写明「旧轮次记录不适用于新口径」。
+- [x] A5a 旧 `reviews/grill-design.md` 已被 2026-10-17 的新报告**覆盖**（报告内含
+  「旧记录作废」节；git 历史 `9acdf2b` / `20f1089` 可查）。
+- [ ] A5b 旧 `reviews/grill-adversarial.md` 必须由 B2 用新模型报告**覆盖**后再建
+  `stage=grill-adversarial` manifest；或从 `reviews/` 移出（git 历史保留）。
+  **禁止**为旧文件建 manifest（那会同时制造孤儿规则冲突与旧模型假证据）。
 
 ## B. 设计阶段独立验证（本批）
 
-- [ ] B1 独立零记忆 grill：审阅者只读 change 目录 + 仓库，产出 `reviews/grill-design.md`
-  （Confirmed Decisions ≥3、每条 `来源:`、Code-Resolved、Open Questions、User Confirmation）。
+- [x] B1 独立零记忆 grill：审阅者只读 change 目录 + 仓库，产出 `reviews/grill-design.md`
+  （7 条 Confirmed Decisions、每条 `来源:`、Code-Resolved、Open Questions 为「（无）」、
+  User Confirmation 四个事项；自检 `grill_evidence_findings` = 0 findings）。
+- [x] B1b 把 grill 的 R1–R13 逐条整合进 design / spec / proposal / tasks（不改用户拍板的
+  三个参数）；`design.md` 的 `## Pre-Implementation Review` 记录整合清单。
 - [ ] B2 独立零记忆对抗验证：另起审阅者默认结论有错、逐条证伪；`CHANGES_REQUESTED` ⇒ 修并再审，
-  **跑到收敛（无轮数上限）**；产物 `reviews/grill-adversarial.md`。
+  **跑到收敛（无轮数上限）**；产物 `reviews/grill-adversarial.md`（**覆盖**旧文件，先内容后证据，
+  覆盖完成前不得为它建 manifest——见 A5b）。
 - [ ] B3 停轮门：确认没有需要用户拍板的问题；`## User Confirmation` 写齐（用户已拍板的三个参数 +
   本 change 无新增 Open Questions）。
 - [ ] B4 把对抗验证的必须修改整合回 `design.md`（若有）；记录到 `## Pre-Implementation Review`。
@@ -36,8 +43,16 @@
   ④ 超上限 `BLOCKED` +「建议推倒重开（revise the design）」；⑤ medium+ 全修；
   ⑥ low/nit 登记不修须写理由；⑦ 三种出口（`PASS` / `BLOCKED`+成因 / 超限 `BLOCKED`）。
   同时改 `tests/test_templates.py:257-258` 与 `tests/test_plugin.py:174-176` 的旧「封顶」断言，
-  并加**反断言**：规范面不再出现 `3 轮封顶` / `有界轮数` / `轮数封顶`。
+  并加**反断言**：规范面不再出现 `3 轮封顶` / `三轮封顶` / `有界轮数` / `轮数封顶`。
+  **扫描面**（显式）：`templates/review-loop.md`、`templates/grill.md`、
+  `plugin/commands/review-loop.md`、`plugin/commands/grill.md`、`plugin/README.md`、
+  `README.md`、`docs/design.md`、`docs/gate.md`、`tests/test_templates.py`、
+  `tests/test_plugin.py`、本 change 的 spec。
+  **排除**：`docs/tasks.md`、`docs/reviews/**`、`openspec/changes/archive/**`、
+  其它 change 目录、`tests/test_grill_adversarial_gate.py:180`（夹具）。
 - [ ] C2 跑 `uv run pytest -q`，确认新测试**红**（记录原始输出到 `reviews/building-review.md` 的测试节）。
+- [ ] C2b 变异验证：临时把 `templates/review-loop.md` 的一处新措辞改回旧口径，确认新测试
+  1 failed；改回后复绿（变异不提交，结果记入 building 报告）。
 - [ ] C3 改 `templates/review-loop.md`：目的、执行步骤（开批/全修/验证/收口/上限）、硬约束。
 - [ ] C4 改 `templates/grill.md`：时序图、对抗环步骤、写码硬条件 #2、frontier 豁免。
 - [ ] C5 改 `plugin/commands/review-loop.md`：front-matter、步骤 5–7、约束。
@@ -74,8 +89,11 @@
   frontier 追问轮显式豁免。
 - [ ] V3 适配器（`plugin/commands/*.md`）不复制模板正文，只接线；同步新口径。
 - [ ] V4 规范面（`templates/`、`plugin/`、`README.md`、`docs/design.md`、`docs/gate.md`）
-  不再有 `3 轮封顶` / `有界轮数` / `轮数封顶`。
+  不再有 `3 轮封顶` / `三轮封顶` / `有界轮数` / `轮数封顶`。
 - [ ] V5 `specs/review-termination/spec.md` 无「按审阅 pass 计轮」旧口径。
+- [ ] V5b grill R1–R13 的文本落点齐全：第 20 轮自身未收口、验证重试终止点、安全漏洞例外、
+  severity 冻结、deferred 传递、轮数累计、收口确认、累积 low/nit、frontier 边界、
+  两环 `BLOCKED` 映射、旧 review/孤儿处置。
 - [ ] V6 `uv run pytest -q` 全绿。
 - [ ] V7 三份 manifest + `witnessloop check` 绿。
 - [ ] V8 PR 已 `--merge` 合入；归档为纯 move；issue #24 已关闭。
