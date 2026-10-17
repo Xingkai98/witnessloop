@@ -72,35 +72,41 @@
 
 ```
 （⚠️ 这可能是**一次搬移的一半**：`<D.path>` 被删，而同一次 diff 里 `<A.path>` 是它在到达目录
-`<A_dir>` 下的同相对子路径新增。若确属搬移，请在**同一个 PR** 内补**一条**解释事件即可——
-写进该 change 归档后的 `workflow-events.jsonl`（或任一既有 change 目录的该文件）：
+`<A_dir>` 下的同相对子路径新增。若确属搬移，请在**同一个 PR** 内补解释事件——写进**该 change 归档后的**
+`workflow-events.jsonl`（**不要**写进别的既有 change 目录），通常**一条**；若追加让它的旧路径也掉成 `D`
+再补一条（同一文件、同一 PR）：
 {"schema":"witnessloop/event@v1","event_type":"<policy 的第一个允许类型>","change_id":"<归档目录名>",
  "artifact_path":"<D.path>","reason":"归档时与 change 一起搬进 archive/（git 未配成 rename）",
  "approved_by":"<你的名字或 run id>"}）
 ```
 
-- **`event_type` 取自 `policy.protected_write_event_types[0]`**，**不**硬编码 `protected_artifact_explained`。
+- **`event_type` 取自 `policy.protected_write_event_types` 的**首个非空项**，**不**硬编码 `protected_artifact_explained`。
   理由（**实确认**）：用户裁定的原话里那个类型是**接入方 asterwynd 的 policy** 里的名字
   （它的 `protected_write_event_types` 才含 `protected_artifact_explained`）；**witnessloop 自己的 policy
   只有 `["protected_path_write"]`**（`.witnessloop/policy.json` 实测），全仓 `grep protected_artifact_explained`
   **零命中**。若把接入方的类型名硬编码进示例，本仓接入方照抄会得到一条**不被 `covers` 认**的事件 ⇒
   红消不掉 ⇒ 示例就不是「可直接复制」的了。
-  ⚠️ 若 `protected_write_event_types` **为空**（policy 显式关掉）⇒ **不给示例**（只给文字补救）——
-  否则会印出一条 `event_type=""` 的废示例。
+  ⚠️ 若 `protected_write_event_types` **为空** ⇒ **不给示例**（只给文字补救）。⚠️ 这一态只能由**代码**
+  构造出的 `Policy` 触发：`policy.Policy.from_doc` 对显式 `[]` 走 `or DEFAULT` **回落出厂默认**
+  （B1-3 订正；不要在文档里写成「policy 写 `[]` 就不给示例」）。
+  ⚠️ **示例印之前会用 `events.covers` 真验一遍**（B1-1）：policy 的允许集若本身**不可满足**
+  （例如带首尾空白——`Event` 会把事件类型去空白，而 `covers` 比的是**未去空白**的允许集），
+  就**不印示例**、改印一句「先修 policy」的诊断。**那是先于本 change 的 policy 写法问题**，
+  本 change 不修它（修它会改变豁免语义）。
 - **`artifact_path` 用真实路径**（那条 `D` 的路径）；`change_id` / `approved_by` 留 `<…>` 占位（不影响 `covers`：
   它只校验 `event_type` / `artifact_path` / `reason` / `approved_by` 非空、且 `artifact_path` **不接受通配**——见
   `events.covers` 的实现）。
-- **事件写哪里**：`events.load_all` 扫 `changes/*/workflow-events.jsonl` + `archive/*/workflow-events.jsonl`
-  （`events.py` 的两条显式 glob）⇒ 写进**归档后**那份（它随 `R100` 被搬、或 `<100` 仍走搬移豁免）或任一**既有**
-  change 目录都行；**不要**为它新建一个「只有事件文件」的 change 目录（那会触发 change 目录契约，
-  `docs/gate.md §1.2` 有实跑记录：1 条红会变 7 条红）。
+- **事件写哪里（B1-2 实测订正）**：`events.load_all` 扫 `changes/*/workflow-events.jsonl` +
+  `archive/*/workflow-events.jsonl`。SHALL 写进**该 change 归档后的**那份；
+  **SHALL NOT** 写进**别的既有** change 目录——那是对不变集里一个 `M`，红会**转移**到那个文件（实测仍红）。
+  **不要**为它新建一个「只有事件文件」的 change 目录（那会触发 change 目录契约，1 条红会变 7 条红，见 `§1.2`）。
 
 ### D4 成本语义（用户裁定的原文口径）
 
 | 形态 | 成本 |
 |---|---|
 | **纯搬移**（全部 `R100`，被搬文件一个字节不改） | **零**——`check` 直接绿（本仓第一次归档实测：58×`R100`、0 findings） |
-| **归档时顺手改了被搬文件**（那条记录配不上 rename ⇒ `D`+`A`） | **一行事件、同一个 PR**——照 finding 文案复制示例、填两处占位即可 |
+| **归档时顺手改了被搬文件**（那条记录配不上 rename ⇒ `D`+`A`） | **通常一条事件、同一个 PR**——照 finding 文案复制示例、填两处占位。⚠️ B1-2 实测：若追加本身让那个 events 文件的**旧路径**也配不上 rename（单行文件追加一行就可能），再补**一条**覆盖它——**仍在同一个文件、同一个 PR**，反复跑到绿为止 |
 | 其它形态 | 与改动前**完全相同**（本 change 不碰判定） |
 
 **SHALL NOT 因此增加 PR 数量**（用户原话）——事件放在**同一个开发 PR** 里。
@@ -152,8 +158,8 @@ range 内被改写过**）⇒ 不能用。
 | # | 风险 | 处置 |
 |---|---|---|
 | R1 | 文案被当成「工具认了这是搬移」 | 文案第一句就写「**可能**是」；并在 `docs/gate.md §7` 明写「诊断是启发式、**不改变判定**」 |
-| R2 | 示例的事件类型与接入方 policy 不符 | 取自 `policy.protected_write_event_types[0]`（**不硬编码**）；空则不给示例（D3） |
-| R3 | 有人把事件写进「只有事件文件」的新目录 ⇒ 7 条红 | 文案指定「归档后那份 / 任一既有 change 目录」，并在 `docs/gate.md §5.1` 引 `§1.2` 的实跑记录 |
+| R2 | 示例的事件类型与接入方 policy 不符 | 取自允许集的**首个非空项**（**不硬编码**）；印前用 `covers` 真验，验不过就不印并说清原因（D3） |
+| R3 | 有人把事件写进「只有事件文件」的新目录 ⇒ 7 条红；或写进**别的既有** change 目录 ⇒ 红转移 | 文案**只**指定「该 change 归档后那份」，并引 `docs/gate.md §1.2` / `§5.1` 的实跑记录 |
 | R4 | `move_half_candidates` 被误用在判定里 | 它是**纯函数**且**只**在 `_protected_writes` 的拼文案处被调用；§7 的「判定不变」表 + 变异测试钉住 |
 | R5 | 诊断漏报（该提示的没提示） | 只影响可行动性、不影响判定；N-i 的正向用例钉住 issue #31 的形态**一定**触发 |
 

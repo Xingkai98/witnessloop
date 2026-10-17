@@ -278,3 +278,45 @@ def test_is_deterministic_with_several_candidates():
     arrivals = [_arrival(name="z"), _arrival(name="a")]
     got = contract.move_half_candidates([d, a1, a2], _pol(), arrivals)
     assert got[f"{CHANGES}/b/{EVENTS}"] == f"{ARCHIVE_REL}/a/{EVENTS}"  # 字典序最小
+
+
+def test_a_blank_laden_policy_prints_no_example_but_says_why(repo: Path, cli):
+    """B1-1：policy 的允许集带首尾空白 ⇒ **任何**事件都过不了 `covers`（**先于本 change** 的
+    policy 写法问题）⇒ 文案**不印**一个不能用的示例，而是点明「先修 policy」。"""
+    old = _issue31_shape(repo, cli)
+    pol_file = repo / C.POLICY_PATH
+    doc = json.loads(pol_file.read_text(encoding="utf-8"))
+    doc["evidence"]["protected_write_event_types"] = ["  protected_path_write  "]
+    pol_file.write_text(json.dumps(doc), encoding="utf-8")
+    commit_all(repo, "policy 的类型带首尾空白")
+
+    _, _, err = _check(repo, cli)
+
+    assert old in err
+    assert '"event_type"' not in err, "不能印一个过不了 covers 的示例"
+    assert "不可满足" in err and "过不了" in err
+
+
+def test_the_remedy_names_only_the_archived_changes_events_file(repo: Path, cli):
+    """B1-2：**不要**建议写进「别的既有 change 目录」（那是 `M`，红会转移过去）。"""
+    _issue31_shape(repo, cli)
+
+    _, _, err = _check(repo, cli)
+
+    assert "该 change 归档后的" in err
+    assert "任一既有 change 目录" not in err
+    assert "反复跑到" in err and "再补一条" in err
+
+
+def test_empty_types_print_no_example_at_the_unit_level():
+    """B1-3：允许集为空只能由**代码**构造（`from_doc` 对 `[]` 回落默认）⇒ 在纯函数层钉住。"""
+    import dataclasses
+
+    from witnessloop import checkcmd
+
+    pol = dataclasses.replace(_pol(), protected_write_event_types=())
+    hint = checkcmd._move_half_hint(
+        f"{CHANGES}/b/{EVENTS}", {f"{CHANGES}/b/{EVENTS}": f"{ARCHIVE_REL}/x/{EVENTS}"}, pol
+    )
+    assert "搬移的一半" in hint
+    assert '"event_type"' not in hint

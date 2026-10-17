@@ -415,10 +415,19 @@ def _move_half_hint(path: str, move_half: dict[str, str], pol: policy_mod.Policy
 
     ⚠️ 只拼文案——**不**改变任何判定（本函数不在任何 `if` 里，finding 照旧成立）。
 
-    * `event_type` 取自 `pol.protected_write_event_types[0]`（**不硬编码**接入方 policy 里
-      `protected_artifact_explained` 那种名字：witnessloop 自己的 policy 只有 `protected_path_write`）；
-      允许集为空 ⇒ **不给示例**（只给文字补救），否则会印出一条 `event_type` 为空的废示例。
+    * `event_type` 取自 `pol.protected_write_event_types` 的**首个非空项**（**不硬编码**接入方
+      policy 里 `protected_artifact_explained` 那种名字：witnessloop 自己的 policy 只有
+      `protected_path_write`）。
+    * **示例必须真能用**（B1-1）：印之前**用 `events.covers` 验一遍**——policy 的允许集若本身
+      不可满足（例如带首尾空白：`Event` 会把事件类型去空白，而 `covers` 比的是**未去空白**的
+      允许集 ⇒ 任何事件都过不了），就**不印示例**、改印一句诊断。⚠️ 那是**先于本 change** 的
+      policy 写法问题，本 change 不修它（修它会改变豁免语义）。
+    * 允许集为空（只能由**代码**构造出的 Policy 触发；`from_doc` 对 `[]` 回落出厂默认）⇒ 不给示例。
     * `artifact_path` 是那条 `D` 的**真实路径**（`events.covers` 不接受通配）。
+    * **补救位置**（B1-2 实测订正）：写进**该 change 归档后的** `workflow-events.jsonl`——
+      **不要**写进别的既有 change 目录（那是对不变集里一个 `M`，红会**转移**到那个文件）。
+    * **「一条」是有条件的**（B1-2 实测）：若追加本身让那个 events 文件的**旧路径**也配不上
+      rename（单行文件追加一行就可能发生）⇒ 再补一条覆盖它；**仍在同一个文件、同一个 PR**。
     """
     counterpart = move_half.get(path)
     if counterpart is None:
@@ -426,9 +435,11 @@ def _move_half_hint(path: str, move_half: dict[str, str], pol: policy_mod.Policy
     hint = (
         "（⚠️ 这可能是**一次搬移的一半**："
         f"`{path}` 被删，而同一次 diff 里 `{counterpart}` 是它在到达目录下的**同相对子路径新增**。"
-        "若确属搬移，请在**同一个 PR** 内补**一条**解释事件即可——写进该 change 归档后的 "
-        f"`{pol.events_file}`（或任一既有 change 目录的该文件）；**不要**为它新建一个"
-        "只有事件文件的 change 目录（那会触发 change 目录契约，红会变多）。"
+        "若确属搬移，请在**同一个 PR** 内补解释事件——写进**该 change 归档后的** "
+        f"`{pol.events_file}`（**不要**写进别的既有 change 目录：那会让红转移到那个文件）；"
+        "**不要**为它新建一个只有事件文件的 change 目录（那会触发 change 目录契约，红会变多）。"
+        "通常**一条**就够；若追加本身让那个 events 文件的旧路径也掉成 `D`，按同样的办法再补一条"
+        "（仍在同一个文件、同一个 PR）——**反复跑到 `check：通过 ✓` 为止**。"
     )
     types = [t for t in pol.protected_write_event_types if t]
     if types:
@@ -440,7 +451,18 @@ def _move_half_hint(path: str, move_half: dict[str, str], pol: policy_mod.Policy
             "reason": "归档时与 change 一起搬进 archive/（git 未配成 rename）",
             "approved_by": "<你的名字或 run id>",
         }
-        hint += "可直接复制的示例：" + json.dumps(example, ensure_ascii=False)
+        # B1-1：印之前**真验一遍**——`covers` 认它才算「可直接复制」。
+        probe = events_mod.Event(
+            example["event_type"], path, example["reason"], example["approved_by"]
+        )
+        if events_mod.covers(probe, path, pol.protected_write_event_types):
+            hint += "可直接复制的示例：" + json.dumps(example, ensure_ascii=False)
+        else:
+            hint += (
+                "⚠️ 本仓 policy 的 `protected_write_event_types` 写法不可满足"
+                f"（{pol.protected_write_event_types!r}）——**任何**事件都过不了 `covers`，"
+                "请先修 policy 本身（例如去掉首尾空白）。"
+            )
     return hint + "）"
 
 
