@@ -29,17 +29,20 @@
   User Confirmation 四个事项；自检 `grill_evidence_findings` = 0 findings）。
 - [x] B1b 把 grill 的 R1–R13 逐条整合进 design / spec / proposal / tasks（不改用户拍板的
   三个参数）；`design.md` 的 `## Pre-Implementation Review` 记录整合清单。
-- [ ] B2 独立零记忆对抗验证：另起审阅者默认结论有错、逐条证伪；按**批次模型**执行——
+- [x] B2 独立零记忆对抗验证：另起审阅者默认结论有错、逐条证伪；按**批次模型**执行——
   开批只列 medium+；全修；同一轮逐条验证；验证期新问题 deferred；第 20 轮自身达到验证重试
   终止点，或第 20 轮收口确认仍有 medium+ ⇒ **超上限 `BLOCKED` + 建议推倒重开（revise the
   design）**；`CHANGES_REQUESTED` 是轮内状态，不是出口。产物 `reviews/grill-adversarial.md`
   （**覆盖**旧文件，先内容后证据，覆盖完成前不得为它建 manifest——见 A5b）。
-- [ ] B3 停轮门：确认没有需要用户拍板的问题；`## User Confirmation` 写齐（用户已拍板的三个参数 +
+  **结果：R1 `CHANGES_REQUESTED`（I1–I12）→ 修复 `6a8deee` → R2 逐条验证全部已修好 →
+  下一次开批 0 条 medium+ ⇒ `PASS`。**
+- [x] B3 停轮门：确认没有需要用户拍板的问题；`## User Confirmation` 写齐（用户已拍板的三个参数 +
   本 change 无新增 Open Questions）。
-- [ ] B4 把对抗验证的必须修改整合回该 change 的**设计制品**：`design.md`、`proposal.md`、
+- [x] B4 把对抗验证的必须修改整合回该 change 的**设计制品**：`design.md`、`proposal.md`、
   `specs/review-termination/spec.md`、`tasks.md`，以及决策记录 `grill-design.md`；
   记录到 `design.md` 的 `## Pre-Implementation Review`（含 I1–I12 逐条落点）。
-- [ ] B5 由同一独立审阅者复验 I1–I12；只有全部「已修好」才收口；验证期新问题进 deferred。
+- [x] B5 由同一独立审阅者复验 I1–I12；只有全部「已修好」才收口；验证期新问题进 deferred。
+  **结果：I1–I12 全部已修好；deferred 0 条；PASS。**
 
 ## C. TDD 实现（本批）
 

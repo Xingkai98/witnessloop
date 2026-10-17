@@ -1,7 +1,7 @@
 # 设计对抗验证: convergence-based-stop
 
 ## Verdict
-**CHANGES_REQUESTED**
+**PASS**（第 1 轮 I1–I12 全部已修好；第 2 次开批为空）
 
 ## 第 1 轮对抗验证
 
@@ -34,7 +34,7 @@
 
 ### 第 1 轮 · 验证
 
-本轮尚处于开批后的修复前状态；以下各项均**待作者修复后在同一轮内逐条验证**。验证时只核对这批
+本轮开批时的状态；以下各项已由 `6a8deee` 修复，逐条验证见 `## 第 2 轮 · 验证`。验证时只核对这批
 「是否修好」，不扫描/不追加新问题（新问题进 deferred）。
 
 | id | 结果 | 修复提交 | 回归测试 |
@@ -68,15 +68,150 @@
 | L6 | low | 登记不修 | `spec.md:248-251` 的「只改模板/适配器/自述/测试，不碰 src/」易被读成「无 code_hits」；实际 `templates/**`、`plugin/**` 在 `require_change_for` 内（`.witnessloop/policy.json:8-12`），改动前后都会要求同一批 stage manifest |
 | L7 | low | 登记不修 | 「已结束的轮」与「已收口的轮」未严格区分（`design.md:91`、`spec.md:123`）；定义「轮 = 完整闭环」已隐含收口，但建议把计数口径写成「已收口」以免把 BLOCKED 终结误算进 20 |
 
+> 作者在 `6a8deee` 中顺手修了 L1–L7（见 `design.md:444-466` 的 Pre-Implementation Review 与第 2 轮验证）；本表保留第 1 轮开批时的登记状态。
+
 ### 第 1 轮后 · 收口确认
+
+> 第 1 轮开批时的状态；第 2 轮验证后本轮已收口，下一次开批为空 ⇒ `PASS`（见下）。
 
 **不适用：本轮未收口。** 按 I10，报告 schema 必须允许轮内报告；本报告不伪造一个空的「收口确认」。
 `CHANGES_REQUESTED` 只是轮内状态，不是出口（`design.md:134`、`spec.md:171-173`）。
 
-### 出口
+### 第 1 轮 · 出口（历史）
 
-**未定（轮内状态）。** 本报告不是 `PASS` / `BLOCKED` / 超上限 `BLOCKED` 中的任何一个出口；作者修复
-并全部验证通过后，本轮才收口，再由下一次开批决定 `PASS` 或下一轮。
+**未定（第 1 轮开批时的轮内状态）。** 作者修复并全部验证通过后，本轮才收口；第 2 轮验证后已收口并
+`PASS`（见下）。
+
+---
+
+## 第 2 轮 · 验证（第 1 轮批次 I1–I12 的修复验证；按新模型仍是第 1 轮，不是新开批）
+
+- **验证对象**: `bad76d8` → `6a8deee` 的修复差异；工作树 `HEAD 6a8deee`，审阅开始时
+  `git status --porcelain` 为空。
+- **修复提交**: `6a8deee`（作者整合 I1–I12 的单一提交）。
+  `git diff --stat bad76d8..HEAD -- openspec/changes/convergence-based-stop/` 显示
+  design / proposal / tasks / spec 与报告变更；`reviews/grill-design.md` 自 `bad76d8` 起未改
+  （`git diff --stat` 为空）。
+- **验证方式**: **只核对 I1–I12 是否修好**；不扫描新问题、不扩批。逐条用 `nl -ba` / `grep -n`
+  核对当前文本；用 `git diff bad76d8..HEAD -- openspec/changes/convergence-based-stop/` 看差异；
+  重跑全量测试。
+- **范围注意**: C/D 批次（模板/适配器/测试实现）尚未执行；I4/I5/I6 按其**计划/测试策略**验收——
+  只看 design/proposal/tasks 是否写死，不要求 `tests/test_convergence_stop.py`、
+  `plugin/commands/review-loop.md` 等已经改好。
+
+### I1–I12 逐条结果
+
+| id | 结果 | 当前证据（HEAD `6a8deee`） | 修复提交 |
+|---|---|---|---|
+| I1 | **已修好** | `tasks.md:32-36` B2 已改为批次模型 + 20 上限 + 第 20 轮超上限 `BLOCKED` + `CHANGES_REQUESTED` 轮内；`tasks.md:107-110` V5c | `6a8deee` |
+| I2 | **已修好** | `design.md:78-84` 终止点定义；`design.md:101-106` 第 20 轮自身终止点 + 收口确认前状态；`design.md:146` 出口表；`spec.md:35-41,140-144,158-167,169-173`（含「第一次未修好但有新方案 ⇒ 同轮继续」Scenario） | `6a8deee` |
+| I3 | **已修好** | `design.md:78-84` 定义「再次（第二次及以后）」与「新的、可验证的修复方案」；`design.md:227-228` D2；`spec.md:35-41` | `6a8deee` |
+| I4 | **已修好** | `design.md:349-354` 补 `N 轮封顶` / `或封顶` / `**封顶**` + 裸 `封顶` 行级规则与 5 行已知漏网点；`tasks.md:51-53`；`proposal.md:149` | `6a8deee` |
+| I5 | **已修好** | `design.md:341-344` 明确「显式 allowlist，不做全仓减排除」；`design.md:355-359` 七要素→文件映射；`tasks.md:54-61` | `6a8deee` |
+| I6 | **已修好** | `design.md:310-311` 限定 `templates/review-loop.md:150`；`design.md:331-333` 适配器 `:22` 改 1–8、`:23`/`:63` 限定；`proposal.md:113-115`；`tasks.md:60` 适配器守卫（实际文件属 C 批） | `6a8deee` |
+| I7 | **已修好** | `design.md:264-279` D6 改为「不新增正文解析」并列出 `stage=grill` 既有正文判据；`design.md:378-380`；`spec.md:274-290`；`proposal.md:80-88,141-142`；`tasks.md:4` | `6a8deee` |
+| I8 | **已修好** | `design.md:62` 初次开批记作收口确认；`design.md:107-110` 初次开批 `R0-*`、第 20 轮后 `C-*`；`design.md:197-202`；`spec.md:17-18,145-148,180-183,227-228` | `6a8deee` |
+| I9 | **已修好** | `design.md:85-89` 所有 deferred medium+ 写延后理由、安全项额外写；`design.md:181` 表加「延后理由」；`design.md:222-224`；`spec.md:78-80,217` | `6a8deee` |
+| I10 | **已修好** | `design.md:149-150` 轮内 verdict / 闭环出口分开；`design.md:168-194` 报告模板含两者与 BLOCKED 不伪造收口确认；`spec.md:211-225,203-207` | `6a8deee` |
+| I11 | **已修好** | `design.md:203-204` 设计环对应物三选一；`design.md:258-259` D5；`spec.md:30-32,251-253,268-272` | `6a8deee` |
+| I12 | **已修好** | `design.md:254-257` 修复面含 design/proposal/spec/tasks/grill-design；`spec.md:247-250`；`tasks.md:39-41` B4 | `6a8deee` |
+
+**L1–L7 抽查**：作者在 `6a8deee` 中顺手修了 `proposal.md:94-95`（`BLOCKED` 新成因）、
+`design.md:336-337`（`docs/gate.md:715-716` 机械接受≠出口）、`design.md:184`（累积登记链接格式）、
+`design.md:363-364`（变异「至少 1 failed」）、`design.md:322-323`（用户裁决记录位）、
+`design.md:386-388` + `spec.md:304-306`（`code_hits`）、`design.md:63,99`（已收口）。
+与第 1 轮登记一致；均为 low，不阻塞。
+
+### 验证用的命令 / 证据
+
+```text
+$ git status --porcelain=v1
+$ git rev-parse HEAD
+6a8deeeb02827c4660d397ec40dee9cc9b49dc2d
+$ git rev-parse origin/main
+46e45b446ca92ea84838490e535a41c529994526
+
+$ git diff --stat bad76d8..HEAD -- openspec/changes/convergence-based-stop/
+ design.md                            | 229 +++++++++----
+ proposal.md                          |  33 ++-
+ reviews/grill-adversarial.md         | 1464 ++++++++------------
+ specs/review-termination/spec.md     | 127 +++++---
+ tasks.md                             |  48 ++-
+ 5 files changed, 848 insertions(+), 1053 deletions(-)
+
+$ git diff --stat bad76d8..HEAD -- openspec/changes/convergence-based-stop/reviews/grill-design.md
+（空：grill 决策记录未改）
+
+$ nl -ba openspec/changes/convergence-based-stop/design.md | sed -n '62p;78,89p;99,114p;146,150p;168,204p;227,228p;254,259p;264,279p;310,311p;331,333p;341,354p;355,359p;378,380p'
+$ nl -ba openspec/changes/convergence-based-stop/specs/review-termination/spec.md | sed -n '17,18p;35,41p;78,80p;140,148p;158,173p;180,183p;203,228p;247,253p;268,272p;274,290p;304,306p'
+$ nl -ba openspec/changes/convergence-based-stop/tasks.md | sed -n '32,42p;50,61p;68p;107,110p'
+$ nl -ba openspec/changes/convergence-based-stop/proposal.md | sed -n '80,88p;94,95p;113,115p;141,142p;148,149p'
+$ grep -n '无轮数上限\|已结束的轮\|非空则成为下一轮\|同一项再次\|超过 20 轮' openspec/changes/convergence-based-stop/{design.md,proposal.md,tasks.md,specs/review-termination/spec.md}
+$ grep -n '封顶' openspec/changes/convergence-based-stop/specs/review-termination/spec.md
+（无输出：spec 不在词表命中面）
+```
+
+全量测试（设计阶段，HEAD `6a8deee`）：
+
+```text
+$ /home/happy/.local/bin/uv run pytest -q
+........................................................................ [ 69%]
+........................................................................ [ 79%]
+........................................................................ [ 89%]
+........................................................................ [ 99%]
+...                                                                      [100%]
+723 passed in 72.62s (0:01:12)
+```
+
+`grill-design.md` 正文完备性（未改，复用第 1 轮证据）：
+
+```text
+$ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop.evidence import grill_evidence_findings; p=Path('openspec/changes/convergence-based-stop/reviews/grill-design.md'); print(grill_evidence_findings(p.read_text(encoding='utf-8'), report_path=str(p)))"
+[]
+```
+
+## 第 2 轮 · 批次
+
+**空批：0 条 medium+。** 对当前 `design.md` / `proposal.md` / `tasks.md` / `spec.md` 做完整审阅后，
+未发现新的 medium+；只发现下列 low/nit。按新模型，下一次开批为空 ⇒ **`PASS`**，不消耗轮数；
+这是第 1 轮后的收口确认。
+
+## 第 2 轮 · 下一批（deferred）
+
+（无。下一次开批未发现 medium+；新增 deferred = 0。）
+
+## 第 2 轮 · 新增 low / nit 登记（不阻塞 PASS）
+
+| id | severity | 锚点 | 处置 | 理由 |
+|---|---|---|---|---|
+| N1 | low | `design.md:62` | 登记不修 | 「收口确认」定义仍写「非空则成为下一轮」，未写第 20 轮例外；`design.md:111-114` 的专门规则已明确非空 ⇒ 超上限 `BLOCKED`，不改变执行 |
+| N2 | low | `design.md:153-154` | 登记不修 | §2.5 的 R2 摘要仍写「同一项再次被判未修好」，未含「第一次失败 + 明确无新方案也触发」；`design.md:78-84` 与 `spec.md:35-41` 的规范句完整 |
+| N3 | low | `design.md:193` | 登记不修 | 报告模板的出口标签写「超过 20 轮」，第 20 轮自身未收口不是「超过」；`design.md:146` 的触发表已正确区分 |
+| N4 | low | `proposal.md:148` | 登记不修 | 「见验收的 11 个文件」是交叉引用，但验收段（`proposal.md:123-142`）没有枚举这 11 个；`design.md:345-348` 与 `tasks.md:54-57` 已枚举 |
+| N5 | low | `spec.md:220` | 登记不修 | 报告 Requirement 的收口确认标题只写 `### 第 <n> 轮后 · 收口确认`；初次开批的 `### 初次开批 · 收口确认` 在 `spec.md:145-148` 与 `:180-183`，建议在 Requirement 5 也点名 |
+| N6 | low | `design.md:445` | 登记不修 | Pre-Implementation Review 记了 run `grill-adversarial-reviewer-convergence-2026-10-17`，但 `grill-adversarial.md` 本身没有该 run id；manifest 应携带真实 `reviewer_run_id`，报告可补一节 |
+| N7 | low | `proposal.md:3-5`、`proposal.md:132-134` | 登记不修 | proposal 的状态行/验收仍只提 R1–R13 与原始旧词表；I1–I12 与扩展词表已在 design/tasks 写死，proposal 是摘要 |
+| N8 | low | `tasks.md:68` | 登记不修 | C5 写「步骤 5–7」，没有显式点名 `:22` 的 1–8 与 `:23` 的三态限定；`design.md:331-333`、`proposal.md:113-115` 与 C1 守卫已覆盖 |
+| N9 | low | `spec.md:243-256` | 登记不修 | Requirement 6 未包含 R5 的「`BLOCKED` 不授予写码许可」；`design.md:321-323`、`proposal.md:109`、`tasks.md:57` 已写，属模板/流程条件 |
+| N10 | low | `tasks.md:39-42` | 登记不修 | B4/B5 仍是 `[ ]`；本次 PASS 后可由作者勾选（B5 就是本轮验证），属流程记账，不是设计缺陷 |
+
+## 第 2 轮 · 尝试证伪但未成立的方向（3 个）
+
+1. **第 20 轮时序仍会被第一次失败提前终结？** 未成立：`design.md:101-106` 只把「达到 §2.2 第 3 步
+   验证重试终止点」作为触发；`spec.md:164-167` 明确「第一次 `未修好` 但开发者提交新 commit +
+   先红后绿测试 ⇒ 同轮继续」。I2 的时序漏洞已收窄。
+2. **反断言仍漏已知旧措辞？** 未成立：`design.md:349-354` 的裸 `封顶` 行级规则覆盖
+   `templates/grill.md:21`、`templates/review-loop.md:101`、`docs/design.md:25`、两条测试；并显式
+   放行 `docs/gate.md:407/554` 与 `docs/design.md:85`。allowlist 只扫 11 个文件，不做全仓减排除
+   （`design.md:341-344`）。I4/I5 的计划层面已闭合。
+3. **机械门禁诚实边界仍在过度承诺？** 未成立：`design.md:264-279`、`spec.md:274-290`、
+   `proposal.md:80-88` 统一为「不新增正文解析」，并列出 `stage=grill` 既有正文判据
+   （`evidence.py:259-330`）与 `building`/`grill-adversarial` 只判存在（`evidence.py:373-380`）。
+   代码证据与文本一致。
+
+## 出口
+
+**PASS**。第 1 轮 I1–I12 全部已修好；第 2 次开批为空（0 条 medium+），low/nit 不阻塞。
 
 ---
 
@@ -507,7 +642,10 @@ $ nl -ba .witnessloop/policy.json | sed -n '8,12p'
 
 ---
 
-## 结论
+## 第 1 轮结论（历史；已被第 2 轮 PASS 取代）
+
+> 以下是第 1 轮开批时的结论；I1–I12 已在 `6a8deee` 修复并经第 2 轮验证，最终结果为 `PASS`
+> （见上方「第 2 轮 · 验证」与「出口」）。保留于此仅为审计历史。
 
 ### 必须修改项（12 条，medium+）
 
