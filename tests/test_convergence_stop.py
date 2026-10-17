@@ -55,6 +55,19 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+#: design §4.4 的「七要素 → 文件映射」：每个 allowlist 文件必须携带的措辞。
+FILE_MAPPING = (
+    (REVIEW_LOOP, ("批次", "medium", "deferred", "20")),
+    (GRILL, ("批次", "20", "frontier")),
+    (ADAPTER_REVIEW_LOOP, ("批次", "deferred", "20")),
+    (PLUGIN / "commands/grill.md", ("批次", "deferred")),
+    (PLUGIN / "README.md", ("批次", "20")),
+    (REPO_ROOT / "README.md", ("批次", "20")),
+    (REPO_ROOT / "docs/design.md", ("批次", "20")),
+    (REPO_ROOT / "docs/gate.md", ("批次", "20")),
+)
+
+
 @pytest.mark.parametrize("path", NORMATIVE, ids=lambda p: str(p.relative_to(REPO_ROOT)))
 def test_normative_surfaces_drop_the_old_round_cap(path: Path):
     text = _read(path)
@@ -129,6 +142,37 @@ def test_plugin_review_loop_adapter_runs_all_template_steps():
     text = _read(ADAPTER_REVIEW_LOOP)
     assert "步骤 1–6" not in text
     assert "1–8" in text or "1-8" in text
+
+
+def test_review_loop_template_has_eight_execution_steps():
+    """适配器按「步骤 1–8」执行；模板必须真的有 8 个执行步骤（building R1-1）。"""
+    text = _read(REVIEW_LOOP)
+    for index in range(1, 9):
+        assert f"### {index}." in text, f"templates/review-loop.md 缺第 {index} 步"
+
+
+def test_review_loop_template_security_exception_is_shall():
+    """安全例外命中时是 SHALL BLOCKED，不是可选的 MAY（building R1-2）。"""
+    text = _read(REVIEW_LOOP)
+    assert "验证失去意义" in text
+    assert "SHALL 以" in text and "BLOCKED" in text
+    assert "可 `BLOCKED`" not in text
+
+
+@pytest.mark.parametrize(
+    "path,terms",
+    FILE_MAPPING,
+    ids=[str(path.relative_to(REPO_ROOT)) for path, _ in FILE_MAPPING],
+)
+def test_normative_files_carry_their_required_terms(path: Path, terms: tuple[str, ...]):
+    """design §4.4 的七要素 → 文件映射：每个 allowlist 文件都有正断言（building R1-4）。"""
+    text = _read(path)
+    rel = path.relative_to(REPO_ROOT)
+    for term in terms:
+        assert term in text, f"{rel} 缺映射要求的 {term!r}"
+    if path in (GRILL, ADAPTER_REVIEW_LOOP, PLUGIN / "README.md", REPO_ROOT / "README.md",
+                REPO_ROOT / "docs/design.md", REPO_ROOT / "docs/gate.md"):
+        assert "建议重开" in text or "建议推倒重开" in text, f"{rel} 缺「建议重开」"
 
 
 def test_spec_requirements_cover_the_new_model():

@@ -1,10 +1,10 @@
 # Design: convergence-based-stop（有界批次 × 20 轮上限）
 
-> **状态：按用户 2026-10-17 拍板的新模型重写；grill（`reviews/grill-design.md`）的 R1–R13
-> 与对抗 R1（`reviews/grill-adversarial.md`）的 I1–I12 已逐条整合（见文末
-> `## Pre-Implementation Review`）。** 旧版设计（收敛判据 / 问题账本 / 无限轮）与其评审产物
-> **全部作废**；旧文件保留在 git 历史（旧分支提交 `9acdf2b` 与重写提交 `20f1089`），
-> 不参与本 change 的证据。
+> **状态：按用户 2026-10-17 拍板的新模型重写；grill（`reviews/grill-design.md`）的 R1–R13、
+> 对抗 R1（`reviews/grill-adversarial.md`）的 I1–I12、实现后 R1（`reviews/building-review.md`）
+> 的 R1-1–R1-4 已逐条整合（见文末 `## Pre-Implementation Review`）。** 旧版设计（收敛判据 /
+> 问题账本 / 无限轮）与其评审产物**全部作废**；旧文件保留在 git 历史（旧分支提交 `9acdf2b`
+> 与重写提交 `20f1089`），不参与本 change 的证据。
 > 关联 issue：witnessloop **#24**；基线：`origin/main` `46e45b4`（2026-10-17 fetch）。
 >
 > **用户已经拍板、本设计不再重开的参数**：
@@ -85,7 +85,8 @@
    - 验证期间发现的新问题 ⇒ 只写入 `deferred`（medium+）或 low/nit 登记表；
      **不得**当场作为本轮阻塞项提出，**不得**扩大 `B_n`。
      **安全漏洞的例外（R3）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身
-     不安全」才可 `BLOCKED`；否则仍进 `deferred`。**所有** deferred medium+ 的「延后理由」列
+     不安全」⇒ SHALL 以 `BLOCKED` + 成因终结；否则仍进 `deferred`。**所有** deferred medium+
+     的「延后理由」列
      都要写「为什么可以延后一轮」；安全项额外写「为什么晚一轮仍安全」（I9）。
 4. **收口**：`B_n` 全部为 `已修好` ⇒ 本轮结束，回到第 1 步做下一次开批（含 deferred）。
    **下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表**：每个 deferred medium+ SHALL
@@ -219,8 +220,9 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 - **理由**：这是「一轮有界」的关键；否则审阅者可以在验证时不断追加，轮次仍不可数。
 - **边界**：验证只允许改「验证状态」和 deferred / low/nit 登记表；批次成员不变。
-- **例外（R3/I9）**：只有「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」才可
-  按 `BLOCKED` 终结；其余安全漏洞仍进 deferred。所有 deferred medium+ 的「延后理由」列都要
+- **例外（R3/I9）**：「该新问题使当前轮的验证失去意义，或继续实现/验证本身不安全」时
+  SHALL 以 `BLOCKED` + 成因终结；其余安全漏洞仍进 deferred。所有 deferred medium+ 的
+  「延后理由」列都要
   写「为什么可以延后一轮」；安全项额外写「为什么晚一轮仍安全」。
 - **传递硬规则（R9）**：下一次开批 SHALL 先读上一轮的 deferred 与 low/nit 表；每个 deferred
   medium+ SHALL 以原 id 出现在下一轮批次，或出现在本轮 `BLOCKED` 的成因里。
@@ -464,6 +466,22 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 - **L1–L7** 已顺手修：`BLOCKED` 新成因（proposal）、`docs/gate.md:715-716` 机械接受≠出口、
   累积登记链接格式、变异验证改为「至少 1 failed」、用户裁决记录位、`require_change_for` 触发面、
   「已结束」→「已收口」。
+
+> ⚠️ 报告 `reviews/grill-adversarial.md` 在 building R1-3 后按新 schema 重排：
+> 原 `I1–I12` → `R1-1–R1-12`；`L1–L7` → `R1-13–R1-19`；`N1–N10` → `C-1–C-10`。
+> 本文的 `I1–I12` 仍指开批时的原 id。
+
+**Building R1（`reviews/building-review.md`，run `building-reviewer-convergence-2026-10-17`，
+`CHANGES_REQUESTED` → 已整合）**：
+
+- **R1-1** 适配器「步骤 1–8」与模板 7 步不一致 → 模板拆出第 8 步「收尾」；测试加
+  `### 1.`–`### 8.` 八步守卫（`templates/review-loop.md:121,164`、`tests/test_convergence_stop.py`）。
+- **R1-2** 安全例外模态冲突 → 模板/design 统一为 `SHALL 以 BLOCKED + 成因终结`
+  （`templates/review-loop.md:105-106`、`design.md:87-88,223`、test 守卫）。
+- **R1-3** 首份 dogfood 报告 schema 不规范 → 报告按新 schema 重排小节标题与 id（R1-* / C-*），
+  加 `## Reviewer` 与重排说明；同轮验证表标注「开批时快照」，最终复验表保留。
+- **R1-4** 七要素 → 文件映射只部分落地 → `plugin/commands/grill.md` 补 `deferred`/下一批、
+  `docs/gate.md` 补「批次」；`tests/test_convergence_stop.py` 加参数化映射测试（8 个文件）。
 
 **停轮门**：无新增待拍板问题。用户 2026-10-17 的四个事项已记入 `grill-design.md` 的
 `## User Confirmation`。

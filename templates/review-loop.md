@@ -102,8 +102,8 @@ git merge-base HEAD <主干>         # base，manifest 用
   - medium+ ⇒ 只写入 `### 第 <n> 轮 · 下一批（deferred）`，**不得**当场要求修复，
     **不得**扩大 `B_n`；
   - low/nit ⇒ 只写入登记表；
-  - **例外**：该新问题使当前轮验证失去意义，或继续实现/验证本身不安全 ⇒ 可 `BLOCKED`，
-    并在成因里写明为什么不能 deferred；其余安全漏洞仍进 deferred。
+  - **例外**：该新问题使当前轮验证失去意义，或继续实现/验证本身不安全 ⇒ SHALL 以
+    `BLOCKED` + 成因终结，并在成因里写明为什么不能 deferred；其余安全漏洞仍进 deferred。
   - **延后理由**：所有 deferred medium+ 都要在 `延后理由` 列写「为什么可以延后一轮」；
     安全项额外写「为什么晚一轮仍安全」。
 - **不得静默降级**：验证期认为某条定级错误，只能按原 severity 要求修完，或 `BLOCKED`
@@ -118,7 +118,7 @@ git merge-base HEAD <主干>         # base，manifest 用
 - **轮数按 change（且按环）累计**：后续报告保留前序轮次，或引用同一份叠写报告；
   换审阅者 run / 另写一份从第 1 轮开始的新报告不得重置计数。
 
-### 7. 出口与收尾
+### 7. 出口
 
 **出口只有三种**：
 
@@ -160,6 +160,8 @@ PASS | BLOCKED（成因：…） | BLOCKED（超过 20 轮，建议重开设计�
 
 `id` 形如 `R<首次出现轮次>-<序号>`；deferred 项进入下一轮批次时沿用原 id。初次开批的
 low/nit 用 `R0-<序号>`；第 20 轮收口后的收口确认用 `C-<序号>`（或 `R20-C<序号>`）。
+
+### 8. 收尾
 
 跑 `witnessloop manifest build` 产出 manifest：
 

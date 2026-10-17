@@ -1,7 +1,15 @@
 # 设计对抗验证: convergence-based-stop
 
-## Verdict
-**PASS**（第 1 轮 I1–I12 全部已修好；第 2 次开批为空）
+## Reviewer
+- run id: `grill-adversarial-reviewer-convergence-2026-10-17`
+- 时间: 2026-10-17（UTC）
+- 被检 revision: 第 1 轮 `bad76d8`；修复 `6a8deee`；基线 `origin/main` `46e45b4`
+- 零记忆声明: 未参与作者会话；只读仓库文本与命令输出。
+- **schema 重排说明（building R1-3）**：本报告在 building review 后按新 schema 重排小节标题与 id；
+  发现与结论未改。原 `I1–I12` → `R1-1–R1-12`；`L1–L7` → `R1-13–R1-19`；`N1–N10` → `C-1–C-10`。
+
+## 本轮判定（verdict）
+**PASS**（第 1 轮 R1-1–R1-12 全部已修好；收口确认为空）
 
 ## 第 1 轮对抗验证
 
@@ -19,104 +27,102 @@
 
 | id | severity | 锚点 | 问题摘要 |
 |---|---|---|---|
-| I1 | 高 | `tasks.md:32-33` | B2 仍写「跑到收敛（无轮数上限）」，与设计环 20 上限直接矛盾 |
-| I2 | 高 | `design.md:91-93`、`spec.md:127-129` | 「第 20 轮自身未收口」的规范触发过宽，和同轮重试规则冲突 |
-| I3 | 中 | `design.md:75-77`、`spec.md:29-30` | R2 终止点（「再次」+「新的可验证修复方案」）不可复核 |
-| I4 | 高 | `design.md:303-304`、`tasks.md:46` | 反断言词表漏掉已知旧措辞（裸「封顶」、「N 轮封顶」） |
-| I5 | 中 | `design.md:295-302`、`tasks.md:47-52` | 扫描面与排除名单两种口径并存，不可直接实现 |
-| I6 | 中 | `plugin/commands/review-loop.md:22-23`、`templates/review-loop.md:150` | 适配器仍写「步骤 1–6」；两处「三态」未进落点表 |
-| I7 | 中 | `design.md:232-239`、`spec.md:231-239` | 机械门禁诚实边界写错：`grill` 阶段实际会解析报告正文 |
-| I8 | 中 | `design.md:61,169-170,179`、`spec.md:189-190,193` | 零轮 PASS 与第 20 轮收口确认后的 id/小节编号未定义 |
-| I9 | 中 | `design.md:80-81,161-163`、`spec.md:66-68,186` | deferred「延后理由」的范围不一致，且报告表没有该列 |
-| I10 | 中 | `design.md:150,169-173`、`spec.md:182-191` | 报告 schema 把「轮内 verdict」与「终结出口」混为一谈 |
-| I11 | 中 | `design.md:71,158,223-224`、`spec.md:25,185,210-214` | 设计环没有定义「能变红的回归测试」的对应物，同构不完整 |
-| I12 | 中 | `design.md:225-227`、`spec.md:212-214`、`tasks.md:37` | 设计环修复面只写 `design.md` / `grill-design.md`，漏 proposal/spec/tasks |
+| R1-1 | 高 | `tasks.md:32-33` | B2 仍写「跑到收敛（无轮数上限）」，与设计环 20 上限直接矛盾 |
+| R1-2 | 高 | `design.md:91-93`、`spec.md:127-129` | 「第 20 轮自身未收口」的规范触发过宽，和同轮重试规则冲突 |
+| R1-3 | 中 | `design.md:75-77`、`spec.md:29-30` | R2 终止点（「再次」+「新的可验证修复方案」）不可复核 |
+| R1-4 | 高 | `design.md:303-304`、`tasks.md:46` | 反断言词表漏掉已知旧措辞（裸「封顶」、「N 轮封顶」） |
+| R1-5 | 中 | `design.md:295-302`、`tasks.md:47-52` | 扫描面与排除名单两种口径并存，不可直接实现 |
+| R1-6 | 中 | `plugin/commands/review-loop.md:22-23`、`templates/review-loop.md:150` | 适配器仍写「步骤 1–6」；两处「三态」未进落点表 |
+| R1-7 | 中 | `design.md:232-239`、`spec.md:231-239` | 机械门禁诚实边界写错：`grill` 阶段实际会解析报告正文 |
+| R1-8 | 中 | `design.md:61,169-170,179`、`spec.md:189-190,193` | 零轮 PASS 与第 20 轮收口确认后的 id/小节编号未定义 |
+| R1-9 | 中 | `design.md:80-81,161-163`、`spec.md:66-68,186` | deferred「延后理由」的范围不一致，且报告表没有该列 |
+| R1-10 | 中 | `design.md:150,169-173`、`spec.md:182-191` | 报告 schema 把「轮内 verdict」与「终结出口」混为一谈 |
+| R1-11 | 中 | `design.md:71,158,223-224`、`spec.md:25,185,210-214` | 设计环没有定义「能变红的回归测试」的对应物，同构不完整 |
+| R1-12 | 中 | `design.md:225-227`、`spec.md:212-214`、`tasks.md:37` | 设计环修复面只写 `design.md` / `grill-design.md`，漏 proposal/spec/tasks |
 
-### 第 1 轮 · 验证
+### 第 1 轮 · 验证（开批时快照；最终结果见下）
 
-本轮开批时的状态；以下各项已由 `6a8deee` 修复，逐条验证见 `## 第 2 轮 · 验证`。验证时只核对这批
+本轮开批时的状态；以下各项已由 `6a8deee` 修复，逐条验证见 `## 复验 · 验证`。验证时只核对这批
 「是否修好」，不扫描/不追加新问题（新问题进 deferred）。
 
 | id | 结果 | 修复提交 | 回归测试 |
 |---|---|---|---|
-| I1 | 待验证 | — | 待定 |
-| I2 | 待验证 | — | 待定 |
-| I3 | 待验证 | — | 待定 |
-| I4 | 待验证 | — | 待定 |
-| I5 | 待验证 | — | 待定 |
-| I6 | 待验证 | — | 待定 |
-| I7 | 待验证 | — | 待定 |
-| I8 | 待验证 | — | 待定 |
-| I9 | 待验证 | — | 待定 |
-| I10 | 待验证 | — | 待定 |
-| I11 | 待验证 | — | 待定 |
-| I12 | 待验证 | — | 待定 |
+| R1-1 | 待验证 | — | 待定 |
+| R1-2 | 待验证 | — | 待定 |
+| R1-3 | 待验证 | — | 待定 |
+| R1-4 | 待验证 | — | 待定 |
+| R1-5 | 待验证 | — | 待定 |
+| R1-6 | 待验证 | — | 待定 |
+| R1-7 | 待验证 | — | 待定 |
+| R1-8 | 待验证 | — | 待定 |
+| R1-9 | 待验证 | — | 待定 |
+| R1-10 | 待验证 | — | 待定 |
+| R1-11 | 待验证 | — | 待定 |
+| R1-12 | 待验证 | — | 待定 |
 
-### 第 1 轮 · 下一批（deferred）
+### 第 1 轮 · 下一批（deferred，开批时快照）
 
 （无。本轮尚未进入验证；按新模型，验证期发现的新问题才进本表，且不得扩当前批次。）
 
-### low / nit 登记
+### 第 1 轮 · low / nit 登记（开批时快照）
 
 | id | severity | 处置 | 理由 |
 |---|---|---|---|
-| L1 | low | 登记不修（建议随 I2 修） | `proposal.md:91` 的「只补超上限这一成因」与 R2/R3 新增成因不一致；不改不影响 spec 的可执行性 |
-| L2 | low | 登记不修（建议顺手修） | `docs/gate.md:715-716` 的「PASS / CHANGES_REQUESTED 都合格」是机械口径；落点表只列 `:716`，读者仍可能把 `CHANGES_REQUESTED` 当出口 |
-| L3 | low | 登记不修 | 「逐项链接到首次登记的轮次小节」没有规定 `文件#锚点` 格式；靠 id `R<n>-<k>` 仍可人工追，但第三方复核成本偏高 |
-| L4 | low | 登记不修 | 变异验证写死「1 failed」偏脆；同一变异可能触发多条正向/反向断言。应改为「新守卫至少 1 failed」并指定目标测试 |
-| L5 | low | 登记不修 | R5 已写「`BLOCKED` + 成因 + 用户明确裁决继续」，但没有规定用户裁决记录在哪（建议 `grill-design.md` 的 `## User Confirmation`） |
-| L6 | low | 登记不修 | `spec.md:248-251` 的「只改模板/适配器/自述/测试，不碰 src/」易被读成「无 code_hits」；实际 `templates/**`、`plugin/**` 在 `require_change_for` 内（`.witnessloop/policy.json:8-12`），改动前后都会要求同一批 stage manifest |
-| L7 | low | 登记不修 | 「已结束的轮」与「已收口的轮」未严格区分（`design.md:91`、`spec.md:123`）；定义「轮 = 完整闭环」已隐含收口，但建议把计数口径写成「已收口」以免把 BLOCKED 终结误算进 20 |
+| R1-13 | low | 登记不修（建议随 R1-2 修） | `proposal.md:91` 的「只补超上限这一成因」与 R2/R3 新增成因不一致；不改不影响 spec 的可执行性 |
+| R1-14 | low | 登记不修（建议顺手修） | `docs/gate.md:715-716` 的「PASS / CHANGES_REQUESTED 都合格」是机械口径；落点表只列 `:716`，读者仍可能把 `CHANGES_REQUESTED` 当出口 |
+| R1-15 | low | 登记不修 | 「逐项链接到首次登记的轮次小节」没有规定 `文件#锚点` 格式；靠 id `R<n>-<k>` 仍可人工追，但第三方复核成本偏高 |
+| R1-16 | low | 登记不修 | 变异验证写死「1 failed」偏脆；同一变异可能触发多条正向/反向断言。应改为「新守卫至少 1 failed」并指定目标测试 |
+| R1-17 | low | 登记不修 | R5 已写「`BLOCKED` + 成因 + 用户明确裁决继续」，但没有规定用户裁决记录在哪（建议 `grill-design.md` 的 `## User Confirmation`） |
+| R1-18 | low | 登记不修 | `spec.md:248-251` 的「只改模板/适配器/自述/测试，不碰 src/」易被读成「无 code_hits」；实际 `templates/**`、`plugin/**` 在 `require_change_for` 内（`.witnessloop/policy.json:8-12`），改动前后都会要求同一批 stage manifest |
+| R1-19 | low | 登记不修 | 「已结束的轮」与「已收口的轮」未严格区分（`design.md:91`、`spec.md:123`）；定义「轮 = 完整闭环」已隐含收口，但建议把计数口径写成「已收口」以免把 BLOCKED 终结误算进 20 |
 
-> 作者在 `6a8deee` 中顺手修了 L1–L7（见 `design.md:444-466` 的 Pre-Implementation Review 与第 2 轮验证）；本表保留第 1 轮开批时的登记状态。
+> 作者在 `6a8deee` 中顺手修了 R1-13–R1-19（见 `design.md:444-466` 的 Pre-Implementation Review 与复验）；本表保留第 1 轮开批时的登记状态。
 
-### 第 1 轮后 · 收口确认
+### 第 1 轮后 · 收口确认（开批时；最终见下方）
 
-> 第 1 轮开批时的状态；第 2 轮验证后本轮已收口，下一次开批为空 ⇒ `PASS`（见下）。
+> 开批时本轮尚未收口；复验后本轮已收口，下一次开批为空 ⇒ `PASS`（最终收口确认见下方
+> `## 第 1 轮后 · 收口确认（空批）`）。`CHANGES_REQUESTED` 只是轮内状态，不是出口。
 
-**不适用：本轮未收口。** 按 I10，报告 schema 必须允许轮内报告；本报告不伪造一个空的「收口确认」。
-`CHANGES_REQUESTED` 只是轮内状态，不是出口（`design.md:134`、`spec.md:171-173`）。
+### 第 1 轮 · 出口（开批时；轮内未定）
 
-### 第 1 轮 · 出口（历史）
-
-**未定（第 1 轮开批时的轮内状态）。** 作者修复并全部验证通过后，本轮才收口；第 2 轮验证后已收口并
+**未定（第 1 轮开批时的轮内状态）。** 作者修复并全部验证通过后，本轮才收口；复验后已收口并
 `PASS`（见下）。
 
 ---
 
-## 第 2 轮 · 验证（第 1 轮批次 I1–I12 的修复验证；按新模型仍是第 1 轮，不是新开批）
+## 第 1 轮 · 验证（R1-1–R1-12 的修复复验；同轮，不是新开批）
 
 - **验证对象**: `bad76d8` → `6a8deee` 的修复差异；工作树 `HEAD 6a8deee`，审阅开始时
   `git status --porcelain` 为空。
-- **修复提交**: `6a8deee`（作者整合 I1–I12 的单一提交）。
+- **修复提交**: `6a8deee`（作者整合 R1-1–R1-12 的单一提交）。
   `git diff --stat bad76d8..HEAD -- openspec/changes/convergence-based-stop/` 显示
   design / proposal / tasks / spec 与报告变更；`reviews/grill-design.md` 自 `bad76d8` 起未改
   （`git diff --stat` 为空）。
-- **验证方式**: **只核对 I1–I12 是否修好**；不扫描新问题、不扩批。逐条用 `nl -ba` / `grep -n`
+- **验证方式**: **只核对 R1-1–R1-12 是否修好**；不扫描新问题、不扩批。逐条用 `nl -ba` / `grep -n`
   核对当前文本；用 `git diff bad76d8..HEAD -- openspec/changes/convergence-based-stop/` 看差异；
   重跑全量测试。
-- **范围注意**: C/D 批次（模板/适配器/测试实现）尚未执行；I4/I5/I6 按其**计划/测试策略**验收——
+- **范围注意**: C/D 批次（模板/适配器/测试实现）尚未执行；R1-4/R1-5/R1-6 按其**计划/测试策略**验收——
   只看 design/proposal/tasks 是否写死，不要求 `tests/test_convergence_stop.py`、
   `plugin/commands/review-loop.md` 等已经改好。
 
-### I1–I12 逐条结果
+### R1-1–R1-12 逐条结果
 
 | id | 结果 | 当前证据（HEAD `6a8deee`） | 修复提交 |
 |---|---|---|---|
-| I1 | **已修好** | `tasks.md:32-36` B2 已改为批次模型 + 20 上限 + 第 20 轮超上限 `BLOCKED` + `CHANGES_REQUESTED` 轮内；`tasks.md:107-110` V5c | `6a8deee` |
-| I2 | **已修好** | `design.md:78-84` 终止点定义；`design.md:101-106` 第 20 轮自身终止点 + 收口确认前状态；`design.md:146` 出口表；`spec.md:35-41,140-144,158-167,169-173`（含「第一次未修好但有新方案 ⇒ 同轮继续」Scenario） | `6a8deee` |
-| I3 | **已修好** | `design.md:78-84` 定义「再次（第二次及以后）」与「新的、可验证的修复方案」；`design.md:227-228` D2；`spec.md:35-41` | `6a8deee` |
-| I4 | **已修好** | `design.md:349-354` 补 `N 轮封顶` / `或封顶` / `**封顶**` + 裸 `封顶` 行级规则与 5 行已知漏网点；`tasks.md:51-53`；`proposal.md:149` | `6a8deee` |
-| I5 | **已修好** | `design.md:341-344` 明确「显式 allowlist，不做全仓减排除」；`design.md:355-359` 七要素→文件映射；`tasks.md:54-61` | `6a8deee` |
-| I6 | **已修好** | `design.md:310-311` 限定 `templates/review-loop.md:150`；`design.md:331-333` 适配器 `:22` 改 1–8、`:23`/`:63` 限定；`proposal.md:113-115`；`tasks.md:60` 适配器守卫（实际文件属 C 批） | `6a8deee` |
-| I7 | **已修好** | `design.md:264-279` D6 改为「不新增正文解析」并列出 `stage=grill` 既有正文判据；`design.md:378-380`；`spec.md:274-290`；`proposal.md:80-88,141-142`；`tasks.md:4` | `6a8deee` |
-| I8 | **已修好** | `design.md:62` 初次开批记作收口确认；`design.md:107-110` 初次开批 `R0-*`、第 20 轮后 `C-*`；`design.md:197-202`；`spec.md:17-18,145-148,180-183,227-228` | `6a8deee` |
-| I9 | **已修好** | `design.md:85-89` 所有 deferred medium+ 写延后理由、安全项额外写；`design.md:181` 表加「延后理由」；`design.md:222-224`；`spec.md:78-80,217` | `6a8deee` |
-| I10 | **已修好** | `design.md:149-150` 轮内 verdict / 闭环出口分开；`design.md:168-194` 报告模板含两者与 BLOCKED 不伪造收口确认；`spec.md:211-225,203-207` | `6a8deee` |
-| I11 | **已修好** | `design.md:203-204` 设计环对应物三选一；`design.md:258-259` D5；`spec.md:30-32,251-253,268-272` | `6a8deee` |
-| I12 | **已修好** | `design.md:254-257` 修复面含 design/proposal/spec/tasks/grill-design；`spec.md:247-250`；`tasks.md:39-41` B4 | `6a8deee` |
+| R1-1 | **已修好** | `tasks.md:32-36` B2 已改为批次模型 + 20 上限 + 第 20 轮超上限 `BLOCKED` + `CHANGES_REQUESTED` 轮内；`tasks.md:107-110` V5c | `6a8deee` |
+| R1-2 | **已修好** | `design.md:78-84` 终止点定义；`design.md:101-106` 第 20 轮自身终止点 + 收口确认前状态；`design.md:146` 出口表；`spec.md:35-41,140-144,158-167,169-173`（含「第一次未修好但有新方案 ⇒ 同轮继续」Scenario） | `6a8deee` |
+| R1-3 | **已修好** | `design.md:78-84` 定义「再次（第二次及以后）」与「新的、可验证的修复方案」；`design.md:227-228` D2；`spec.md:35-41` | `6a8deee` |
+| R1-4 | **已修好** | `design.md:349-354` 补 `N 轮封顶` / `或封顶` / `**封顶**` + 裸 `封顶` 行级规则与 5 行已知漏网点；`tasks.md:51-53`；`proposal.md:149` | `6a8deee` |
+| R1-5 | **已修好** | `design.md:341-344` 明确「显式 allowlist，不做全仓减排除」；`design.md:355-359` 七要素→文件映射；`tasks.md:54-61` | `6a8deee` |
+| R1-6 | **已修好** | `design.md:310-311` 限定 `templates/review-loop.md:150`；`design.md:331-333` 适配器 `:22` 改 1–8、`:23`/`:63` 限定；`proposal.md:113-115`；`tasks.md:60` 适配器守卫（实际文件属 C 批） | `6a8deee` |
+| R1-7 | **已修好** | `design.md:264-279` D6 改为「不新增正文解析」并列出 `stage=grill` 既有正文判据；`design.md:378-380`；`spec.md:274-290`；`proposal.md:80-88,141-142`；`tasks.md:4` | `6a8deee` |
+| R1-8 | **已修好** | `design.md:62` 初次开批记作收口确认；`design.md:107-110` 初次开批 `R0-*`、第 20 轮后 `C-*`；`design.md:197-202`；`spec.md:17-18,145-148,180-183,227-228` | `6a8deee` |
+| R1-9 | **已修好** | `design.md:85-89` 所有 deferred medium+ 写延后理由、安全项额外写；`design.md:181` 表加「延后理由」；`design.md:222-224`；`spec.md:78-80,217` | `6a8deee` |
+| R1-10 | **已修好** | `design.md:149-150` 轮内 verdict / 闭环出口分开；`design.md:168-194` 报告模板含两者与 BLOCKED 不伪造收口确认；`spec.md:211-225,203-207` | `6a8deee` |
+| R1-11 | **已修好** | `design.md:203-204` 设计环对应物三选一；`design.md:258-259` D5；`spec.md:30-32,251-253,268-272` | `6a8deee` |
+| R1-12 | **已修好** | `design.md:254-257` 修复面含 design/proposal/spec/tasks/grill-design；`spec.md:247-250`；`tasks.md:39-41` B4 | `6a8deee` |
 
-**L1–L7 抽查**：作者在 `6a8deee` 中顺手修了 `proposal.md:94-95`（`BLOCKED` 新成因）、
+**R1-13–R1-19 抽查**：作者在 `6a8deee` 中顺手修了 `proposal.md:94-95`（`BLOCKED` 新成因）、
 `design.md:336-337`（`docs/gate.md:715-716` 机械接受≠出口）、`design.md:184`（累积登记链接格式）、
 `design.md:363-364`（变异「至少 1 failed」）、`design.md:322-323`（用户裁决记录位）、
 `design.md:386-388` + `spec.md:304-306`（`code_hits`）、`design.md:63,99`（已收口）。
@@ -170,54 +176,54 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
 []
 ```
 
-## 第 2 轮 · 批次
+## 第 1 轮后 · 收口确认（空批）
 
 **空批：0 条 medium+。** 对当前 `design.md` / `proposal.md` / `tasks.md` / `spec.md` 做完整审阅后，
 未发现新的 medium+；只发现下列 low/nit。按新模型，下一次开批为空 ⇒ **`PASS`**，不消耗轮数；
 这是第 1 轮后的收口确认。
 
-## 第 2 轮 · 下一批（deferred）
+### 第 1 轮 · 下一批（deferred，复验期）
 
 （无。下一次开批未发现 medium+；新增 deferred = 0。）
 
-## 第 2 轮 · 新增 low / nit 登记（不阻塞 PASS）
+### 第 1 轮 · low / nit 登记（复验期新增）
 
 | id | severity | 锚点 | 处置 | 理由 |
 |---|---|---|---|---|
-| N1 | low | `design.md:62` | 登记不修 | 「收口确认」定义仍写「非空则成为下一轮」，未写第 20 轮例外；`design.md:111-114` 的专门规则已明确非空 ⇒ 超上限 `BLOCKED`，不改变执行 |
-| N2 | low | `design.md:153-154` | 登记不修 | §2.5 的 R2 摘要仍写「同一项再次被判未修好」，未含「第一次失败 + 明确无新方案也触发」；`design.md:78-84` 与 `spec.md:35-41` 的规范句完整 |
-| N3 | low | `design.md:193` | 登记不修 | 报告模板的出口标签写「超过 20 轮」，第 20 轮自身未收口不是「超过」；`design.md:146` 的触发表已正确区分 |
-| N4 | low | `proposal.md:148` | 登记不修 | 「见验收的 11 个文件」是交叉引用，但验收段（`proposal.md:123-142`）没有枚举这 11 个；`design.md:345-348` 与 `tasks.md:54-57` 已枚举 |
-| N5 | low | `spec.md:220` | 登记不修 | 报告 Requirement 的收口确认标题只写 `### 第 <n> 轮后 · 收口确认`；初次开批的 `### 初次开批 · 收口确认` 在 `spec.md:145-148` 与 `:180-183`，建议在 Requirement 5 也点名 |
-| N6 | low | `design.md:445` | 登记不修 | Pre-Implementation Review 记了 run `grill-adversarial-reviewer-convergence-2026-10-17`，但 `grill-adversarial.md` 本身没有该 run id；manifest 应携带真实 `reviewer_run_id`，报告可补一节 |
-| N7 | low | `proposal.md:3-5`、`proposal.md:132-134` | 登记不修 | proposal 的状态行/验收仍只提 R1–R13 与原始旧词表；I1–I12 与扩展词表已在 design/tasks 写死，proposal 是摘要 |
-| N8 | low | `tasks.md:68` | 登记不修 | C5 写「步骤 5–7」，没有显式点名 `:22` 的 1–8 与 `:23` 的三态限定；`design.md:331-333`、`proposal.md:113-115` 与 C1 守卫已覆盖 |
-| N9 | low | `spec.md:243-256` | 登记不修 | Requirement 6 未包含 R5 的「`BLOCKED` 不授予写码许可」；`design.md:321-323`、`proposal.md:109`、`tasks.md:57` 已写，属模板/流程条件 |
-| N10 | low | `tasks.md:39-42` | 登记不修 | B4/B5 仍是 `[ ]`；本次 PASS 后可由作者勾选（B5 就是本轮验证），属流程记账，不是设计缺陷 |
+| C-1 | low | `design.md:62` | 登记不修 | 「收口确认」定义仍写「非空则成为下一轮」，未写第 20 轮例外；`design.md:111-114` 的专门规则已明确非空 ⇒ 超上限 `BLOCKED`，不改变执行 |
+| C-2 | low | `design.md:153-154` | 登记不修 | §2.5 的 R2 摘要仍写「同一项再次被判未修好」，未含「第一次失败 + 明确无新方案也触发」；`design.md:78-84` 与 `spec.md:35-41` 的规范句完整 |
+| C-3 | low | `design.md:193` | 登记不修 | 报告模板的出口标签写「超过 20 轮」，第 20 轮自身未收口不是「超过」；`design.md:146` 的触发表已正确区分 |
+| C-4 | low | `proposal.md:148` | 登记不修 | 「见验收的 11 个文件」是交叉引用，但验收段（`proposal.md:123-142`）没有枚举这 11 个；`design.md:345-348` 与 `tasks.md:54-57` 已枚举 |
+| C-5 | low | `spec.md:220` | 登记不修 | 报告 Requirement 的收口确认标题只写 `### 第 <n> 轮后 · 收口确认`；初次开批的 `### 初次开批 · 收口确认` 在 `spec.md:145-148` 与 `:180-183`，建议在 Requirement 5 也点名 |
+| C-6 | low | `design.md:445` | 登记不修 | Pre-Implementation Review 记了 run `grill-adversarial-reviewer-convergence-2026-10-17`，但 `grill-adversarial.md` 本身没有该 run id；manifest 应携带真实 `reviewer_run_id`，报告可补一节 |
+| C-7 | low | `proposal.md:3-5`、`proposal.md:132-134` | 登记不修 | proposal 的状态行/验收仍只提 R1–R13 与原始旧词表；R1-1–R1-12 与扩展词表已在 design/tasks 写死，proposal 是摘要 |
+| C-8 | low | `tasks.md:68` | 登记不修 | C5 写「步骤 5–7」，没有显式点名 `:22` 的 1–8 与 `:23` 的三态限定；`design.md:331-333`、`proposal.md:113-115` 与 C1 守卫已覆盖 |
+| C-9 | low | `spec.md:243-256` | 登记不修 | Requirement 6 未包含 R5 的「`BLOCKED` 不授予写码许可」；`design.md:321-323`、`proposal.md:109`、`tasks.md:57` 已写，属模板/流程条件 |
+| C-10 | low | `tasks.md:39-42` | 登记不修 | B4/B5 仍是 `[ ]`；本次 PASS 后可由作者勾选（B5 就是本轮验证），属流程记账，不是设计缺陷 |
 
-## 第 2 轮 · 尝试证伪但未成立的方向（3 个）
+## 收口确认 · 尝试证伪但未成立的方向（3 个）
 
 1. **第 20 轮时序仍会被第一次失败提前终结？** 未成立：`design.md:101-106` 只把「达到 §2.2 第 3 步
    验证重试终止点」作为触发；`spec.md:164-167` 明确「第一次 `未修好` 但开发者提交新 commit +
-   先红后绿测试 ⇒ 同轮继续」。I2 的时序漏洞已收窄。
+   先红后绿测试 ⇒ 同轮继续」。R1-2 的时序漏洞已收窄。
 2. **反断言仍漏已知旧措辞？** 未成立：`design.md:349-354` 的裸 `封顶` 行级规则覆盖
    `templates/grill.md:21`、`templates/review-loop.md:101`、`docs/design.md:25`、两条测试；并显式
    放行 `docs/gate.md:407/554` 与 `docs/design.md:85`。allowlist 只扫 11 个文件，不做全仓减排除
-   （`design.md:341-344`）。I4/I5 的计划层面已闭合。
+   （`design.md:341-344`）。R1-4/R1-5 的计划层面已闭合。
 3. **机械门禁诚实边界仍在过度承诺？** 未成立：`design.md:264-279`、`spec.md:274-290`、
    `proposal.md:80-88` 统一为「不新增正文解析」，并列出 `stage=grill` 既有正文判据
    （`evidence.py:259-330`）与 `building`/`grill-adversarial` 只判存在（`evidence.py:373-380`）。
    代码证据与文本一致。
 
-## 出口
+## 闭环出口
 
-**PASS**。第 1 轮 I1–I12 全部已修好；第 2 次开批为空（0 条 medium+），low/nit 不阻塞。
+**PASS**。第 1 轮 R1-1–R1-12 全部已修好；收口确认为空（0 条 medium+），low/nit 不阻塞。
 
 ---
 
 ## 逐条 issue
 
-### I1｜高｜B2 仍写「跑到收敛（无轮数上限）」
+### R1-1｜高｜B2 仍写「跑到收敛（无轮数上限）」
 
 - **锚点**: `tasks.md:32-33`；对照 `design.md:221-230`（D5：两个环共用同一模型，含 20 上限）
   与 `spec.md:208-217`（Requirement 6：设计对抗环 SHALL 使用同一套轮次模型）。
@@ -231,7 +237,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   建议推倒重开（revise the design）**；`CHANGES_REQUESTED` 是轮内状态，不是出口」。同时在 V5b 或 V1
   加一条反断言：`tasks.md` 不再出现「无轮数上限」「无限轮」。
 
-### I2｜高｜「第 20 轮自身未收口」的规范触发过宽，且与同轮重试规则冲突
+### R1-2｜高｜「第 20 轮自身未收口」的规范触发过宽，且与同轮重试规则冲突
 
 - **锚点**: `design.md:91-93`、`design.md:61`、`design.md:127-131`、`design.md:173`、
   `design.md:207-208`；`spec.md:127-129`、`spec.md:139-143`、`spec.md:165-169`。
@@ -253,7 +259,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   `BLOCKED`」。同步补 `design.md:61` 的例外、`design.md:131` / `proposal.md:56` / `design.md:173` 的
   表格行；并显式写出「第 20 轮收口后、收口确认前」的状态：**等待收口确认，不开启第 21 轮，不做修复**。
 
-### I3｜中｜R2 终止点（「再次」+「新的可验证修复方案」）不可复核
+### R1-3｜中｜R2 终止点（「再次」+「新的可验证修复方案」）不可复核
 
 - **锚点**: `design.md:75-77`、`design.md:136-137`；`spec.md:29-30`、`spec.md:168`。
 - **问题**: 触发条件写作「同一项在本轮内被**再次**判 `未修好`，且开发者拿不出**新的、可验证的
@@ -268,11 +274,11 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   - 「再次」：同一项在本轮内**第二次及以后**被判 `未修好`；若第一次判 `未修好` 时开发者就明确拿不出
     新方案，也立即触发（即「再次」不是必要条件，只是最常见路径）。
   - 「新的、可验证的修复方案」：实现环 = 新 commit + 一条在修复前红、修复后绿的回归测试（或可复现
-    失败的命令）；设计环 = 具体的文本修改 + 可复现的反例 / 文档守卫（见 I11）。
+    失败的命令）；设计环 = 具体的文本修改 + 可复现的反例 / 文档守卫（见 R1-11）。
   在报告中记录验证次数、每次的修复提交和测试；若开发者拒绝提供可验证方案，审阅者 SHALL `BLOCKED`。
   同步更新 `spec.md:29-30` 与 `design.md:136-137`。
 
-### I4｜高｜反断言词表漏掉已知旧措辞
+### R1-4｜高｜反断言词表漏掉已知旧措辞
 
 - **锚点**: `design.md:303-304`、`tasks.md:46`、`proposal.md:125-127`；未覆盖的现存旧措辞：
   `templates/grill.md:21`、`templates/review-loop.md:101`、`docs/design.md:25`、
@@ -291,9 +297,9 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
     （「路径深度封顶」）这两条与本规则无关的行；
   - 或逐条加正则：`N 轮封顶`、`或封顶`、`\*\*封顶\*\*`、以及两条测试里的裸 `封顶` 字面量。
   把 `templates/grill.md:21` 或 `docs/design.md:25` 加入变异验证的目标行；同步更新 design §4.4、
-  tasks C1、proposal 验收与 V4。变异验证的期望改为「新守卫至少 1 failed」（见 L4）。
+  tasks C1、proposal 验收与 V4。变异验证的期望改为「新守卫至少 1 failed」（见 R1-16）。
 
-### I5｜中｜扫描面与排除名单两种口径并存，不可直接实现
+### R1-5｜中｜扫描面与排除名单两种口径并存，不可直接实现
 
 - **锚点**: `design.md:295-302`、`tasks.md:47-52`、`proposal.md:128-129`、`proposal.md:140-141`。
 - **问题**: 设计同时写了：
@@ -315,7 +321,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   则把本 change 的 `design.md` / `proposal.md` / `tasks.md` / `reviews/**` 加入排除，并定义
   fixture 的行级排除机制。另加一张「七要素 → 必须出现的文件」映射表，避免对一行摘要做过度断言。
 
-### I6｜中｜适配器仍写「步骤 1–6」；两处「三态」未进落点表
+### R1-6｜中｜适配器仍写「步骤 1–6」；两处「三态」未进落点表
 
 - **锚点**: `plugin/commands/review-loop.md:22`（「按 `templates/review-loop.md` 的步骤 **1–6** 执行」）、
   `plugin/commands/review-loop.md:23`（「verdict 是**三态**」）、
@@ -337,7 +343,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   `plugin/commands/review-loop.md:22-23` 加入 proposal 落点表和 design §4.3；加一条测试守卫：
   适配器不得再出现「步骤 1–6」且必须出现「1–8」（或等价表述）。
 
-### I7｜中｜机械门禁诚实边界写错：`grill` 阶段实际会解析报告正文
+### R1-7｜中｜机械门禁诚实边界写错：`grill` 阶段实际会解析报告正文
 
 - **锚点**: `design.md:232-239`、`design.md:319`、`spec.md:231-239`、`proposal.md:79-80`、
   `proposal.md:84-85`、`proposal.md:134`；代码：`src/witnessloop/evidence.py:259-330`、
@@ -365,7 +371,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   （`.witnessloop/policy.json:8-12`），所以改动前后都会要求同一批 stage manifest；该 scenario 说的是
   「不新增 finding 类别」，不是「没有 code_hits」。
 
-### I8｜中｜零轮 PASS 与收口确认后的 id / 小节编号未定义
+### R1-8｜中｜零轮 PASS 与收口确认后的 id / 小节编号未定义
 
 - **锚点**: `design.md:61`、`design.md:68`、`design.md:169-170`、`design.md:179`；
   `spec.md:17`、`spec.md:32`、`spec.md:156-159`、`spec.md:189-190`、`spec.md:193`。
@@ -385,7 +391,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   同步更新 `design.md:169-170,179` 与 `spec.md:189-190,193`。把「收口确认」的定义从「一轮结束后的
   下一次开批」扩展为「一轮结束后的下一次开批；首次开批用第 0 轮/初次开批标识」。
 
-### I9｜中｜deferred「延后理由」范围不一致，且报告表没有该列
+### R1-9｜中｜deferred「延后理由」范围不一致，且报告表没有该列
 
 - **锚点**: `design.md:80-81`、`design.md:161-163`；`spec.md:66-68`、`spec.md:186`。
 - **问题**: `design.md:81` 要求「否则仍进 deferred，并在 deferred 行写明『为什么可以延后一轮』」——
@@ -399,7 +405,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   建议**所有** deferred medium+ 都要写「为什么可以延后一轮」（安全项额外写「为什么晚一轮仍安全」）。
   同步更新 `spec.md:66-68` 与 `design.md:80-81`。
 
-### I10｜中｜报告 schema 把「轮内 verdict」与「终结出口」混为一谈
+### R1-10｜中｜报告 schema 把「轮内 verdict」与「终结出口」混为一谈
 
 - **锚点**: `design.md:150`、`design.md:169-173`、`spec.md:182-191`（尤其 `:189-191`）、
   `spec.md:174-178`；BLOCKED 报告要求见 `design.md:130`、`spec.md:168`。
@@ -420,7 +426,7 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   改记 `终止状态 / 验证账本 / 未通过项`」。同步更新 `design.md:150,169-173` 与
   `spec.md:182-191`，并加两个 Scenario：「轮内 `CHANGES_REQUESTED` 报告」与「BLOCKED 报告无收口确认」。
 
-### I11｜中｜设计环没有定义「能变红的回归测试」的对应物，同构不完整
+### R1-11｜中｜设计环没有定义「能变红的回归测试」的对应物，同构不完整
 
 - **锚点**: `design.md:71`、`design.md:158`、`design.md:223-224`；`spec.md:25`、`spec.md:185`、
   `spec.md:210-214`。
@@ -436,13 +442,13 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
   对应要求。同步更新 `design.md:71,158,223-224` 与 `spec.md:25,185,210-214`，并在报告表中说明
   `回归测试` 列对设计环允许的替代值。
 
-### I12｜中｜设计环修复面只写 `design.md` / `grill-design.md`，漏 proposal/spec/tasks
+### R1-12｜中｜设计环修复面只写 `design.md` / `grill-design.md`，漏 proposal/spec/tasks
 
 - **锚点**: `design.md:225-227`、`spec.md:212-214`、`tasks.md:37`（B4 只写「整合回 `design.md`」）。
 - **问题**: D5 与 Requirement 6 把设计环的修复面写成「作者负责改 `design.md` / `grill-design.md`」；
   B4 也只说「把对抗验证的必须修改整合回 `design.md`」。但本 change 的设计制品包括
-  `proposal.md`、`specs/review-termination/spec.md`、`tasks.md`；本报告的 must-fix 中 I1（tasks）、
-  I2/I3/I7/I8/I9/I10/I11（spec/design）、I4/I5（tasks/design/proposal）都要求改这些文件。
+  `proposal.md`、`specs/review-termination/spec.md`、`tasks.md`；本报告的 must-fix 中 R1-1（tasks）、
+  R1-2/R1-3/R1-7/R1-8/R1-9/R1-10/R1-11（spec/design）、R1-4/R1-5（tasks/design/proposal）都要求改这些文件。
 - **为什么是问题**: 作者若按字面只改 `design.md` 和 `grill-design.md`，spec / proposal / tasks 会保留
   同一批缺陷；下一次开批会重新发现它们，增加轮数，甚至把本可一轮修完的问题拖成多轮。设计环的修复面
   与实现环的「代码 + 测试 + change 文档」不同构。
@@ -454,41 +460,41 @@ $ PYTHONPATH=src .venv/bin/python -c "from pathlib import Path; from witnessloop
 
 ## low / nit 详情
 
-### L1｜proposal 非目标与新增 BLOCKED 成因不一致
+### R1-13｜proposal 非目标与新增 BLOCKED 成因不一致
 
 `proposal.md:91` 说「不改 `BLOCKED` 的既有语义……只补『超上限』这一成因」；但 `design.md:130`、
 `design.md:136-137`、`spec.md:168` 还新增了「同一批反复无法收口」（R2）和验证期安全例外（R3）两个
 `BLOCKED` 成因。建议改成「补『超上限』以及新模型需要的验证重试终止点 / 安全例外成因；`BLOCKED`
-的终结态语义不变」。不影响可执行性，故登记不修；建议随 I2 一并修。
+的终结态语义不变」。不影响可执行性，故登记不修；建议随 R1-2 一并修。
 
-### L2｜`docs/gate.md:715-716` 的「都合格」容易与出口语义混淆
+### R1-14｜`docs/gate.md:715-716` 的「都合格」容易与出口语义混淆
 
 `docs/gate.md:715` 说 `PASS` / `CHANGES_REQUESTED` 都合格；`:716` 的旧理由是「轮数封顶 → 交人判断」。
 落点表只列 `:716`（`proposal.md:112`、`design.md:290`）。新模型下 `CHANGES_REQUESTED` 不是出口，
 但机械门禁仍然接受它；建议改 `:716` 时同时补一句「机械接受 ≠ 终结出口；`CHANGES_REQUESTED` 是轮内
 状态」，避免读者把「都合格」当成「都是出口」。登记不修，建议顺手修。
 
-### L3｜low/nit 累积链接没有格式
+### R1-15｜low/nit 累积链接没有格式
 
 `design.md:165`、`spec.md:95-96`、`spec.md:188` 允许「逐项链接到首次登记的轮次小节」，但没规定
 链接形态。建议写成 `[R2-3](round-2.md#第-2-轮--low--nit-登记)` 或等价格式，并要求轮次小节标题稳定。
 id 已能人工追溯，故登记不修。
 
-### L4｜变异验证的「1 failed」过脆
+### R1-16｜变异验证的「1 failed」过脆
 
 `design.md:305`、`tasks.md:54-55` 要求变异后「新测试 1 failed」。同一个变异可能同时触发
 `tests/test_templates.py` 与 `tests/test_convergence_stop.py` 的多条断言；更重要的是，变异应选在
-I4 指出的未覆盖行（`templates/grill.md:21` 或 `docs/design.md:25`），否则即使全绿也证明不了
+R1-4 指出的未覆盖行（`templates/grill.md:21` 或 `docs/design.md:25`），否则即使全绿也证明不了
 反断言有效。建议改为「指定的新守卫至少 1 failed」，并写清目标测试名与变异行。登记不修。
 
-### L5｜R5 的用户裁决没有记录位
+### R1-17｜R5 的用户裁决没有记录位
 
 `design.md:278-279` 已正确写「`PASS`，或 `BLOCKED` + 成因 + **用户已明确裁决继续**；`BLOCKED`
 本身 SHALL NOT 作为写码许可」。但没有规定这个「明确裁决继续」记在哪里。建议记入
 `grill-design.md` 的 `## User Confirmation`（或新增 `## Blocked Ruling`），否则硬条件 #2 仍可被
 一句无出处的「用户同意了」满足。登记不修。
 
-### L6｜「不碰 src/」不等于「无 code_hits」
+### R1-18｜「不碰 src/」不等于「无 code_hits」
 
 `spec.md:248-251` 的 Scenario 写「只改模板/适配器/自述/测试，不碰 `src/`」，容易被读成「不会触发
 代码门禁」。实际 `.witnessloop/policy.json:8-12` 的 `require_change_for` 包含 `templates/**` 与
@@ -496,7 +502,7 @@ I4 指出的未覆盖行（`templates/grill.md:21` 或 `docs/design.md:25`），
 Scenario 的结论（不新增 finding 类别/数量）仍然成立，但建议补一句「触发面相同，不是没有触发」。
 登记不修。
 
-### L7｜「已结束」与「已收口」未严格区分
+### R1-19｜「已结束」与「已收口」未严格区分
 
 `design.md:91`、`spec.md:123` 用「已结束的轮」计数；`design.md:57` 定义轮为「完整闭环」，
 `design.md:133` 说 `BLOCKED` 是终结态。建议把计数口径写成「**已收口**的轮（`B_n` 全部验证通过）」，
@@ -508,26 +514,26 @@ Scenario 的结论（不新增 finding 类别/数量）仍然成立，但建议�
 
 | 项 | 状态 | 证据 / 缺口 |
 |---|---|---|
-| R1 第 20 轮自身未收口 | **已整合，仍有缺口** | `design.md:91-95`、`design.md:207-208`、`spec.md:127-129`、`spec.md:139-143`；规范触发过宽，汇总表漏支（I2） |
-| R2 验证重试终止点 | **已整合，仍有缺口** | `design.md:75-77,136-137`、`spec.md:29-30,168`；`SHALL` 已统一，但「再次」与「新的可验证方案」不可复核（I3） |
-| R3 安全漏洞例外 | **已整合；配套缺口** | `design.md:80-81`、`spec.md:65-68`；例外已收紧为「验证失去意义 / 继续不安全」；deferred 延后理由缺列（I9） |
+| R1 第 20 轮自身未收口 | **已整合，仍有缺口** | `design.md:91-95`、`design.md:207-208`、`spec.md:127-129`、`spec.md:139-143`；规范触发过宽，汇总表漏支（R1-2） |
+| R2 验证重试终止点 | **已整合，仍有缺口** | `design.md:75-77,136-137`、`spec.md:29-30,168`；`SHALL` 已统一，但「再次」与「新的可验证方案」不可复核（R1-3） |
+| R3 安全漏洞例外 | **已整合；配套缺口** | `design.md:80-81`、`spec.md:65-68`；例外已收紧为「验证失去意义 / 继续不安全」；deferred 延后理由缺列（R1-9） |
 | R4 旧 review / 孤儿规则 | **已整合** | `design.md:246-256`、`tasks.md:19-23`；与 `src/witnessloop/contract.py:636-666` 的孤儿判据一致；本报告覆盖旧 adversarial；`20f1089` 旧文件 138/939 行已核；不得为旧文件建 manifest |
-| R5 grill 写码硬条件 #2 | **已整合；spec 未写（低）** | `design.md:278-279`、`proposal.md:104`、`tasks.md:57`；`BLOCKED` 不再自动放行；建议把裁决记录位写清（L5），并考虑在 spec 补一句 |
+| R5 grill 写码硬条件 #2 | **已整合；spec 未写（低）** | `design.md:278-279`、`proposal.md:104`、`tasks.md:57`；`BLOCKED` 不再自动放行；建议把裁决记录位写清（R1-17），并考虑在 spec 补一句 |
 | R6 frontier 豁免边界 | **已整合** | `design.md:228-230`、`spec.md:215-217`；仅限进入对抗环之前，批次项驱动的探索属于该轮修复 |
-| R7 反断言扫描面 / 排除名单 | **已整合，仍有缺口** | `design.md:292-306`、`tasks.md:41-52`、`proposal.md:128-129`；词表漏旧措辞（I4），扫描面/排除名单口径冲突（I5） |
+| R7 反断言扫描面 / 排除名单 | **已整合，仍有缺口** | `design.md:292-306`、`tasks.md:41-52`、`proposal.md:128-129`；词表漏旧措辞（R1-4），扫描面/排除名单口径冲突（R1-5） |
 | R8 severity 冻结 | **已整合** | `design.md:116-118,216-217`、`spec.md:92-94`；验证期只能按原级修或 `BLOCKED`，无静默移出批次路径 |
 | R9 deferred 传递 | **已整合** | `design.md:82-84,199-200`、`spec.md:70-71`；已是 Requirement 硬规则，不只是 Scenario；id 沿用 `R<首次轮次>-<序号>` |
 | R10 轮数累计 | **已整合** | `design.md:103-105,205-206`、`spec.md:124-126`；按 change（且按环）累计，不得换报告重置 |
-| R11 两环 `BLOCKED` 语义 | **已整合，仍有缺口** | `design.md:225-227,282`、`spec.md:210-214`；成因映射与报告节已写；设计环修复面太窄（I12），回归测试无对应物（I11） |
-| R12 收口确认记录位 | **已整合，仍有缺口** | `design.md:169-170,270`、`spec.md:189-190`；记录位已加；零轮 PASS / BLOCKED 报告 / 轮内报告未定义（I8、I10） |
-| R13 low/nit 累积 | **已整合；链接格式未定（低）** | `design.md:122-123,219`、`spec.md:95-96,187-188`；最终 `PASS` 带累积表或链接；建议定链接格式（L3） |
+| R11 两环 `BLOCKED` 语义 | **已整合，仍有缺口** | `design.md:225-227,282`、`spec.md:210-214`；成因映射与报告节已写；设计环修复面太窄（R1-12），回归测试无对应物（R1-11） |
+| R12 收口确认记录位 | **已整合，仍有缺口** | `design.md:169-170,270`、`spec.md:189-190`；记录位已加；零轮 PASS / BLOCKED 报告 / 轮内报告未定义（R1-8、R1-10） |
+| R13 low/nit 累积 | **已整合；链接格式未定（低）** | `design.md:122-123,219`、`spec.md:95-96,187-188`；最终 `PASS` 带累积表或链接；建议定链接格式（R1-15） |
 
 **逐条结论**：没有发现「只写在 `## Pre-Implementation Review` 清单、完全未进 design/spec/proposal/tasks
 正文」的项——R1–R13 都能在正文找到落点。仍有两个层面的缺口：
 1. **spec 未覆盖 R4/R5/R7**。R4（旧 review/孤儿）与 R7（测试扫描面）属流程/测试事项，可以留在
    design/tasks；R5 是行为约束（`BLOCKED` 不授予写码许可），建议在 spec Requirement 6 补一句，
    否则 spec 不是完整的规范面。
-2. **R1/R2/R7/R11/R12 的正文虽在，但精确度/可复核性不足**，对应 I2/I3/I4/I5/I11/I12/I8/I10。
+2. **R1/R2/R7/R11/R12 的正文虽在，但精确度/可复核性不足**，对应 R1-2/R1-3/R1-4/R1-5/R1-11/R1-12/R1-8/R1-10。
 
 ---
 
@@ -637,38 +643,38 @@ $ nl -ba .witnessloop/policy.json | sed -n '8,12p'
 `docs/gate.md:407/554` 的「常量封顶 / 路径深度封顶」已核，与本规则无关；`docs/gate.md:716` 的旧句
 确实含「轮数封顶」。上述 grep 结果就是 proposal 落点表的覆盖对象；落点表本身覆盖了这些行（包括
 `templates/review-loop.md:75-81` 与 `plugin/commands/review-loop.md:63`），但反断言词表没有覆盖其中
-5 行（I4），落点表也没有覆盖 `plugin/commands/review-loop.md:22-23` 与 `templates/review-loop.md:150`
-（I6）。
+5 行（R1-4），落点表也没有覆盖 `plugin/commands/review-loop.md:22-23` 与 `templates/review-loop.md:150`
+（R1-6）。
 
 ---
 
-## 第 1 轮结论（历史；已被第 2 轮 PASS 取代）
+## 第 1 轮结论（历史；已被复验 PASS 取代）
 
-> 以下是第 1 轮开批时的结论；I1–I12 已在 `6a8deee` 修复并经第 2 轮验证，最终结果为 `PASS`
-> （见上方「第 2 轮 · 验证」与「出口」）。保留于此仅为审计历史。
+> 以下是第 1 轮开批时的结论；R1-1–R1-12 已在 `6a8deee` 修复并经复验，最终结果为 `PASS`
+> （见上方「复验 · 验证」与「出口」）。保留于此仅为审计历史。
 
 ### 必须修改项（12 条，medium+）
 
-1. **I1** `tasks.md:32-33`：B2 的「无轮数上限」与设计环 20 上限直接矛盾。
-2. **I2** `design.md:91-93` / `spec.md:127-129`：第 20 轮「任何一项 `未修好`」触发过宽，且与同轮重试
+1. **R1-1** `tasks.md:32-33`：B2 的「无轮数上限」与设计环 20 上限直接矛盾。
+2. **R1-2** `design.md:91-93` / `spec.md:127-129`：第 20 轮「任何一项 `未修好`」触发过宽，且与同轮重试
    规则冲突；汇总表漏「第 20 轮自身未收口」这一支。
-3. **I3** `design.md:75-77` / `spec.md:29-30`：R2 终止点的「再次」与「新的可验证修复方案」不可复核。
-4. **I4** `design.md:303-304` / `tasks.md:46`：反断言词表漏掉 5 行已知旧措辞（裸「封顶」、「N 轮封顶」）。
-5. **I5** `design.md:295-302` / `tasks.md:47-52`：显式 allowlist 与「全仓减排除」两种扫描口径并存，
+3. **R1-3** `design.md:75-77` / `spec.md:29-30`：R2 终止点的「再次」与「新的可验证修复方案」不可复核。
+4. **R1-4** `design.md:303-304` / `tasks.md:46`：反断言词表漏掉 5 行已知旧措辞（裸「封顶」、「N 轮封顶」）。
+5. **R1-5** `design.md:295-302` / `tasks.md:47-52`：显式 allowlist 与「全仓减排除」两种扫描口径并存，
    排除名单不可执行/不完整。
-6. **I6** `plugin/commands/review-loop.md:22-23` / `templates/review-loop.md:150`：适配器仍让审阅者
+6. **R1-6** `plugin/commands/review-loop.md:22-23` / `templates/review-loop.md:150`：适配器仍让审阅者
    执行「步骤 1–6」，跳过新模型的 7–8 步；两处「三态」未限定。
-7. **I7** `design.md:232-239` / `spec.md:231-239`：`check` 的 `grill` 阶段实际解析报告正文，与
+7. **R1-7** `design.md:232-239` / `spec.md:231-239`：`check` 的 `grill` 阶段实际解析报告正文，与
    「只判存在/不解析正文」的诚实边界冲突。
-8. **I8** `design.md:61,169-170,179` / `spec.md:189-190,193`：零轮 PASS、第 20 轮收口确认后的
+8. **R1-8** `design.md:61,169-170,179` / `spec.md:189-190,193`：零轮 PASS、第 20 轮收口确认后的
    id / 小节编号未定义。
-9. **I9** `design.md:80-81,161-163` / `spec.md:66-68,186`：deferred 延后理由的范围不一致，报告表
+9. **R1-9** `design.md:80-81,161-163` / `spec.md:66-68,186`：deferred 延后理由的范围不一致，报告表
    缺「延后理由」列。
-10. **I10** `design.md:150,169-173` / `spec.md:182-191`：报告 schema 混淆轮内 verdict 与终结出口；
+10. **R1-10** `design.md:150,169-173` / `spec.md:182-191`：报告 schema 混淆轮内 verdict 与终结出口；
     轮内 `CHANGES_REQUESTED` 与 BLOCKED 报告无法表达。
-11. **I11** `design.md:71,158,223-224` / `spec.md:25,185,210-214`：设计环没有「能变红的回归测试」的
+11. **R1-11** `design.md:71,158,223-224` / `spec.md:25,185,210-214`：设计环没有「能变红的回归测试」的
     对应物，两环同构不完整。
-12. **I12** `design.md:225-227` / `spec.md:212-214` / `tasks.md:37`：设计环修复面漏 proposal/spec/tasks。
+12. **R1-12** `design.md:225-227` / `spec.md:212-214` / `tasks.md:37`：设计环修复面漏 proposal/spec/tasks。
 
 ### 已确认无问题项（尝试证伪但未成立的方向）
 
@@ -676,10 +682,10 @@ $ nl -ba .witnessloop/policy.json | sed -n '8,12p'
   `templates/review-loop.md:11,75-81,90-102,153`、`templates/grill.md:21,130-141,215`、
   `plugin/commands/*`、`plugin/README.md:37`、`README.md:306`、`docs/design.md:25`、
   `docs/gate.md:716`、两条测试；`docs/gate.md:407/554` 的「常量封顶 / 路径深度封顶」确与本规则无关。
-  漏网的是**反断言词表**和**适配器 1–6 步**，不是落点表本身（I4/I6）。
+  漏网的是**反断言词表**和**适配器 1–6 步**，不是落点表本身（R1-4/R1-6）。
 - **deferred 传递与 id 沿用**：`spec.md:70-71` 把传递写成 Requirement 硬规则，不只是 Scenario；
   `spec.md:73-82,197-201` 与 `design.md:83-84,179` 的 `R3-2` 例子、id 沿用规则一致。零轮/收口确认后的
-  id 是边界缺口（I8），不是主规则不一致。
+  id 是边界缺口（R1-8），不是主规则不一致。
 - **severity 冻结**：`spec.md:92-94` 对验证期降级给出对称规则（按原级修或 `BLOCKED` 记争议），
   `spec.md:79-82` 把 low→medium 的重分类导向 deferred 而非扩批；未发现静默降级/移出批次的主路径。
 - **R4 旧 review / 孤儿规则**：`design.md:246-256` 与 `src/witnessloop/contract.py:636-666` 的
