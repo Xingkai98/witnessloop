@@ -59,38 +59,54 @@ openspec/changes/<change-id>/
   （定制 seed 不入库，见 README「本仓自身接入」）。
 - 已接入后再 `init --policy <与已落地不同>` → **报冲突**并以非零退出（**不**静默忽略）。
 
-### 1.2 钉住 ref：一个入口、两处一致（change `gate-ref-pins-package` / issue #30）
+### 1.2 钉住 ref：一个入口、两处一致（issue #30；annotated tag 修正：issue #42）
 
 caller 里的 `uses: …gate.yml@<ref>` **同时**决定两件事：
 
 1. 跑哪一份 reusable workflow 文件；
-2. 跑哪个 **witnessloop 包** —— `gate.yml` 在**第一个 step** 里把包 ref 解析成
-   **`job.workflow_sha`**（= 被复用的那个 workflow 文件自己的 commit），
-   显式 `with: witnessloop-ref:` 仍可覆盖。
+2. 跑哪个 **witnessloop 包** —— `gate.yml` 在**第一个 step** 里按 ref 形态解析包 ref：
+   **tag** ⇒ `job.workflow_ref` 的 `refs/tags/<tag>`；**分支 / commit pin** ⇒
+   `job.workflow_sha`（本次实际执行的精确 commit）。显式 `with: witnessloop-ref:` 仍可覆盖。
 
 ⇒ 接入方 SHALL NOT 需要分别维护两个 ref：**改 `uses:` 那一处，包版本跟着走**。
 这条依赖的上下文是 `job.*` 而**不是** `github.*`——跨仓真 CI 探针实测
 `github.workflow_sha` 是**接入方自己**的 commit，用它会在 witnessloop 仓取一个不存在的
 ref（全量硬红）。⚠️ 能力边界（GHES / fork 面）见 §7。
+`job.workflow_repository` 不等于 `Xingkai98/witnessloop`（含空值）时，解析器**直接**
+fail-closed 退兜底 ref，**不**再试 `job.workflow_ref`（否则会拿别人仓的 ref 去本仓装包）。
+
+⚠️ **annotated tag 的坑（issue #42）**：tag 形态下 `job.workflow_sha` 给的是 **tag object**
+的 sha，**不是** commit。真 CI 实测（run `38928669316`，`uses: …@v1.7.0`）：
+
+```
+Uses: Xingkai98/witnessloop/.github/workflows/gate.yml@refs/tags/v1.7.0 (00192abe45d2d72a4389eccb202faad48c34fa26)
+WL_WORKFLOW_REF: Xingkai98/witnessloop/.github/workflows/gate.yml@refs/tags/v1.7.0
+WL_WORKFLOW_SHA: 00192abe45d2d72a4389eccb202faad48c34fa26
+```
+
+`00192ab…` 是 tag object，指向 commit `c9b2811…`。**uv 0.13.2 起**拒绝「精确 revision ≠
+commit」（`Exact Git revision … does not match precise commit …`；0.12.1 / 0.13.1 仍接受），
+所以**不能**再把 `job.workflow_sha` 直接交给 `uvx`。⇒ `v1.7.1` 起：
+
+- **tag** 用 `job.workflow_ref` 的 `refs/tags/<tag>`（uv 0.13.3 实测可安装，解析到 tag 的 commit）；
+- **分支 / commit pin** 仍用 `job.workflow_sha`（它给的就是 commit，且与本次执行的 workflow
+  文件同一 revision——避免包比文件晚一个 commit）；
+- `job.workflow_ref` 不可识别时才退 `job.workflow_sha` 并打 `::warning::`（附原值）；
+- 两者都拿不到 ⇒ fail-closed 退兜底 ref（今天 = `v1.7.1`，与 `constants.DEFAULT_GATE_REF`
+  的 ref 部分同源）+ `::warning::`；最终 ref 为空/纯空白 ⇒ `::error::` + 非零退出
+  （绝不写出 `ref=` 去装默认分支）。
+
+⚠️ **本仓所有发布 tag（`v1`、`v1.0.0`…`v1.7.1`）都是 annotated** ⇒ 钉 annotated tag
+是**受支持形态**、不是边角。`v1.7.0` 及更早的 caller **不会自动吃到修复**（reusable workflow
+被 `uses:` 钉住）——升级到 `@v1.7.1` 即可（见下面「升级动作」）。
 
 **本次跑的是哪个 ref**：`gate.yml` 的解析 step 会打一行 `::notice::`（含 ref **与来源**）；
 `check` 自己也会打一行 `本包来源（自报，尽力而为）`——后者读 PEP 610 `direct_url.json` 的
-`vcs_info`，能多给一个**解析出的 commit**（issue #30 的验收证据恰恰是 resolved sha）。
-它**取不到就写 `<未知>`，且不影响任何判定**（本地 editable / 源码直跑没有 `vcs_info`）。
-⚠️ 这一行**由新版包起才有**（旧包跑 `check` 的输出里没有它）——别拿旧包的输出当「功能没生效」。
-
-⚠️ **`job.workflow_sha` 对 annotated tag 给的是「tag 对象的 sha」**（**真 CI 实测**，`v1.7.0` 那次，run `38928669316`）：
-本仓 caller 写 `uses: …gate.yml@v1.7.0` 时，job 日志是
-```
-Uses: Xingkai98/witnessloop/.github/workflows/gate.yml@refs/tags/v1.7.0 (00192abe45d2d72a4389eccb202faad48c34fa26)
-   Building witnessloop @ git+https://github.com/Xingkai98/witnessloop@00192abe45d2d72a4389eccb202faad48c34fa26
-check：本包来源（自报，尽力而为）：requested_revision=00192abe…，commit_id=00192abe…
-```
-——`00192ab…` 是 **tag 对象**的 sha，**不是**它指向的 commit（`c9b2811…`）。
-⇒ **机制照常成立**（`uv`/git 能把 tag 对象 sha 解析成它指向的 commit；那一跑**装成了、门禁绿**），
-但「包 ref 总是那个 workflow 文件所在的 **commit**」这句话对 annotated tag **不准确**：
-**它是 GitHub 给的 `job.workflow_sha` 原值**。好处是它比 tag 名更稳（tag 被移动也不改变已记下的那个对象）。
-⚠️ 本仓所有既有 tag（`v1`、`v1.0.0`…`v1.7.0`）都是 annotated ⇒ 这条是**常态**、不是边角。
+`vcs_info`，能多给一个**解析出的 commit**。它**取不到就写 `<未知>`，且不影响任何判定**
+（本地 editable / 源码直跑没有 `vcs_info`）。
+⚠️ 这一行**由 `v1.7.0` 起的包才有**（旧包跑 `check` 的输出里没有它）——别拿旧包的输出当「功能没生效」。
+⚠️ 新解析器对 tag 传的是 `refs/tags/<tag>`，所以 `requested_revision` 会显示
+`refs/tags/v1.7.1`（本地 `uv tool install @v1.7.1` 仍显示短名）——这是**预期形态**。
 
 **升级动作（单一、显式）——两步，顺序不能反**：
 
@@ -584,12 +600,15 @@ agent 手写一行放行事件提交，门禁会绿（这是 design §2 明写�
 - **包 ref 的解析在 GHES / fork 面上取不到**：`job.workflow_repository` 等 `job.*`
   在 **GitHub Enterprise Server 上不可用**，同 owner 的 **fork** 也能匹配上
   `REPO_SLUG` 判据（判据**必要不充分**）。两种情形都落到 fail-closed 退回**兜底 ref**
-  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1.7.0`）——
+  （= `constants.DEFAULT_GATE_REF` 的 ref 部分，与出厂默认**同源**；今天 = `v1.7.1`）——
   ⚠️ 诚实地说：**GHES 接入方的包版本会一直停在这份 gate.yml 写就时的出厂默认**
-  （今天 = `v1.7.0`；`DEFAULT_GATE_REF` 挪了它就跟着挪——它**不随接入方的 `uses:` ref 走**），
+  （今天 = `v1.7.1`；`DEFAULT_GATE_REF` 挪了它就跟着挪——它**不随接入方的 `uses:` ref 走**），
   区别只在日志里有一行 `::warning::`（不静默）。
   未验证面：自建 runner 上的 uv 版本差异、`pip install git+…` 是否同样落 PEP 610 的
   `vcs_info`（只实测了 uv 0.13.1 的 `uvx`）。
+- **annotated tag 的 `job.workflow_sha` 是 tag object**（issue #42）：`v1.7.1` 起 tag 形态
+  改走 `job.workflow_ref` 的 `refs/tags/<tag>`；`v1.7.0` 及更早的 gate.yml 仍会把 tag object
+  sha 交给 uv ⇒ 在 uv ≥0.13.2 下硬红。修复不会自动到达钉旧 ref 的 caller。
 - **`check` 自报的是「包」不是「门禁判定逻辑」**：它读的是本进程安装元数据，
   与 `gate.yml` 实际传给 `uvx` 的 ref 是**两次独立**的读取（后者进 `::notice::`）。
   两者不一致时（如本地手动跑 `check`）以各自那行为准。

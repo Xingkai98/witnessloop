@@ -17,9 +17,11 @@
 ## 用法
 
 ```bash
-uv tool install git+https://github.com/Xingkai98/witnessloop@v1.7.0
+uv tool install git+https://github.com/Xingkai98/witnessloop@v1.7.1
 # ⚠️ 这个 ref 与 CI 里装包用的 ref **是同一件事**（issue #30 / change gate-ref-pins-package）：
 #    钉旧了，本地 CLI 与 CI 里的门禁都跑旧行为。升级就把 ref 指到新 tag（见「怎么钉版本」）。
+# ⚠️ v1.7.1 起 **钉 annotated tag 是受支持形态**（issue #42：旧 gate.yml 会把 tag object
+#    sha 交给 uv，uv ≥0.13.2 拒绝）。
 
 # 接入目标仓：幂等、只增不改、不 auto-commit。先看要写什么（不落盘）
 cd your-repo && witnessloop init --dry-run
@@ -126,6 +128,8 @@ witnessloop **自己也走这套流程**：本仓有 `.witnessloop/policy.json`�
 > 发布物，移动它会让所有钉 `@v1` 的仓在**没人做任何动作**的情况下换掉门禁本体与包。
 > 新能力由**新 tag `v1.7.0`** 发布（含「钉一个 ref 同时决定 workflow 文件与**包版本**」）：
 > 升级 = 把 ref 指过去一处，包版本跟着走（见下「怎么钉版本 / 怎么升级」）。
+> **`v1.7.1`** 修复 issue #42：tag 形态改用 `job.workflow_ref` 的 `refs/tags/<tag>`，
+> annotated tag 不再因 tag object sha 被 uv ≥0.13.2 拒绝。
 > 别再按「`@v1` 会跟着 `main` 滚」理解版本稳定性。
 
 ### policy（`.witnessloop/policy.json`，住在目标仓、可评审）
@@ -181,25 +185,31 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 
 ### 怎么钉版本 / 怎么升级
 
-> ⚠️ **前提：用含这个能力的 ref（`v1.7.0` 起）。** 钉 `@v1` 的老仓要**先**按下面两步升级——
+> ⚠️ **前提：用含这个能力的 ref（`v1.7.0` 起；钉 annotated tag 建议 `v1.7.1` 起）。**
+> 钉 `@v1` 的老仓要**先**按下面两步升级——
 > `v1` 那份 `gate.yml` 里没有「包 ref 由 workflow 自己推导」的解析 step（`git show v1:…` 可核），
 > 而 `@v1` 的旧 CLI 也没有「显式 `--gate-ref` ⇒ 重写 caller + 同步台账」这条语义
 > （拿它跑第 ② 步只会得到一句指向 policy 的冲突，见 [docs/gate.md §1.2](docs/gate.md)）。
 
 caller 里的那**一个** ref 同时决定「跑哪份 workflow 文件」与「跑哪个 witnessloop 包」：
-`gate.yml` 把包 ref 解析成 `job.workflow_sha`（= 被复用的那个 workflow 文件自己的 commit），
-显式 `with: witnessloop-ref:` 仍可覆盖 ⇒ **改一处、两处跟着走**（细节见
-[docs/gate.md §1.2](docs/gate.md)；GHES / fork 等能力边界见其 §7）。
+`gate.yml` 按 ref 形态解析包 ref——**tag** 用 `job.workflow_ref` 的 `refs/tags/<tag>`
+（annotated tag 的 `job.workflow_sha` 是 tag object，uv ≥0.13.2 拒绝），**分支 / commit pin**
+用 `job.workflow_sha`（精确 commit）。显式 `with: witnessloop-ref:` 仍可覆盖 ⇒
+**改一处、两处跟着走**（细节见 [docs/gate.md §1.2](docs/gate.md)；GHES / fork 等能力边界见其 §7）。
 
 ```bash
 # 新接入：直接钉你要的 ref（`init` 的出厂默认现在就是它）
-witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0
+witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.1
 
 # 已接入：升级**两步，顺序不能反**
-uv tool install --force git+https://github.com/Xingkai98/witnessloop@v1.7.0   # ① 先升 CLI
+uv tool install --force git+https://github.com/Xingkai98/witnessloop@v1.7.1   # ① 先升 CLI
 witnessloop check --root . 2>/dev/null | head -1                              # ①′ 自证：看这一行
-witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0   # ② 再换 ref
+witnessloop init --gate-ref Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.1   # ② 再换 ref
 ```
+
+> ⚠️ **annotated tag 受支持（`v1.7.1` 起）**：`v1.7.0` 及更早的 `gate.yml` 会把 tagged
+> object 的 sha 当包 ref 交给 uv；钉 `@v1.7.0` 的仓在 uv ≥0.13.2 下 `gate / check` 会硬红。
+> 按上面两步升到 `@v1.7.1` 即可。`job.workflow_sha` 对分支 / commit pin 仍是精确 commit。
 
 ⚠️ **第 ① 步不能省**：重写 caller 的语义是**新版包**才有的。用旧 CLI 跑第 ② 步会得到
 EXIT=1 与一句把人指向 **policy** 的「检测到冲突…要更换 policy 请先 `uninit`」——
