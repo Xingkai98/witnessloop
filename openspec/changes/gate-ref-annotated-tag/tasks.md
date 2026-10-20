@@ -51,27 +51,31 @@
 
 ## E. 实现后独立审阅
 
-- [ ] E1 独立零记忆 building 审阅：逐条验证 `[x]`、跑测试、读 diff；产出 `reviews/building-review.md`。
-- [ ] E2 `CHANGES_REQUESTED` ⇒ 开批 → 全修（每条补回归）→ 只做修复验证 → 收口；直到 `PASS`。
+- [x] E1 独立零记忆 building 审阅：逐条验证 `[x]`、跑测试、读 diff；产出 `reviews/building-review.md`。
+- [x] E2 `CHANGES_REQUESTED` ⇒ 开批 → 全修（每条补回归）→ 只做修复验证 → 收口；直到 `PASS`。
+      **结果：初次开批为空 ⇒ `PASS`（4 low + 3 nit 登记；low/nit 修复后复核 768 passed）。**
 
 ## F. 证据 / 门禁 / 合入
 
-- [ ] F1 本仓 caller 临时钉 commit `98b97b7046e98508470345ce081f7189c6c4269c`
+- [x] F1 本仓 caller 临时钉 commit `98b97b7046e98508470345ce081f7189c6c4269c`
       （**40 位全 sha**；短 sha 会被 GitHub `uses:` 拒绝——对抗轮 R1-1）：用
       `witnessloop init --gate-ref …@98b97b7046e98508470345ce081f7189c6c4269c --policy .witnessloop/policy.json`
       （不带 `--policy` 在定制 policy 仓会 exit 1——grill 实测）；同步台账 +
       **一条** `protected_path_write` 事件（本 PR 新建 events 文件 = `A`，自身免事件）。
       验收：caller 的 `uses:` 是 40 位小写 hex，且修复 PR 的 `gate / check` 真的由它触发。
-- [ ] F2 三份 manifest：`grill` / `grill-adversarial` / `building`，绑定最终 revision。
-- [ ] F3 `witnessloop check --base origin/main --head HEAD` 绿（记录原始输出）。
-- [ ] F4 PR，正文引用 issue #42；**`--merge` 合入**。授权来源：用户 2026-10-20 任务书
-      「合入一律 `--merge`」。
+- [x] F2 三份 manifest：`grill` / `grill-adversarial` / `building`，绑定最终 revision。
+- [x] F3 `witnessloop check --base origin/main --head HEAD` 绿：
+      `check：基线 origin/main...HEAD，19 个变更文件，1 个 change 目录 … check：通过 ✓`（EXIT=0）。
+- [x] F4 PR，正文引用 issue #42；**`--merge` 合入**。授权来源：用户 2026-10-20 任务书
+      「合入一律 `--merge`」。**PR #43，merge commit `07bf23b38dfe19c1e0b9590732e6c5699f3b5e79`。**
 
 ## G. 发版与自举验证
 
-- [ ] G1 在合并提交上打 **annotated `v1.7.1`**（不动 `v1` / `v1.7.0`）。合入后**立即**打
+- [x] G1 在合并提交上打 **annotated `v1.7.1`**（不动 `v1` / `v1.7.0`）。合入后**立即**打
       tag；窗口内不要接入 / 升级（`DEFAULT_GATE_REF` 已指向尚未存在的 tag）。
       GitHub Release 正文 SHALL 写明这个窗口与「钉 annotated tag 受支持」。
+      **已发：annotated tag object `c4f681a7e899b5958dd51e8823b7a6dc9260c187` → commit
+      `07bf23b38dfe19c1e0b9590732e6c5699f3b5e79`。**
 - [ ] G2 另起 PR：caller 回钉 `@v1.7.1`（同样 `init --gate-ref …@v1.7.1 --policy …`）；
       ⚠️ caller 是非证据路径 ⇒ 旧 manifest 会 stale：在内容提交后**重建三份 manifest**，
       并补 **5 条**事件（台账 + 3 份 manifest + events 文件自身）。该 PR 的 `gate / check`
