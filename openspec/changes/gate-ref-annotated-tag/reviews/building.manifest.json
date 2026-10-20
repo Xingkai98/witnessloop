@@ -4,11 +4,11 @@
   "stage": "building",
   "reviewer_run_id": "building-reviewer-gate-ref-annotated-tag-98b97b7046e9",
   "author_run_id": "author-gate-ref-annotated-tag-98b97b7046e9",
-  "base_sha": "98b97b7046e98508470345ce081f7189c6c4269c",
-  "head_sha": "005b83296995d6ed3e2574de74d709ae9789de87",
-  "tasks_hash": "e9ac57ad14a4bd1f5ece23bcd051ccc51cec2b5ddbcd1c1c974669b33f3da123",
+  "base_sha": "07bf23b38dfe19c1e0b9590732e6c5699f3b5e79",
+  "head_sha": "1b2ad01d8c4ae25e38d13b872019e6e855bd4f73",
+  "tasks_hash": "6679e4d97952827ea7685c15a4364aa226afc20e675beefdc9a76a9181431bcb",
   "spec_hash": "387e55d5daf024a211e62d04201fc57e0b27f8cb2eae48e51f9bd66424f308c3",
-  "diff_hash": "82168c3ddc5af885127f8ef6a1186cddb44ee1a20bdefc5a6d6b51c36d87b292",
+  "diff_hash": "52bba207364ed31d0b7f31f60e8505edc54ebccd8933aa08fc5fc597ce4dda3a",
   "report_hash": "0006f71e29cfdc06abf99039fe5669f11e3a070fa856c3c67a562e24c4b7d987",
   "report_path": "reviews/building-review.md"
 }
