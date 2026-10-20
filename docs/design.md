@@ -54,7 +54,7 @@ Agent 写代码的核心风险不是「不会写」，而是「**不可信**」�
 **v1 假设 witnessloop 公开。** 在私有仓下会发生两处摩擦，已用一次性仓 `Xingkai98/wl-test` 实测：
 
 1. **reusable workflow 访问级别**：私有仓的 reusable workflow 默认 `none`，且**最多只能开放到「同 owner」**——外部接入方根本调不到。表现为 caller run **0 个 job**、报「workflow file issue」。
-2. **CI 安装私有包需要凭据**：reusable workflow 里 `uvx --from git+https://github.com/<owner>/witnessloop@v1` 在私有仓下报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。（`@v1` 那段的 ref **就是包版本**——change `gate-ref-pins-package` 起，它由 `gate.yml` 从 `job.workflow_sha` 推导，接入方只需要管 caller 的 `uses:` 一处；见 `docs/gate.md §1.2`。）
+2. **CI 安装私有包需要凭据**：reusable workflow 里 `uvx --from git+https://github.com/<owner>/witnessloop@v1` 在私有仓下报 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。（`@v1` 那段的 ref **就是包版本**——change `gate-ref-pins-package` 起，它由 `gate.yml` 推导：tag 用 `job.workflow_ref` 的 `refs/tags/<tag>`，分支 / commit 用 `job.workflow_sha`；接入方只需要管 caller 的 `uses:` 一处；见 `docs/gate.md §1.2`。）
 
 改为**公开**后两处摩擦全消、零配置。**私有接入需要额外配置 token，不在 v1 范围。**（这也把最初「私有起步」的判断修正为「公开起步」。）
 

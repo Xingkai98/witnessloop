@@ -17,7 +17,7 @@ on:
         type: string
         default: ""
       witnessloop-ref:
-        description: "witnessloop 自身的 ref（钉版本）。**留空 = 自动**：取本 reusable workflow 自己的 commit"
+        description: "witnessloop 自身的 ref（钉版本）。**留空 = 自动**：tag 用 caller 钉的 tag ref，分支 / commit 用实际执行的 commit"
         required: false
         type: string
         default: ""
@@ -31,18 +31,23 @@ jobs:
     steps:
       # ⚠️ **第一个 step**：后面的步骤（含失败的）之后也要能在日志里看见本次用的包 ref。
       #
-      # 解析规则——**分支顺序即语义**（change gate-ref-pins-package / design §2 D1，
-      # 用户 2026-10-16 裁定 (B′)）：
+      # 解析规则——**分支顺序即语义**（change gate-ref-annotated-tag / issue #42；
+      # 在 change gate-ref-pins-package 的 (B′) 上按 ref 形态细化）：
       #   ① 显式 `with.witnessloop-ref` 非空 ⇒ 用它（显式意图优先，不得静默 no-op）；
       #   ② `job.workflow_repository != REPO_SLUG`（含空值：GHES / 非本仓 reusable）
       #      ⇒ **直接 fail-closed 退 `WL_FALLBACK_REF`** + `::warning::`，
       #      **不**再试 `job.workflow_ref`（那会拿别人仓的 ref 去本仓装包）；
-      #   ③ 否则 `job.workflow_sha` 非空 ⇒ 用那个 sha（`job.*` 在 called workflow 里指
-      #      **被复用的那个 workflow 文件**）；
-      #   ④ 否则（repository 已匹配、sha 为空）用 `job.workflow_ref` 的 `@` 之后那段，
-      #      只收 `refs/heads/*` 与 `refs/tags/*`；
-      #   ⑤ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
-      #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1.7.0`）并打 `::warning::`。
+      #   ③ **tag**：`job.workflow_ref` 锚定到 `@refs/tags/<tag>` ⇒ 用完整 tag ref。
+      #      annotated tag 的 `job.workflow_sha` 是 **tag object**（不是 commit），
+      #      uv **0.13.2 起**拒绝「精确 revision ≠ commit」⇒ 不能把 sha 交给 uv
+      #      （issue #42 的根因；实测 tag ref 可安装）；
+      #   ④ **分支 / commit pin**：`job.workflow_sha` 非空 ⇒ 用 sha。它给的就是 commit，
+      #      且是**本次实际执行**的精确 revision（用会移动的 `refs/heads/*` 会让包比
+      #      workflow 文件晚一个 commit）；
+      #   ⑤ `workflow_sha` 为空时才降级用 `job.workflow_ref` 的分支 / commit；
+      #   ⑥ 全不行 ⇒ **fail-closed 退 `WL_FALLBACK_REF`**（= `constants.DEFAULT_GATE_REF`
+      #      的 ref 部分，**与出厂默认同源**、随它一起挪；今天 = `v1.7.1`）并打 `::warning::`；
+      #   ⑦ 最终 ref 为空**或纯空白** ⇒ `::error::` + 非零退出（绝不写出 `ref=` 去装默认分支）。
       #
       # ⚠️ **不能用 `github.workflow_ref` / `github.workflow_sha`**：跨仓真 CI 探针（run
       # 38853369550）实测它们指 **caller**（接入方自己那份）⇒ 会拿接入方的 ref 去
@@ -64,7 +69,7 @@ jobs:
           WL_WORKFLOW_SHA: ${{ job.workflow_sha }}
           WL_WORKFLOW_REF: ${{ job.workflow_ref }}
           WL_REPO_SLUG: "Xingkai98/witnessloop"
-          WL_FALLBACK_REF: "v1.7.0"
+          WL_FALLBACK_REF: "v1.7.1"
         run: |
           set -eu
 
@@ -72,28 +77,69 @@ jobs:
           WHY=""
           FAILED=""
 
-          # ⚠️ 一律用 `${VAR:-}` 读：本脚本 `set -eu`，而未定义的变量会让它**当场退出**
-          # （GitHub 侧上游取不到时会渲染成空串、env 仍然存在，但这不构成可依赖的保证）。
-          # 解析器宁可 fail-closed 退兜底 ref 并告警，也不能因为一个没定义的变量而红在一个
-          # 与「包版本」毫无相似之处的地方。
+          # ⚠️ **可能缺失**的 job / input 变量一律用 `${VAR:-}` 读：本脚本 `set -eu`，
+          # 而未定义的变量会让它**当场退出**（GitHub 侧上游取不到时会渲染成空串、env 仍然
+          # 存在，但这不构成可依赖的保证）。解析器宁可 fail-closed 退兜底 ref 并告警，
+          # 也不能因为一个没定义的变量而红在一个与「包版本」毫无相似之处的地方。
+          # （两个常量 WL_REPO_SLUG / WL_FALLBACK_REF 由上面的 `env:` 恒定提供。）
           if [ -n "${WL_INPUT_REF:-}" ]; then
             REF="$WL_INPUT_REF"
             WHY="调用方显式传入的 with.witnessloop-ref"
           elif [ "${WL_WORKFLOW_REPOSITORY:-}" != "$WL_REPO_SLUG" ]; then
             FAILED="job.workflow_repository=「${WL_WORKFLOW_REPOSITORY:-<空>}」≠「$WL_REPO_SLUG」（GHES / 别人的仓 / 非本仓 reusable 都落这里）"
-          elif [ -n "${WL_WORKFLOW_SHA:-}" ]; then
-            REF="$WL_WORKFLOW_SHA"
-            WHY="job.workflow_sha（被复用的那个 workflow 文件自己的 commit）"
           else
+            # `job.workflow_ref` 的形状固定为
+            #   `<REPO_SLUG>/.github/workflows/gate.yml@<ref>`
+            # （这是**本文件自己的路径**）⇒ 用已知前缀**精确剥离**。ref 名或 workflow
+            # 路径里含 `@` / `@refs/...` 都不会截错；路径对不上（文件被改名等）⇒
+            # `REF_PART` 留空，交给 sha 兜底或 fail-closed（响亮，不静默猜）。
+            # 剥离后只接受：`refs/tags/<非空>` / `refs/heads/<非空>` /
+            # 40|64 位小写 hex / 空。
+            REF_PART=""
+            PREFIX="$WL_REPO_SLUG/.github/workflows/gate.yml@"
             case "${WL_WORKFLOW_REF:-}" in
-              *@refs/heads/*)
-                REF="${WL_WORKFLOW_REF##*@refs/heads/}"
-                WHY="job.workflow_ref 的分支名（job.workflow_sha 缺失时的兜底）" ;;
-              *@refs/tags/*)
-                REF="${WL_WORKFLOW_REF##*@refs/tags/}"
-                WHY="job.workflow_ref 的 tag 名（job.workflow_sha 缺失时的兜底）" ;;
+              "$PREFIX"*)
+                TAIL="${WL_WORKFLOW_REF#"$PREFIX"}"
+                case "$TAIL" in
+                  refs/tags/?*|refs/heads/?*)
+                    REF_PART="$TAIL" ;;
+                  ""|*[!0-9a-f]*) : ;;
+                  *)
+                    case "${#TAIL}" in
+                      40|64) REF_PART="$TAIL" ;;
+                    esac ;;
+                esac ;;
+            esac
+
+            case "$REF_PART" in
+              refs/tags/?*)
+                # annotated tag：`job.workflow_sha` 是 tag 对象，uv >= 0.13.2 拒绝。
+                REF="$REF_PART"
+                WHY="job.workflow_ref 的 tag ref（annotated tag 下 job.workflow_sha 是 tag 对象，不能当精确 commit 安装）" ;;
               *)
-                FAILED="job.workflow_sha 为空、且 job.workflow_ref=「${WL_WORKFLOW_REF:-<空>}」解析不出可安装的 ref" ;;
+                if [ -n "${WL_WORKFLOW_SHA:-}" ]; then
+                  REF="$WL_WORKFLOW_SHA"
+                  case "$REF_PART" in
+                    refs/heads/?*)
+                      WHY="job.workflow_sha（分支 pin 的精确 commit）" ;;
+                    "")
+                      WHY="job.workflow_sha（job.workflow_ref 不可识别时的兜底）"
+                      echo "::warning::job.workflow_ref=「${WL_WORKFLOW_REF:-<空>}」不可识别，退到 job.workflow_sha=$REF —— 若 caller 钉的是 annotated tag，这个值可能是 tag 对象，uv >= 0.13.2 会拒绝" ;;
+                    *)
+                      WHY="job.workflow_sha（commit pin 的精确 commit）" ;;
+                  esac
+                else
+                  case "$REF_PART" in
+                    refs/heads/?*)
+                      REF="$REF_PART"
+                      WHY="job.workflow_ref 的分支 ref（job.workflow_sha 缺失时的降级）" ;;
+                    "")
+                      FAILED="job.workflow_ref=「${WL_WORKFLOW_REF:-<空>}」解析不出可安装的 ref，且 job.workflow_sha 为空" ;;
+                    *)
+                      REF="$REF_PART"
+                      WHY="job.workflow_ref 的 commit sha（job.workflow_sha 缺失时的降级）" ;;
+                  esac
+                fi ;;
             esac
           fi
 
@@ -102,6 +148,15 @@ jobs:
             WHY="fail-closed：$FAILED"
             echo "::warning::witnessloop 包 ref 解析失败，退到 $REF —— $FAILED"
           fi
+
+          # 空 / 纯空白 ref 会让安装步退化成 `git+…@`（装默认分支）——与「包版本钉没钉住」
+          # 毫无相似之处。宁可响亮失败，也不写出一个空 ref。
+          case "$REF" in
+            *[![:space:]]*) ;;
+            *)
+              echo "::error::witnessloop 包 ref 解析后为空或纯空白——拒绝写出空 ref（会装默认分支）"
+              exit 1 ;;
+          esac
 
           # ⚠️ `$GITHUB_OUTPUT` 刻意**不**兜底（对抗轮 R5 的观察）：它未定义时脚本当场退 2，
           # 那是**响亮**的失败；兜了反而会退化成 `uvx --from git+…@`（装默认分支）——
@@ -128,7 +183,7 @@ jobs:
         env:
           BASE_INPUT: ${{ inputs.base-ref }}
           PR_BASE: ${{ github.base_ref }}
-          # 包 ref 由上面那个 step 解析（(B′)：缺省 = 本 reusable workflow 自己的 commit）。
+          # 包 ref 由上面那个 step 解析（tag 用 caller 钉的 tag ref；分支 / commit 用实际执行的 commit）。
           # 走 env 而不是 `${{ }}` 内联：与 adopter tests 那一步同口径，不在 run 里做解析期插值。
           WL_REF: ${{ steps.wl-ref.outputs.ref }}
         run: |

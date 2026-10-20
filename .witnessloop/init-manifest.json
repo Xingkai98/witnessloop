@@ -4,7 +4,7 @@
   "created_at": "2026-10-11T07:46:29+00:00",
   "base_ref": "dogfood-bootstrap/2026-10-11",
   "base_sha": "6aa982158f49d4a8eb3c53bc7350e97e35974c51",
-  "gate_ref": "Xingkai98/witnessloop/.github/workflows/gate.yml@v1.7.0",
+  "gate_ref": "Xingkai98/witnessloop/.github/workflows/gate.yml@98b97b7046e98508470345ce081f7189c6c4269c",
   "created_files": [
     {
       "path": ".witnessloop/policy.json",
@@ -12,7 +12,7 @@
     },
     {
       "path": ".github/workflows/witnessloop.yml",
-      "sha256": "cd4e45b8ef7e180adc9a445f851ab9a4d8782fbe2615d824525054378540e059"
+      "sha256": "5e72d1c4f41946030f4524a7efb8f1f614aa8566bd3c1f36fca4dea774ee75ea"
     },
     {
       "path": ".witnessloop/init-manifest.json",

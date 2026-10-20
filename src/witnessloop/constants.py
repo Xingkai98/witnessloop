@@ -12,18 +12,20 @@ v1 硬编码 OpenSpec 形状的 change 契约（见 design §4「spec 依赖」�
 REPO_SLUG = "Xingkai98/witnessloop"
 
 # caller workflow 引用的 reusable workflow。**这一个 ref 同时决定两件事**（change
-# gate-ref-pins-package / design §2 D1）：`uses:` 指向的 workflow 文件，**以及** witnessloop
-# **包**的版本——包 ref 由 gate.yml 从 `job.workflow_sha`（被复用的那个文件的 commit）推导，
-# 所以接入方 SHALL NOT 需要分别维护两个 ref。
+# gate-ref-pins-package / design §2 D1；change gate-ref-annotated-tag / issue #42 细化）：
+# `uses:` 指向的 workflow 文件，**以及** witnessloop **包**的版本。包 ref 的缺省由 gate.yml
+# 按 ref 形态取「可安装且精确」的那个：**tag** ⇒ `job.workflow_ref` 的 `refs/tags/<tag>`
+# （annotated tag 的 `job.workflow_sha` 是 tag object，uv >= 0.13.2 拒绝）；**分支 / commit**
+# ⇒ `job.workflow_sha`（精确 commit）。⇒ 接入方 SHALL NOT 需要分别维护两个 ref。
 # ⚠️ 显式传 `--gate-ref` 时：**已接入**的仓会被**重写 caller + 同步台账**（initcmd
 # `sync_caller_gate_ref`），plain `init` 仍只增不改。
 # ⚠️ **这个字面量是一个「族」**：改它必须同时改 `.github/workflows/gate.yml` 的
 # `WL_FALLBACK_REF`（fail-closed 兜底，与这里**同源**）与 `tests/test_gate_workflow.py`
 # 里那条断言——只改一处会红（change gate-ref-pins-package 的 `tasks.md §6.1` 列了全清单）。
-# 本值随该 change 的 `(post-merge)` 步骤从 `@v1` 移到 `@v1.7.0`：
 # 顺序是**先改这里、再给含该改动的提交打 tag**（反过来打出的 tag 里常量还是旧值，收益会落空）。
-# ⚠️ `v1` tag **不动**：它是别人依赖的发布物。
-DEFAULT_GATE_REF = f"{REPO_SLUG}/.github/workflows/gate.yml@v1.7.0"
+# 本值随 change gate-ref-annotated-tag 移到 `@v1.7.1`（修复 issue #42）。
+# ⚠️ `v1` / `v1.7.0` tag **不动**：它们是别人依赖的发布物。
+DEFAULT_GATE_REF = f"{REPO_SLUG}/.github/workflows/gate.yml@v1.7.1"
 
 # init 创建的文件（相对目标仓根）。
 POLICY_PATH = ".witnessloop/policy.json"
