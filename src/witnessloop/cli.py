@@ -105,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument(
         "--head", default=None, help="diff 的 head ref（默认 HEAD）"
     )
+    p_check.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="显式允许**零变更**区间通过（退 0，并在输出里标注按该 flag 放行）。"
+        "默认零变更是「无操作（非通过）」且退 EXIT_EMPTY(5)，绝不冒充校验通过",
+    )
 
     p_manifest = sub.add_parser("manifest", help="review manifest 操作（证据产出）")
     manifest_sub = p_manifest.add_subparsers(

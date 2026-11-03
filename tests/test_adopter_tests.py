@@ -37,7 +37,13 @@ def _write_tests(repo: Path, content: str | None) -> None:
 # ---------------------------------------------------------------- 四态
 
 def test_wired_execution_point_passes(gated: Path, cli):
-    """已接线 ⇒ 绿（这一条同时是另外三条的对照：判据不是「一律红」）。"""
+    """已接线 ⇒ 绿（这一条同时是另外三条的对照：判据不是「一律红」）。
+
+    ⚠️ 必须有**非空 diff**：issue #45 起零变更区间是「无操作（非通过）」，
+    根本不会走到执行点判定——那样这条测试会因为「什么都没校验」而失去意义。
+    """
+    (gated / "note.txt").write_text("x\n", encoding="utf-8")
+    commit_all(gated, "非空 diff")
     code, out, err = check(gated, cli)
     assert code == C.EXIT_PASS, err
     assert "通过" in out
@@ -144,6 +150,8 @@ def test_truthy_but_non_boolean_disabled_still_gets_judged(repo: Path, cli, tmp_
     )
     commit_all(repo, "接入（policy 里写了非布尔的 disabled）")
     git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "note.txt").write_text("x\n", encoding="utf-8")
+    commit_all(repo, "非空 diff")
 
     code, _, err = check(repo, cli)
 
@@ -163,6 +171,8 @@ def test_opt_out_policy_is_not_judged(repo: Path, cli):
     assert not (repo / TESTS).exists()
     commit_all(repo, "接入（显式 opt-out）")
     git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "note.txt").write_text("x\n", encoding="utf-8")
+    commit_all(repo, "非空 diff")
 
     code, out, err = check(repo, cli)
 

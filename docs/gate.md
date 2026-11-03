@@ -269,6 +269,16 @@ glob 语义：`*` / `?` 不跨 `/`，`**` 跨（含零层，`**/x` 也匹配 `x`
      - **证据路径 = `.witnessloop/**`、`<changes_root>/*/reviews/**`、
        `<changes_root>/*/workflow-events.jsonl`**（收窄到 change 目录内——
        任意深度的 `reviews/` 目录都算证据会让 `src/reviews/x.py` 变成规避面）。
+  4. **`head_sha` 不是被检 head 的祖先时，按 git 拓扑给下一步**（issue #46）：
+     - 证据 revision 是**后代**（被检 revision 在它的历史里）⇒ 报告说「后代」，并给出
+       `witnessloop check --base <本次 base> --head HEAD`；若 HEAD 仍早于证据，再给
+       `--head <证据 sha>` 的形式。
+     - **旁支 / 不可达**（两向都不是祖先）⇒ 报告说「旁支 / 不可达」，并给出
+       `witnessloop manifest build --change <change> --stage <stage> --report <report_path> --base <本次 base>`
+       与一条 `witnessloop check` 复核命令。`check` 仍是只读动词：**不会**替你重建 manifest，
+       也**不会**改写 `head_sha`。
+     - 两向判定用既有的 `git merge-base --is-ancestor`；提示里的 base 是**本次实际使用的**
+       ref，不硬编码 `main`。
 - **强制 `reviewer_run_id != author_run_id`**：兜底路径下两角色 id **结构性不同**，所以它只挡
   「**显式**把同一个值喂给两个角色」（如只设共享 `WITNESSLOOP_RUN_ID`）——**不**等于「挡忘了另开
   run」；也**不挡蓄意伪造**。兜底 id 是**「审阅目标的指纹」**、非真实 run 身份（见 design §5.2）。
@@ -529,6 +539,7 @@ id 去要 `proposal.md`，而搬走的那个 change 会被报「目录不存在�
 | 1 | 未通过（契约缺件 / 证据漂移 / **孤儿报告** / **grill 报告正文不完备** / **缺设计对抗轮证据**（§10）/ **缺 building 审阅证据**（§9）/ 受保护写入无解释 / **归档 change 证据缺件**（§5.1.1——归档态与 active **同一套**判定）/ **测试执行点缺失、为空或未接线**（§11）/ base 解析失败） |
 | 2 | 用法错误（argparse） |
 | 3 | **未接入**——没有 `.witnessloop/policy.json`。fail-closed，绝不静默通过 |
+| 5 | **零变更**（`base...head` 为空）——**无操作，不是通过**。issue #45 起默认退 5，避免误配 base/head 得到一个绿勾；显式 `--allow-empty` 才退 0，且输出写明是「按 flag 放行」而非校验通过。`EXIT_EMPTY` 与真失败的 1 区分，任何 `!= 0` 的 CI 判定仍视为失败 |
 
 `guard`（本地守卫，见 §8）——**与 `check` 同形状**：
 
