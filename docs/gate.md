@@ -567,6 +567,34 @@ verb 是 `guard` ⇒ **4**（fail-open）；其余 verb ⇒ **1**（`check` = �
 → `origin/main` \| `main` \| `origin/master` \| `master`。
 `head` 解析顺序：`--head` → `WITNESSLOOP_HEAD_REF` → `HEAD`。
 
+### 6.1 触发事件：本门禁只接受 `pull_request`
+
+re-usable workflow `.github/workflows/gate.yml` **按 PR 区间设计**：`base` 取
+`origin/<PR 的目标分支>`（或显式 `with.base-ref`），`head` 取 PR 自己的 head——
+这个区间里**恒有变更**。把它挂到 `push` / `schedule` 上时：
+
+- `github.base_ref` 为空 ⇒ base 退化成 `origin/`，`check` 报「无法解析 base ref」；
+- 即使 base 能解析，push/schedule 下 base 与 head 通常是**同一个提交** ⇒ 零变更；
+- 零变更自 issue #45 起是 `EXIT_EMPTY(5)`——**无操作、非通过**，不是「校验通过」，
+  也不是一条门禁故障。
+
+旧版 `gate.yml` 不判断事件类型，于是上述两种情形都表现为一条**没有解释的红**。
+现在 gate 在 `check` 之前运行 `scripts/gate-event-guard.sh`：
+`github.event_name != 'pull_request'`（含空值）⇒ `::error::` + 非 0 退出，文案说明：
+
+1. 本门禁只接受 PR 区间（base 是目标分支、head 是 PR head，恒有变更）；
+2. push/schedule 的零变更按 #45 **不是通过**（`EXIT_EMPTY=5`）；
+3. 确实需要零变更放行时必须**显式** `--allow-empty`，**不要**为了抹红默认加上。
+
+**正确做法**：把 gate 挂在 `pull_request` 事件上。若确实需要门禁 `push`，为它单独写一个
+workflow，并在那里显式决定是否 `--allow-empty`（那等于放弃「区间内有变更」这个前提）。
+**不要**把 `--allow-empty` 默认塞进门禁来消除这条红。
+
+> 守卫脚本需要从**本仓**取得：reusable workflow 的工作区里只有 caller 仓，所以 gate 会按
+> 已解析的包 ref 把 `Xingkai98/witnessloop` 检出到 `.witnessloop-gate`（`fetch-depth: 1`），
+> 执行后立即删除。这不会污染 caller 工作区，但多一次小仓 clone；GHES / 私有 / 网络受限
+> 环境与既有「必须能访问 GitHub」的能力边界相同（见 §7）。
+
 ## 7. 能力边界（必须诚实转述）
 
 **「到达」的内容来源判据（issue #26）的两条边界**（`specs/archive-awareness/spec.md` 的

@@ -40,13 +40,21 @@ def test_gate_pins_the_pr_head_for_checkout():
 
     reviewer R3 §4-2：原先只 grep 子串，把这行删掉（或被改回默认检出
     test-merge commit）测试都不会红。这里解析 YAML，断言它落在
-    **checkout 步骤的 `with.ref`** 这个具体位置、且是那个具体值。
+    **caller checkout 的 `with.ref`** 这个具体位置、且是那个具体值。
+
+    issue #48 起 gate.yml 还有一次 `actions/checkout`（取守卫脚本），
+    所以按 `path` 缺省选出 **caller** 那次，不能再取「第一个 checkout」。
     """
     doc = yaml.safe_load(GATE.read_text(encoding="utf-8"))
     steps = doc["jobs"]["check"]["steps"]
-    checkout = next(
-        s for s in steps if str(s.get("uses", "")).startswith("actions/checkout")
-    )
+    callers = [
+        s
+        for s in steps
+        if str(s.get("uses", "")).startswith("actions/checkout")
+        and s.get("with", {}).get("path") is None
+    ]
+    assert len(callers) == 1, "caller checkout 应恰好一个（无 path）"
+    checkout = callers[0]
     assert checkout["with"]["ref"] == (
         "${{ github.event.pull_request.head.sha || github.sha }}"
     )
@@ -119,10 +127,11 @@ def test_adopter_tests_step_skips_when_missing_or_unwired():
 
 
 def test_adopter_tests_step_runs_after_check_with_bang_cancelled():
-    """C3/D2：`check` 在前；测试步骤 `if: ${{ !cancelled() }}`。
+    """C3/D2 + issue #48：`check` 在前；测试步骤在**守卫成功**且未取消时运行。
 
     理由（不是原稿那个被实测证伪的「`always()` 掩蔽失败」）：① 门禁红时最需要测试反馈；
-    ② run 被取消时不必再跑一遍测试。
+    ② run 被取消时不必再跑一遍测试；③ 非 `pull_request` 事件已被守卫拒绝
+    （`EXIT_EMPTY` 的口径差异不应再触发一轮测试）。
     """
     steps = _steps()
     names = [s.get("name") for s in steps]
@@ -131,7 +140,9 @@ def test_adopter_tests_step_runs_after_check_with_bang_cancelled():
     tests_index = steps.index(tests_step)
 
     assert check_index < tests_index
-    assert tests_step["if"] == "${{ !cancelled() }}"
+    assert tests_step["if"] == (
+        "${{ !cancelled() && steps.wl-event-guard.outcome != 'failure' }}"
+    )
 
 
 # --- 行为级：把 `run:` 原文交给真 `sh` 跑一遍（不是文本断言） -------------------

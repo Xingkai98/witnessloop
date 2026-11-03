@@ -3,6 +3,8 @@ name: witnessloop gate
 # reusable workflow —— `witnessloop init` 在目标仓写入的 caller 引用本文件：
 #   uses: Xingkai98/witnessloop/.github/workflows/gate.yml@v1
 # 本文件刻意极薄：门禁逻辑全在 `witnessloop check` 里（host-agnostic 的单二进制）。
+# 唯一的 gate 层策略判断是**事件类型守卫**（issue #48）：本门禁只接受 `pull_request`，
+# 逻辑在 `scripts/gate-event-guard.sh`（可单测），这里只负责取来执行。
 #
 # 注意：reusable workflow 不会凭空产生 required check。
 # 真正拦住合并的是目标仓 branch protection 里把本 workflow 的 job 勾成 required——
@@ -164,6 +166,41 @@ jobs:
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
           echo "::notice::witnessloop 包 ref = $REF（来源：$WHY）"
 
+      # issue #48：守卫脚本住在**本仓** `scripts/` 里，而 reusable workflow 的工作区
+      # 此刻只有 caller 仓（第一次 checkout 之前甚至是空的）⇒ 先把**同一个 ref** 的
+      # witnessloop 仓检出到一个临时子目录。ref 复用上面解析出的包 ref（一个 ref 同时
+      # 决定 workflow / 包 / 脚本）；tag 形态给的是 `refs/tags/<tag>`，actions/checkout
+      # 明确支持 `refs/tags/*`。守卫结束后立即删除，不污染 caller 工作区。
+      - name: checkout gate event guard script
+        uses: actions/checkout@v4
+        with:
+          repository: "Xingkai98/witnessloop"
+          ref: ${{ steps.wl-ref.outputs.ref }}
+          path: .witnessloop-gate
+          fetch-depth: 1
+          persist-credentials: false
+
+      # issue #48：本门禁只接受 `pull_request`。push / schedule 下 base 与 head 通常是
+      # 同一个提交，零变更按 #45 是 EXIT_EMPTY(5)（无操作、非通过）——先给出明确结论，
+      # 不再让它变成「base 解析失败」或一条没有解释的红。
+      # ⚠️ 守卫逻辑在 scripts/gate-event-guard.sh（可单测）；这里只负责取来执行。
+      - name: gate event guard
+        id: wl-event-guard
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          WL_REF: ${{ steps.wl-ref.outputs.ref }}
+        run: |
+          set +e
+          if [ ! -f .witnessloop-gate/scripts/gate-event-guard.sh ]; then
+            echo "::error::witnessloop gate 无法取得守卫脚本：ref=$WL_REF 下没有 scripts/gate-event-guard.sh（门禁 fail-closed）。" >&2
+            rm -rf .witnessloop-gate
+            exit 1
+          fi
+          sh .witnessloop-gate/scripts/gate-event-guard.sh
+          rc=$?
+          rm -rf .witnessloop-gate
+          exit "$rc"
+
       # fetch-depth: 0 是必需的：浅克隆会让 merge-base 求不出来，
       # 而 check 对「求不出 base」是 fail-closed（报错，不静默跳过）。
       #
@@ -219,7 +256,7 @@ jobs:
       # （实测 exit 4）。`check` 侧不受影响（Python 的 `str.strip()` 本来就吃 `\r`），
       # 所以那是门禁侧独有的、与「接线」毫无关系的红（审阅 R1 的 I3）。
       - name: adopter tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.wl-event-guard.outcome != 'failure' }}
         env:
           WL_TESTS_FILE: .github/witnessloop-tests.txt
           WL_TESTS_SENTINEL: "<<REPLACE-ME>>"
