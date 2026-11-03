@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "gate-event-guard",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-gate-event-guard-2026-11-03",
+  "author_run_id": "author-gate-event-guard-2026-11-03",
+  "base_sha": "b7048dd1952fc3a873f2619692c8a35dcac044d0",
+  "head_sha": "f9f1e3218fa6f4339e5766298a2608aadf61693c",
+  "tasks_hash": "4bf6294b455449fdb81931faf68be5d808400841ee2cd58f8f2f945b13d2faf8",
+  "spec_hash": "193e9e54be11aba446173c83101f21b992984048ebd2a6f4010eb235ffa7f3e2",
+  "diff_hash": "8449cd2479fdfbb2e638a7c0e1998fcb81b931e15f5a98f528faeffda191e39a",
+  "report_hash": "e77768d7b1ffa4e9d744eec36165e178de39b957efc2b5197b4d057ec28e4adc",
+  "report_path": "reviews/grill-design.md"
+}
