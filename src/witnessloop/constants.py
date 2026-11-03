@@ -126,6 +126,10 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 EXIT_NOT_ONBOARDED = 3
+# `check` 的**零变更**（base...head 为空）：没有校验任何东西，因此**不是通过**。
+# 刻意与 `EXIT_FAIL` 区分：CI 日志能看出「区间为空」而不是「校验失败」；
+# 任何 `!= 0` 的判定仍视为失败。显式 `--allow-empty` 才退 0（see issue #45）。
+EXIT_EMPTY = 5
 # `guard` 的**内部错误**（未预期异常）：fail-open，**绝不等于 1**（1 是「拦」）。
 # 由进程入口 `entry.py` 捕获未预期异常时返回；**仅 `guard`** 用它——其余动词崩溃退 1（失败 / fail-closed）。
 # `entry.py` 不可 import 本模块（要能在 witnessloop 自己导入不起来时兜底）⇒ 那里用字面量，

@@ -40,7 +40,7 @@ witnessloop manifest build --change add-retry --stage building \
   --report reviews/building-review.md \
   --reviewer-run-id run-A --author-run-id run-B
 
-# CI 入口（fail-closed）
+# CI 入口（fail-closed）。零变更 ≠ 通过：默认退 5（无操作）；显式 --allow-empty 才放行
 witnessloop check --base origin/main --head HEAD
 
 # 本地守卫：写目标命中 require_change_for 且缺 grill 证据 → 拦（CLI 退 1；host shim 再映射成 CC 的 2）
@@ -50,6 +50,19 @@ witnessloop guard --path src/x.py
 # 精确回滚（文件被改过就拒绝删除并报 diff）
 witnessloop uninit
 ```
+
+### 零变更不是「通过」（issue #45）
+
+`check` 只校验 `base...head` 之间的变更。区间为空时它**没有校验任何东西**，
+因此**不再**打印「通过」：
+
+| 调用 | 退出码 | 输出语义 |
+|---|---|---|
+| `witnessloop check --base HEAD --head HEAD` | **5**（`EXIT_EMPTY`） | 「无变更，跳过（非通过）」——无操作，不是成功 |
+| `… --allow-empty` | 0 | 明确写「已按 `--allow-empty` 显式放行」，并说明本次没有校验任何内容 |
+
+`EXIT_EMPTY` 刻意与「真校验失败」的 `EXIT_FAIL(1)` 区分；**任何 `!= 0` 的 CI 判定仍然失败**。
+如果你的脚本确实预期零变更，请显式加 `--allow-empty`，不要依赖「空 diff 退 0」。
 
 交互层（`grill` / `review-loop`）是一个 Claude Code plugin，**只做接线**——
 算法在 host 中立的 `templates/` 下，适配器在 `plugin/` 下，两者物理分离：

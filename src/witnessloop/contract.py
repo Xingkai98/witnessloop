@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import posixpath
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -551,6 +552,8 @@ class SpanScope:
     checked_head: str
     pr_paths: frozenset[str]
     evidence_patterns: tuple[str, ...]
+    #: 本次 `check` 实际使用的 base ref（issue #46：提示里给可执行命令，不猜主干名）。
+    base_ref: str = "origin/main"
 
 
 def validate_review_manifests(
@@ -727,12 +730,78 @@ def _validate_one(
 
     # D3：hash 绑定真实 artifact 字节；base/head 绑定真实 git revision。
     findings.extend(_check_hashes(directory, manifest_rel, doc))
-    findings.extend(_check_git_span(root, manifest_rel, doc, scope))
+    # issue #46：change 名取**这份 manifest 所在目录**的名字（active = id，归档 = 归档目录名），
+    # 用它拼 `manifest build --change …` 的重建命令。
+    findings.extend(
+        _check_git_span(
+            root, manifest_rel, doc, scope, change_name=directory.name
+        )
+    )
     return findings
 
 
+def _manifest_field(doc: dict, key: str, fallback: str) -> str:
+    """manifest 字段的**可用文本**；缺字段 / 非字符串 / 纯空白 ⇒ 占位符。
+
+    manifest 是 agent 可写的 JSON——这里只用于拼提示，**不参与任何判定**，
+    所以取不到时退占位符即可（仍保持可识别的命令模板形态）。
+    """
+    value = doc.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else fallback
+
+
+def _revision_mismatch_hint(
+    root: Path,
+    doc: dict,
+    scope: SpanScope,
+    head_sha: str,
+    change_name: str | None,
+) -> str:
+    """issue #46：把「不是祖先」按 git 拓扑分成两支，各给一条可执行的下一步。
+
+    * **后代**（被检 revision 是证据 revision 的祖先）：证据产生在更晚的历史上，
+      当前区间看不到它 ⇒ 改用包含它的区间。
+    * **旁支 / 不可达**：两向都不是祖先 ⇒ 只能**在交付 revision 上重跑**该阶段审阅
+      并重建 manifest（`check` 自己仍是只读的，不替人重建）。
+
+    `base` 取**本次实际使用的** base ref（`SpanScope.base_ref`），不硬编码主干名——
+    接入方可能用 `origin/develop` / 自定义 base。
+    """
+    # 提示是给人**复制执行**的：值来自 args / 可写的 manifest ⇒ 全部按 shell 规则引用。
+    # 简单值（main / add-x / reviews/x.md / 40 位 sha）不会被加引号，模板保持可读。
+    base = shlex.quote(scope.base_ref)
+    if gitutil.is_ancestor(root, scope.checked_head, head_sha):
+        return (
+            "  ⚠️ 证据 revision 是本次被检 revision 的**后代**：它产生在更晚的历史上，"
+            "当前区间不包含它。\n"
+            "  若本次应检查到交付 HEAD，改用包含它的区间重跑：\n"
+            f"    witnessloop check --base {base} --head HEAD\n"
+            "  若 HEAD 仍早于该证据，直接检查到证据 revision：\n"
+            f"    witnessloop check --base {base} --head {shlex.quote(head_sha)}"
+        )
+
+    change = shlex.quote(change_name or "<change>")
+    stage = shlex.quote(_manifest_field(doc, "stage", "<stage>"))
+    report_path = shlex.quote(_manifest_field(doc, "report_path", "<report_path>"))
+    return (
+        "  ⚠️ 它也不在被检 revision 的后代链上（旁支 / 不可达）：证据产自另一条历史，"
+        "不能证明本次交付。\n"
+        f"  处置：在交付 revision（{scope.checked_head}）上重新跑该阶段审阅，"
+        "并重建 manifest：\n"
+        f"    witnessloop manifest build --change {change} --stage {stage} "
+        f"--report {report_path} --base {base}\n"
+        "  然后用同一条区间复核：\n"
+        f"    witnessloop check --base {base} --head HEAD"
+    )
+
+
 def _check_git_span(
-    root: Path, manifest_rel: str, doc: dict, scope: SpanScope
+    root: Path,
+    manifest_rel: str,
+    doc: dict,
+    scope: SpanScope,
+    *,
+    change_name: str | None = None,
 ) -> list[Finding]:
     """D3 的 revision 绑定（tasks.md：「base/head sha + ...」）。
 
@@ -785,7 +854,8 @@ def _check_git_span(
             Finding(
                 manifest_rel,
                 f"head_sha={head_sha} 不是本次被检 revision {scope.checked_head} 的祖先"
-                "——审阅的是别的 revision",
+                "——审阅的是别的 revision\n"
+                + _revision_mismatch_hint(root, doc, scope, head_sha, change_name),
             )
         )
         return findings

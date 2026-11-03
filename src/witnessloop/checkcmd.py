@@ -125,6 +125,15 @@ def run(args: argparse.Namespace) -> int:
         print(f"check：未通过 ✗ —— {exc}", file=sys.stderr)
         return C.EXIT_FAIL
 
+    # issue #45：零变更 = **无操作**，不是「通过」。
+    # 「没有任何东西被校验」与「校验通过」必须分开——否则误配的 base/head
+    # 会得到一个绿勾。显式 `--allow-empty` 才放行（见 _report_empty）。
+    if not changes:
+        # getattr：`run` 也可能被程序化调用（手搭 Namespace）；缺字段按「不放行」处理。
+        return _report_empty(
+            base, head, allow_empty=getattr(args, "allow_empty", False)
+        )
+
     # 被检 revision 的 sha：D3 用它核对 manifest 的 head_sha 是不是审对了 revision。
     # pr_paths 是本次 PR 自身的变更集——被检 head 可能是 merge commit，判定 stale
     # 时必须把 base 侧顺带进来的改动排除掉。
@@ -137,6 +146,8 @@ def run(args: argparse.Namespace) -> int:
             if path
         ),
         evidence_patterns=pol.stale_exempt_paths,
+        # issue #46：提示里给**本次实际使用的** base ref，而不是猜主干名。
+        base_ref=base,
     )
 
     # 本次 diff 触及的 change：**active ∪ 本次到达的归档目录**（change archive-arrival-recognition / #26）。
@@ -473,6 +484,40 @@ def _move_half_hint(
             f"（{pol.protected_write_event_types!r}）——请先修 policy 本身（例如去掉首尾空白）。"
         )
     return hint + "）"
+
+
+def _report_empty(base: str, head: str, *, allow_empty: bool) -> int:
+    """issue #45：零变更区间的出口。
+
+    **无操作 ≠ 通过**：空 diff 下没有 target、没有证据可核，任何「通过」都是在替
+    「什么都没校验」背书。默认退 ``EXIT_EMPTY``（与真失败的 1 可区分）；只有显式
+    ``--allow-empty`` 才退 0，且输出必须说明这是放行、不是校验通过。
+
+    保留 `0 个变更文件` / `0 个 change 目录` 两个既有摘要子串（下游日志断言依赖它们）。
+    """
+    # flush：与 _report 同因——stdout 缓冲会让摘要排在 stderr 的失败明细后面。
+    print(
+        f"check：基线 {base}...{head}，0 个变更文件，0 个 change 目录",
+        flush=True,
+    )
+    if allow_empty:
+        print(
+            "check：无变更；已按 --allow-empty 显式放行（退出码 0）"
+            "——本次没有校验任何内容。",
+            flush=True,
+        )
+        return C.EXIT_PASS
+    print(
+        "check：无变更，跳过（非通过）✗ —— base 与 head 之间没有任何差异，"
+        "本次没有校验任何内容",
+        file=sys.stderr,
+    )
+    print(
+        "  这是无操作，不是通过。CI / 脚本若确实预期零变更，"
+        "显式加 --allow-empty 放行。",
+        file=sys.stderr,
+    )
+    return C.EXIT_EMPTY
 
 
 def _report(base, head, changes, targets, findings) -> None:

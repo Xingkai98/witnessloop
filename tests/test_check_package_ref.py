@@ -17,6 +17,7 @@ from pathlib import Path
 from witnessloop import checkcmd
 from witnessloop import constants as C
 
+from conftest import commit_all
 from helpers import init_wired
 
 #: R1 实测抓到的**真实**载荷（uv 0.13.1，`uvx --from git+…@v1`）。
@@ -69,6 +70,9 @@ def test_check_prints_the_line_even_from_source(gated: Path, cli):
     这正是「取不到不失败」那条：这一行必须在，且 `check` 的判定不受它影响。
     """
     (gated / "note.txt").write_text("x\n", encoding="utf-8")
+    # issue #45 起零变更不是「通过」；这里要的是「真实跑一遍 check 的自报行」，
+    # 所以提交一个非空 diff（纯文档改动 ⇒ 不影响本测试关心的那行）。
+    commit_all(gated, "非空 diff")
 
     code, out, _ = cli("check", "--root", str(gated), "--base", "main", "--head", "HEAD")
 
