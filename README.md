@@ -196,6 +196,12 @@ init-manifest 台账、`uninit` 拒删，见 [docs/gate.md §1.1](docs/gate.md)�
 `.github/workflows/gate.yml@<ref>`——记得在目标仓 branch protection 里把那个 job
 勾成 required，否则门禁不会真的拦人（那一次人肉操作就是 v1 的「人类签名」）。
 
+⚠️ **这个门禁只接受 `pull_request` 事件**（issue #48）。`push` / `schedule` 触发时
+base 与 head 通常是同一个提交，零变更按 #45 是「无操作（`EXIT_EMPTY=5`）」——**不是通过**；
+gate 现在会在 `check` 之前给出明确的 `::error::`，而不是让你猜一条 base 解析失败或零变更码。
+确实需要零变更放行时才显式加 `--allow-empty`，**不要为了抹红默认加上**。详见
+[docs/gate.md §6.1](docs/gate.md)。
+
 ### 怎么钉版本 / 怎么升级
 
 > ⚠️ **前提：用含这个能力的 ref（`v1.7.0` 起；钉 annotated tag 建议 `v1.7.1` 起）。**
