@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "gate-empty-diff-and-hints",
+  "stage": "grill",
+  "reviewer_run_id": "grill-reviewer-gate-empty-diff-and-hints-2026-11-03",
+  "author_run_id": "author-gate-empty-diff-and-hints-2026-11-03",
+  "base_sha": "4802752f8fd8d38b8ecb9930798dbd5fd3d151d5",
+  "head_sha": "f8d8d20eac3b91d23ed84e1ff9a6d788de3d4c9d",
+  "tasks_hash": "301d5cbb3b62709cdb2509a378254129783949d33126e40c1e604f679bbddfa2",
+  "spec_hash": "82de255436cf04a796093c006818c70ac527e9e0cfe3b8cdac05307d7b2a2baf",
+  "diff_hash": "b07da034de81d00d5c3a6c48f1731d716541c97410798da1e7b37ba1b5062764",
+  "report_hash": "47e5e085673fa8f09df20f1b325668b0abaf46dfb6e09febba6d5eacf3855cd6",
+  "report_path": "reviews/grill-design.md"
+}
