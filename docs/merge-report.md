@@ -64,21 +64,20 @@
 | 角色 | 真值模型 | 实测模型 | 通路 | 降级 |
 |---|---|---|---|---|
 | reviewerA | `gpt-6.1-terra` | `gpt-6.1-terra` | codex / heyroute `/v1` | 无 |
-| reviewerB | `glm-5.3` | **`deepseek-flash`** | claude / deepseek `/anthropic` | `degraded_from: glm-5.3` |
-| fixer | `deepseek-flash` | `deepseek-flash` | claude / deepseek | 无 |
-| judge | `deepseek-v4-pro` | `deepseek-v4-pro`（仅停滞时） | claude / deepseek | 无 |
+| reviewerB | `glm-5.3` | **`glm-5.3`** | claude / heyroute `/v1/messages`（`base_url=https://heyroute.ai`） | 无（T-075 真跑） |
+| fixer | `deepseek-flash` | `deepseek-flash` | claude / deepseek `/anthropic` | 无 |
+| judge | `deepseek-v4-pro` | `deepseek-v4-pro`（仅停滞时） | claude / deepseek `/anthropic` | 无 |
 
-**降级原因（如实）**：本机只有两把可用 key——heyroute 的 codex key（能看见
-`gpt-6.1-terra`）与 deepseek key（能看见 `deepseek-flash` / `deepseek-v4-pro`）。
-任务所称「heyroute 第三把 key（配置块 `hy-glm-5.3`，用于 `glm-5.3`）」在本机
-**不存在**（`~/.claude/settings*.json`、`~/.codex/config.toml`、`~/.bashrc`、
-`env`、`~/.config/*` 均无第三把 key；`OPENAI_API_KEY` 在 heyroute/siliconflow/
-deepseek/openai 四个 base 下均 `invalid`；`settings.json.save` 的 Silicon Flow 是
-「填入你的 API Key」占位）。按回落规则机械执行：reviewerB 通路 auth 未解析 ⇒
-当场回落 `deepseek-flash`，manifest 与报告标 `degraded_from: glm-5.3`，**不假装
-还是 glm-5.3**。
+**T-075 更正（如实）**：T-071 时「第三把 key 在本机不存在」是**找漏了**——真 key 其实在
+`~/.cc-switch/cc-switch.db`（sqlite，表 `providers`，`name='hy-glm-5.3'`，
+`settings_config` 含 `ANTHROPIC_BASE_URL=https://heyroute.ai`、`ANTHROPIC_MODEL=glm-5.3`、
+51 字符 API key）。叠加一个真 bug：出厂默认 reviewerB 的
+`base_url=https://heyroute.ai/v1` 会让 `claude` 适配器打成 `/v1/v1/messages`（404
+`endpoint_not_found`）——两者叠加才导致 T-071 全程回落 `deepseek-flash`。T-075 已修
+`base_url`（`roles.py` 去掉 `/v1`），真跑 glm-5.3 且**带正控**（篡改 manifest 被两路
+reviewer 报出 blocker/high）。详见 `docs/reviews/t075-glm-rerun.md`。
 
-本轮**不是**「同源双审」：reviewerA=terra、reviewerB=deepseek-flash，两路模型不同源。
+本轮**不是**「同源双审」：reviewerA=terra、reviewerB=glm-5.3，两路模型不同源。
 若 reviewerA 也降级（如 terra 通路失效），`final.degraded_note` 会写「本轮为同源双审」。
 
 ## 3. 双形态结果（P5）
