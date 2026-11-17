@@ -62,9 +62,11 @@ def test_git_ancestry(repo):
 
 def test_digest_ignores_output_dir(tmp_path):
     """Digest 必须排除自己的输出目录——否则每写一轮 manifest 就改掉自己的锚。"""
+    from witnessloop import constants as C
+
     (tmp_path / "a.txt").write_text("hello\n", encoding="utf-8")
     before = R.worktree_digest(tmp_path)
-    out = tmp_path / ".witnessloop" / "review" / "rounds"
+    out = tmp_path / C.REVIEW_OUTPUT_DIR / "rounds"
     out.mkdir(parents=True)
     (out / "round-0001.json").write_text('{"x": 1}\n', encoding="utf-8")
     after = R.worktree_digest(tmp_path)

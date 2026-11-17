@@ -130,7 +130,9 @@ REVIEW_MANIFEST_REQUIRED_FIELDS = (
 REVIEW_ROLES_PATH = "reviewloop.roles.json"
 REVIEW_ROLES_SCHEMA = "witnessloop/roles@v1"
 # review loop 的产物目录（仓根相对）。DigestRevision 计算时排除它，见 review/revision.py。
-REVIEW_OUTPUT_DIR = ".witnessloop/review"
+# ⚠️ 刻意**不**放 `.witnessloop/` 下：那是受保护路径（写每个 round manifest 都得解释事件）。
+# `.reviewloop/` 不在任何受保护路径里，是 loop 的本地审计产物（如 .pytest_cache）。
+REVIEW_OUTPUT_DIR = ".reviewloop"
 # 展开后的配置（config.resolved.json）与各轮 manifest 都落在产物目录里。
 REVIEW_CONFIG_FILENAME = "config.resolved.json"
 REVIEW_ROUNDS_SUBDIR = "rounds"

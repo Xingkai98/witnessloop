@@ -4,7 +4,7 @@
 
 * ``GitRevision``：commit sha + 祖先关系校验（复用 ``gitutil``，只读）。
 * ``DigestRevision``：工作树的 ``sha256_tree``——稳定排序、排除 ``.git``、
-  排除**自身输出目录**（``.witnessloop/review``，否则每写一轮 manifest 就会改掉
+  排除**自身输出目录**（``.reviewloop``，否则每写一轮 manifest 就会改掉
   自己的锚，永远对不上）。
 
 ``mode: auto`` 探测：有 ``.git`` 用 Git；否则用 Digest。Git 仓**没有提交**时
@@ -21,7 +21,7 @@ from witnessloop import constants as C
 from witnessloop import gitutil
 
 #: Digest 计算时从工作树里**整体**排除的顶层路径（仓根相对、posix）。
-#: ``.git`` 是 VCS 内部；``.witnessloop/review`` 是 review loop 自己的产物目录。
+#: ``.git`` 是 VCS 内部；``.reviewloop`` 是 review loop 自己的产物目录。
 DIGEST_EXCLUDED_TOP = (".git", C.REVIEW_OUTPUT_DIR)
 
 
