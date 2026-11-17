@@ -1,0 +1,575 @@
+"""``witnessloop review run``：多模型复审闭环（P4）。
+
+一轮 = 两路 reviewer 并发审 → 合并去重（**只按 ``where``，取 severity 高的那条**）
+→ fixer 按 findings 出修复方案 → 收敛判断（``pass_rule``）/ 停滞升级（``stall_rounds``
+内同一 finding 连续重报 ⇒ 升级 judge 单点复核）/ 成本止损（``budget.max_cost_usd``）。
+
+每轮写一份 manifest 到 ``.witnessloop/review/rounds/round-<n>.json``，绑：
+
+* ``actors[]``：每个出场的角色 = {role, adapter, model, run_id, degraded_from}；
+* ``config_hash``：``config.resolved.json`` 的 sha256。
+
+回落规则（**机械执行，不静默**）：任一 reviewer 通路返回 auth / balance /
+model_not_found（或 auth 一开始就没解析到）⇒ 该角色当场回落 ``deepseek-flash``，
+manifest 与报告里标 ``degraded_from``。两路都回落时，``final.degraded_note`` 写
+「本轮为同源双审」。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from witnessloop import constants as C
+from witnessloop import gitutil
+from witnessloop import policy as policy_mod
+from witnessloop.review import adapters as A
+from witnessloop.review import revision as R
+from witnessloop.review import roles as roles_mod
+
+#: 收敛看这些 severity（pass_rule=medium_plus_zero）。
+BLOCKING_SEVERITIES = ("blocker", "high", "medium")
+
+#: 回落目标：deepseek-flash（经 claude 通路）。
+FALLBACK_ADAPTER = "claude"
+FALLBACK_MODEL = C.REVIEW_FALLBACK_MODEL
+
+
+REVIEWER_PROMPT = (
+    "你是一个**零记忆的独立代码审阅者**。只根据下面给你的上下文审阅，不要假设上下文之外的信息。\n"
+    "逐条核对 tasks.md 声称完成的工作是否真实存在于代码里；检查正确性、spec 对齐、"
+    "测试覆盖、安全性、可维护性。\n"
+    "只输出一个 JSON 对象，不要任何其它文字：\n"
+    '{"verdict": "PASS" | "CHANGES_REQUESTED", "findings": ['
+    '{"where": "文件:行号或符号", "severity": "blocker|high|medium|low|nit", '
+    '"what": "问题是什么", "suggestion": "怎么修"}]}\n'
+    "只报你**有把握**的 medium 及以上问题；没有就把 findings 留空、verdict 用 PASS。"
+)
+
+
+FIXER_PROMPT = (
+    "你是一个**修复执行者**。下面是审阅者报出的 findings（已合并去重）。"
+    "对每一条给一个**具体**的修复方案（文件、位置、改成什么样）。\n"
+    "只输出一个 JSON 对象，不要任何其它文字：\n"
+    '{"fixes": [{"where": "…", "action": "改成什么样的具体描述"}]}'
+)
+
+
+JUDGE_PROMPT = (
+    "你是一个**单点复核 judge**。两路 reviewer 在下面这些 findings 上连续多轮未能收敛，"
+    "请你独立裁定每一条是否**属实**（real / false-positive / uncertain），并给最终 verdict。\n"
+    "只输出一个 JSON 对象，不要任何其它文字：\n"
+    '{"verdict": "PASS" | "CHANGES_REQUESTED" | "BLOCKED", '
+    '"rulings": [{"where": "…", "ruling": "real|false-positive|uncertain", "reason": "…"}]}'
+)
+
+
+@dataclass
+class Actor:
+    role: str
+    adapter: str
+    model: str
+    run_id: str
+    degraded_from: str | None = None
+
+
+@dataclass
+class RoundRecord:
+    round: int
+    revision: R.Revision
+    config_hash: str
+    actors: list[dict]
+    findings: list[dict]
+    verdict: str
+    cost_usd: float
+    fixer: dict | None = None
+    judge: dict | None = None
+    note: str | None = None
+
+
+def _parse_mock_scenario(raw: str | None) -> dict:
+    """``--mock-scenario`` 是 JSON 字符串（如 ``{"1": [{...}], "2": []}``）⇒ 解析成 dict。
+
+    键是**字符串**形式的轮号，MockAdapter 用 ``scenario.get(round, [])`` 取——
+    键必须是 int，所以这里把数字键转成 int。坏输入 ⇒ 抛 ValueError（用法错误）。
+    """
+    if not raw:
+        return {}
+    try:
+        doc = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(f"--mock-scenario 不是合法 JSON：{exc}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError("--mock-scenario 必须是 JSON 对象")
+    out: dict = {}
+    for key, value in doc.items():
+        try:
+            out[int(key)] = value
+        except (TypeError, ValueError):
+            raise ValueError(f"--mock-scenario 的轮号必须是数字：{key!r}") from None
+    return out
+
+
+def _merge_findings(batches: list[list[dict]]) -> list[dict]:
+    """合并去重：**只按 ``where``**，同 ``where`` 取 severity 高的那条。
+
+    两条 finding 的 ``where`` 逐字相同才算同一条；severity 用 ``adapters.severity_rank``
+    比较，保留高的一条（等价时保留先出现的那条）。
+    """
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for batch in batches:
+        for finding in batch:
+            if not isinstance(finding, dict):
+                continue
+            where = str(finding.get("where") or "").strip()
+            if not where:
+                # 没有 where 的 finding 无法去重、也无法回读——丢弃（并保留在 raw 里）。
+                continue
+            current = best.get(where)
+            if current is None:
+                best[where] = dict(finding)
+                order.append(where)
+            elif A.severity_rank(str(finding.get("severity"))) > A.severity_rank(
+                str(current.get("severity"))
+            ):
+                best[where] = dict(finding)
+    return [best[where] for where in order]
+
+
+def _pass_rule_satisfied(findings: list[dict], pass_rule: str) -> bool:
+    """收敛判据。当前只实现默认 ``medium_plus_zero``。"""
+    if pass_rule != C.DEFAULT_PASS_RULE:
+        raise ValueError(f"未知 pass_rule：{pass_rule!r}")
+    return not any(
+        str(f.get("severity", "")).lower() in BLOCKING_SEVERITIES for f in findings
+    )
+
+
+def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str:
+    """审阅素材：change 的 tasks / design + 实际 diff（git 模式）或工作树说明（digest）。"""
+    pieces: list[str] = []
+    directory = root / policy.changes_root / change
+    for name in ("tasks.md", "design.md", "proposal.md"):
+        path = directory / name
+        if path.is_file():
+            pieces.append(f"== {name} ==\n{path.read_text(encoding='utf-8')[:8000]}")
+    if revision.mode == "git":
+        base = gitutil.resolve_base(root, None)
+        head = revision.value
+        try:
+            diff = gitutil.diff_text(root, base, head)
+        except gitutil.GitError as exc:
+            pieces.append(f"== diff ==\n（无法取 diff：{exc}）")
+        else:
+            pieces.append(f"== diff（{base}..{head}）==\n{diff[:20000]}")
+    else:
+        pieces.append("== 工作树 ==\n（digest 模式，无 git 历史；审阅以 change 目录内容为准）")
+    return "\n\n".join(pieces)
+
+
+def _actor_run_id(role: str, adapter: str, revision: R.Revision) -> str:
+    """一个确定性 run id（role + adapter + revision 短摘要）——「两路同一 actor」负样本
+    据此可判定：reviewerA 与 reviewerB 的 run_id 相同 ⇒ 同一 actor。"""
+    return f"{role}-{adapter}-{revision.value[:12]}"
+
+
+def _resolve_auth_token(role: dict) -> str:
+    """读一个角色的 auth token：内联 ``auth_token`` → ``auth_env`` → 标准 Anthropic 环境。
+
+    链式回落是为了「deepseek key 住在 ``ANTHROPIC_AUTH_TOKEN``」这类宿主事实——
+    不硬编码 key 路径进代码，但接受标准环境变量作为最后兜底。
+    """
+    import os
+
+    token = (role.get("auth_token") or "").strip()
+    if token:
+        return token
+    for env_name in (
+        (role.get("auth_env") or "").strip(),
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+    ):
+        if env_name and os.environ.get(env_name, "").strip():
+            return os.environ[env_name].strip()
+    return ""
+
+
+#: 回落目标（deepseek-flash via claude）的固定通路。key 经 `_resolve_auth_token` 的链式兜底找。
+FALLBACK_ROLE = {
+    "adapter": FALLBACK_ADAPTER,
+    "model": FALLBACK_MODEL,
+    "base_url": "https://api.deepseek.com/anthropic",
+    "auth_env": "WITNESSLOOP_DEEPSEEK_KEY",
+}
+
+
+def _degrade_to_fallback(role: dict) -> tuple[str, dict, bool]:
+    """构造回落角色配置（deepseek-flash via claude）；deepseek key 也不可用 ⇒ mock。
+
+    返回 ``(adapter, role_cfg, still_down)``：``still_down=True`` 表示连 deepseek 都没有，
+    只能降 mock（诚实标注）。
+    """
+    if _resolve_auth_token(FALLBACK_ROLE):
+        return FALLBACK_ADAPTER, dict(FALLBACK_ROLE), False
+    return "mock", {"adapter": "mock", "model": "mock"}, True
+
+
+def _call_reviewer(
+    role_name: str,
+    role_cfg: dict,
+    request: A.ReviewRequest,
+    *,
+    scenario: dict | None,
+    adapter_override: str | None,
+    revision: R.Revision,
+) -> tuple[Actor, A.ReviewResult, float]:
+    """跑一个 reviewer（含回落）。返回 ``(Actor, ReviewResult, cost)``。"""
+    adapter_name = adapter_override or role_cfg.get("adapter") or "mock"
+    model = role_cfg.get("model") or FALLBACK_MODEL
+    degraded_from: str | None = None
+    used_adapter = adapter_name
+
+    if adapter_name != "mock" and not _resolve_auth_token(role_cfg):
+        # auth 一开始就缺 ⇒ 直接回落，不白打一次网络。
+        degraded_from = model
+        used_adapter, role_cfg, still_down = _degrade_to_fallback(role_cfg)
+        model = FALLBACK_MODEL if not still_down else "mock"
+
+    adapter = A.build_adapter(used_adapter, role=role_cfg, scenario=scenario)
+    result = adapter.run(request, model=model)
+    cost = A.cost_usd(model, result.usage)
+
+    if result.error_kind in ("auth", "balance", "model_not_found"):
+        # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash。
+        degraded_from = model
+        used_adapter, fallback_cfg, still_down = _degrade_to_fallback(role_cfg)
+        fallback_model = FALLBACK_MODEL if not still_down else "mock"
+        adapter = A.build_adapter(used_adapter, role=fallback_cfg, scenario=scenario)
+        result = adapter.run(request, model=fallback_model)
+        model = fallback_model
+        cost += A.cost_usd(fallback_model, result.usage)
+
+    actor = Actor(
+        role=role_name,
+        adapter=used_adapter,
+        model=result.model or model,
+        run_id=_actor_run_id(role_name, used_adapter, revision),
+        degraded_from=degraded_from,
+    )
+    return actor, result, cost
+
+
+def run(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    change = args.change
+    if not change or "/" in change or "\\" in change:
+        print(f"review run：change={change!r} 必须是单段 change id", file=sys.stderr)
+        return C.EXIT_USAGE
+
+    try:
+        pol = policy_mod.load_policy(root)
+    except policy_mod.PolicyError as exc:
+        print(f"review run：policy 非法：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
+    if pol is None:
+        print(
+            f"review run：未接入 witnessloop（没有 {C.POLICY_PATH}）——先 `witnessloop init`。",
+            file=sys.stderr,
+        )
+        return C.EXIT_NOT_ONBOARDED
+
+    directory = root / pol.changes_root / change
+    if not directory.is_dir():
+        print(
+            f"review run：change 目录不存在：{pol.changes_root}/{change}", file=sys.stderr
+        )
+        return C.EXIT_FAIL
+
+    revision = R.resolve_revision(root, args.mode)
+
+    try:
+        roles_doc = roles_mod.load_roles(root)
+        resolved, warnings = roles_mod.resolve_config(
+            root,
+            roles_doc=roles_doc,
+            mode=args.mode,
+            pass_rule=args.pass_rule,
+            stall_rounds=args.stall_rounds,
+            budget_max_cost_usd=args.budget_max_cost_usd,
+            adapter=args.adapter,
+        )
+    except ValueError as exc:
+        print(f"review run：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
+
+    if args.positive_control:
+        resolved["positive_control"] = {"where": args.positive_control}
+    roles_mod.write_config(root, resolved)
+    config_hash = roles_mod.config_hash(resolved)
+
+    role_cfgs = resolved["roles"]
+    context = _build_context(root, change, revision, pol)
+    scenario = _parse_mock_scenario(getattr(args, "mock_scenario", None))
+
+    round_manifests: list[dict] = []
+    merged_history: list[dict] = []  # 每轮的 merged findings（用于停滞判定）
+    cumulative_cost = 0.0
+    budget = float(args.budget_max_cost_usd)
+    final_verdict = "BLOCKED"
+    final_note = None
+
+    for round_no in range(1, args.max_rounds + 1):
+        request = A.ReviewRequest(
+            prompt=REVIEWER_PROMPT, context=context, round=round_no
+        )
+        # 两路 reviewer 并发审。
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {
+                pool.submit(
+                    _call_reviewer,
+                    role_name,
+                    role_cfgs[role_name],
+                    request,
+                    scenario=scenario,
+                    adapter_override=args.adapter,
+                    revision=revision,
+                ): role_name
+                for role_name in roles_mod.REVIEWER_ROLES
+            }
+            reviewer_results: dict[str, tuple[Actor, A.ReviewResult, float]] = {}
+            for fut in futures:
+                role_name = futures[fut]
+                reviewer_results[role_name] = fut.result()
+
+        actors = [reviewer_results[r][0] for r in roles_mod.REVIEWER_ROLES]
+        batches = [reviewer_results[r][1].findings for r in roles_mod.REVIEWER_ROLES]
+        round_cost = sum(reviewer_results[r][2] for r in roles_mod.REVIEWER_ROLES)
+        cumulative_cost += round_cost
+
+        merged = _merge_findings(batches)
+        verdict = (
+            "PASS" if _pass_rule_satisfied(merged, args.pass_rule) else "CHANGES_REQUESTED"
+        )
+
+        # 停滞判定：同一 where 连续 stall_rounds 轮都在 merged 里。
+        stalled = _stalled_findings(merged, merged_history, args.stall_rounds)
+
+        fixer_record: dict | None = None
+        judge_record: dict | None = None
+        note = None
+        stop = False
+
+        if verdict == "PASS":
+            final_verdict = "PASS"
+            note = "收敛：medium+ 为零"
+            stop = True
+        elif stalled:
+            # 升级 judge 单点复核，不继续磨。
+            judge_record, judge_cost = _run_judge(
+                stalled, role_cfgs["judge"], request, scenario, args.adapter, revision
+            )
+            cumulative_cost += judge_cost
+            final_verdict = str(judge_record.get("verdict", "BLOCKED")).upper()
+            note = f"停滞升级 judge（stall_rounds={args.stall_rounds}）：{', '.join(stalled)}"
+            stop = True
+        elif cumulative_cost > budget:
+            final_verdict = "BLOCKED"
+            note = f"成本止损（累计 ${cumulative_cost:.4f} > budget ${budget:.2f}）"
+            stop = True
+        else:
+            # 未收敛：跑 fixer（记录修复方案；不自动改代码，见 docs/merge-report）。
+            fixer_record, fixer_cost = _run_fixer(
+                merged, role_cfgs["fixer"], request, scenario, args.adapter, revision
+            )
+            cumulative_cost += fixer_cost
+
+        record = RoundRecord(
+            round=round_no,
+            revision=revision,
+            config_hash=config_hash,
+            actors=[_actor_dict(a) for a in actors],
+            findings=merged,
+            verdict=verdict,
+            cost_usd=round_cost,
+            fixer=fixer_record,
+            judge=judge_record,
+            note=note,
+        )
+        manifest = _round_manifest(record)
+        round_manifests.append(manifest)
+        _write_round_manifest(root, round_no, manifest)
+        merged_history.append(merged)
+
+        if stop:
+            final_note = note
+            break
+        # 未收敛且未停滞/未超预算：进入下一轮（fixer 的修复方案已记录在上一轮 manifest）。
+
+    if final_note is None:
+        final_note = f"达到最大轮数 {args.max_rounds} 仍未收敛"
+
+    # 收尾：写最终 report.md 的**摘要**（readable 文本 + JSON 元数据）。
+    _write_final_report(
+        root,
+        revision=revision,
+        config_hash=config_hash,
+        resolved=resolved,
+        warnings=warnings,
+        round_manifests=round_manifests,
+        final_verdict=final_verdict,
+        final_note=final_note,
+        cumulative_cost=cumulative_cost,
+    )
+
+    print(
+        f"review run：完成 change={change} mode={revision.mode} "
+        f"rounds={len(round_manifests)} verdict={final_verdict} "
+        f"cost=${cumulative_cost:.4f}",
+        flush=True,
+    )
+    if final_verdict == "PASS":
+        return C.EXIT_PASS
+    return C.EXIT_FAIL
+
+
+def _stalled_findings(
+    merged: list[dict], history: list[dict], stall_rounds: int
+) -> list[str]:
+    """当前 merged 里、连续出现在最近 ``stall_rounds`` 轮的 where 列表。"""
+    if stall_rounds < 1 or not merged:
+        return []
+    current = {str(f.get("where")) for f in merged}
+    out: list[str] = []
+    for where in sorted(current):
+        count = 1
+        for past in reversed(history):
+            if where in {str(f.get("where")) for f in past}:
+                count += 1
+            else:
+                break
+        if count >= stall_rounds:
+            out.append(where)
+    return out
+
+
+def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision):
+    adapter_name = adapter_override or fixer_cfg.get("adapter") or "mock"
+    if adapter_name == "mock":
+        return {"fixes": [{"where": f.get("where"), "action": "mock 修复（已登记）"} for f in merged]}, 0.0
+    fix_request = A.ReviewRequest(
+        prompt=FIXER_PROMPT,
+        context=json.dumps(merged, ensure_ascii=False, indent=2),
+        round=request.round,
+    )
+    adapter = A.build_adapter(adapter_name, role=fixer_cfg, scenario=scenario)
+    result = adapter.run(fix_request, model=fixer_cfg.get("model") or FALLBACK_MODEL)
+    doc = A._extract_json(result.raw) if result.raw else None
+    fixes = (doc or {}).get("fixes") if isinstance(doc, dict) else None
+    return {"fixes": fixes if isinstance(fixes, list) else [], "raw": result.raw}, A.cost_usd(
+        result.model, result.usage
+    )
+
+
+def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision):
+    adapter_name = adapter_override or judge_cfg.get("adapter") or "mock"
+    if adapter_name == "mock":
+        return {"verdict": "BLOCKED", "rulings": [{"where": w, "ruling": "uncertain"} for w in stalled]}, 0.0
+    judge_request = A.ReviewRequest(
+        prompt=JUDGE_PROMPT,
+        context=json.dumps({"stalled": stalled}, ensure_ascii=False, indent=2),
+        round=request.round,
+    )
+    adapter = A.build_adapter(adapter_name, role=judge_cfg, scenario=scenario)
+    result = adapter.run(judge_request, model=judge_cfg.get("model") or FALLBACK_MODEL)
+    doc = A._extract_json(result.raw) if result.raw else None
+    if not isinstance(doc, dict):
+        doc = {}
+    return {
+        "verdict": str(doc.get("verdict") or "BLOCKED").upper(),
+        "rulings": doc.get("rulings") if isinstance(doc.get("rulings"), list) else [],
+        "raw": result.raw,
+    }, A.cost_usd(result.model, result.usage)
+
+
+def _actor_dict(actor: Actor) -> dict:
+    out = {
+        "role": actor.role,
+        "adapter": actor.adapter,
+        "model": actor.model,
+        "run_id": actor.run_id,
+    }
+    if actor.degraded_from:
+        out["degraded_from"] = actor.degraded_from
+    return out
+
+
+def _round_manifest(record: RoundRecord) -> dict:
+    doc = {
+        "schema": C.REVIEW_ROUND_SCHEMA,
+        "round": record.round,
+        "revision": {"mode": record.revision.mode, "value": record.revision.value},
+        "config_hash": record.config_hash,
+        "actors": record.actors,
+        "verdict": record.verdict,
+        "findings": record.findings,
+        "cost_usd": round(record.cost_usd, 6),
+        "fixer": record.fixer,
+        "judge": record.judge,
+        "note": record.note,
+    }
+    return doc
+
+
+def _write_round_manifest(root: Path, round_no: int, doc: dict) -> Path:
+    out_dir = Path(root) / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"round-{round_no:04d}.json"
+    path.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_final_report(
+    root: Path,
+    *,
+    revision: R.Revision,
+    config_hash: str,
+    resolved: dict,
+    warnings: list[str],
+    round_manifests: list[dict],
+    final_verdict: str,
+    final_note: str | None,
+    cumulative_cost: float,
+) -> Path:
+    degraded_note = None
+    if round_manifests:
+        last = round_manifests[-1]
+        reviewers = [a for a in last.get("actors", []) if a.get("role", "").startswith("reviewer")]
+        if reviewers and all(a.get("degraded_from") for a in reviewers):
+            degraded_note = "本轮为同源双审"
+    doc = {
+        "schema": C.REVIEW_ROUND_SCHEMA,
+        "final_verdict": final_verdict,
+        "final_note": final_note,
+        "degraded_note": degraded_note,
+        "revision": {"mode": revision.mode, "value": revision.value},
+        "config_hash": config_hash,
+        "cumulative_cost_usd": round(cumulative_cost, 6),
+        "warnings": warnings,
+        "rounds": round_manifests,
+    }
+    out_dir = Path(root) / C.REVIEW_OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "summary.json"
+    path.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
