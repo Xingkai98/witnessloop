@@ -44,7 +44,10 @@ def default_roles_doc() -> dict:
             "reviewerB": {
                 "adapter": "claude",
                 "model": "glm-5.3",
-                "base_url": "https://heyroute.ai/v1",
+                # ⚠️ claude 适配器会拼 `/v1/messages`：这里若带 `/v1` 会打成
+                # `/v1/v1/messages`（404 endpoint_not_found，T-075 实测）。故 base_url
+                # 停在 `https://heyroute.ai`，适配器拼完是 `https://heyroute.ai/v1/messages`。
+                "base_url": "https://heyroute.ai",
                 "auth_env": "WITNESSLOOP_GLM_KEY",
             },
             "fixer": {

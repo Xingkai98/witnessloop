@@ -14,6 +14,17 @@ def test_default_roles_have_four_roles():
     assert set(doc["roles"]) == {"reviewerA", "reviewerB", "fixer", "judge"}
 
 
+def test_default_base_urls_match_adapter_splicing():
+    """出厂 base_url 必须与适配器的 URL 拼接**对齐**（T-075 回归）。
+
+    - ``codex`` 拼 `/chat/completions` ⇒ base_url 停在 `…/v1`。
+    - ``claude`` 拼 `/v1/messages` ⇒ base_url 不能带 `/v1`（否则打成 `/v1/v1/messages`）。
+    """
+    doc = roles_mod.default_roles_doc()
+    assert doc["roles"]["reviewerA"]["base_url"] == "https://heyroute.ai/v1"
+    assert doc["roles"]["reviewerB"]["base_url"] == "https://heyroute.ai"
+
+
 def test_load_roles_falls_back_to_default_when_missing(tmp_path):
     assert roles_mod.load_roles(tmp_path)["roles"]["reviewerA"]["model"] == "gpt-6.1-terra"
 
