@@ -16,7 +16,7 @@ witnessloop review run --change <id> [--mode auto|git|digest]
                        [--max-rounds N] [--positive-control WHERE]
                        [--mock-scenario JSON]
 
-witnessloop review report [--out FILE]
+witnessloop review report [--md] [--out FILE]
 ```
 
 - 产物根：`.reviewloop/`（`constants.REVIEW_OUTPUT_DIR`）。每次 `review run`
@@ -60,8 +60,9 @@ witnessloop review report [--out FILE]
 ```
 
 - 文件不存在 / 读不出 ⇒ 出厂默认；**语法坏** ⇒ `ValueError`（显式错误，不静默）。
-- `merged["roles"].update(roles)` 是**角色级整块替换**：只写 `model` 会丢掉该角色的
-  默认 `adapter` / `base_url` / `auth_env`。要改就写全。
+- 已知角色做**字段级合并**：只写 `model` 会保留默认 `adapter` / `base_url` /
+  `auth_env`。缺 `adapter` **不得**静默落到 `mock`（`ValueError`），否则空 findings
+  会假 PASS。
 - `--adapter <name>` 覆盖**所有**角色的通路（`mock` 用于无网络打通链路）。
 - auth 只记录「已解析 / 未解析」；key 从不写进 `config.resolved.json`。
   实际调用使用**内存里的运行时角色表**（`runtime_roles`，保留内联 `auth_token`），

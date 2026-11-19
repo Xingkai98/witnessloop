@@ -213,6 +213,11 @@ def build_parser() -> argparse.ArgumentParser:
         "report", help="读回 loop 产物，生成 Markdown 报告 + 四条负样本验证"
     )
     p_report.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
+    p_report.add_argument(
+        "--md",
+        action="store_true",
+        help="输出 Markdown（报告本来就是 Markdown；保留此 flag 以兼容文档命令）",
+    )
     p_report.add_argument("--out", default=None, help="报告写到文件（缺省 stdout）")
 
     return parser

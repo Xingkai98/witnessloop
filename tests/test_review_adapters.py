@@ -168,6 +168,30 @@ def test_parse_error_marks_adapter_result_as_parse_failure(monkeypatch):
     assert result.findings == []
 
 
+def test_claude_adapter_rejects_non_object_response(monkeypatch):
+    monkeypatch.setattr(A, "_http_json", lambda *args, **kwargs: [])
+    result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error_kind == "other"
+
+
+def test_codex_adapter_handles_non_string_content(monkeypatch):
+    monkeypatch.setattr(
+        A,
+        "_http_json",
+        lambda *args, **kwargs: {
+            "choices": [{"message": {"content": ["x"]}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    )
+    result = A.CodexAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error is not None
+    assert result.error_kind == "parse"
+
+
 def test_classify_auth_error():
     assert A._classify(401, "unauthorized") == "auth"
     assert A._classify(402, "insufficient balance") == "balance"

@@ -87,12 +87,20 @@ def load_roles(root: str | Path) -> dict:
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 无法解析：{exc}") from exc
     if not isinstance(doc, dict):
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 根必须是 JSON 对象")
-    # 允许覆盖部分角色：缺的角色用出厂默认补。
+    # 允许覆盖部分角色：缺的角色用出厂默认补；**已知角色做字段级合并**，
+    # 只写 model 不会把默认 adapter/base_url/auth_env 丢掉（否则会隐式落到 mock）。
     merged = default_roles_doc()
     roles = doc.get("roles") or {}
     if not isinstance(roles, dict):
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 的 roles 必须是 JSON 对象")
-    merged["roles"].update(roles)
+    defaults = merged["roles"]
+    for name, override in roles.items():
+        if isinstance(override, dict) and name in defaults:
+            merged_role = dict(defaults[name])
+            merged_role.update(override)
+            merged["roles"][name] = merged_role
+        else:
+            merged["roles"][name] = override
     merged["schema"] = doc.get("schema") or C.REVIEW_ROLES_SCHEMA
     return merged
 
@@ -114,8 +122,12 @@ def _resolved_role(role: dict, adapter: str | None, *, redact: bool = True) -> d
     拿到内联 ``auth_token``，否则会出现「resolved 说已解析、适配器拿到空串」。
     """
     src = dict(role)
+    resolved_adapter = adapter or src.get("adapter")
+    if not resolved_adapter:
+        # 不能把「缺 adapter」静默当成 mock：mock 返回空 findings 会假 PASS。
+        raise ValueError("角色缺少 adapter，拒绝隐式 mock（请显式写 adapter 或 --adapter mock）")
     out = {
-        "adapter": adapter or src.get("adapter") or "mock",
+        "adapter": resolved_adapter,
         "model": src.get("model") or C.REVIEW_FALLBACK_MODEL,
         "base_url": src.get("base_url") or "",
     }
@@ -135,14 +147,26 @@ def _resolved_role(role: dict, adapter: str | None, *, redact: bool = True) -> d
     return out
 
 
+def _role_with_defaults(name: str, raw_roles: dict, defaults: dict) -> dict:
+    """已知角色做字段级合并；缺的角色整份用默认。"""
+    base = dict(defaults[name])
+    override = raw_roles.get(name)
+    if isinstance(override, dict):
+        base.update(override)
+    return base
+
+
 def runtime_roles(roles_doc: dict, *, adapter: str | None = None) -> dict:
     """返回**运行时**角色表：字段与 resolved 一致，但保留内联 ``auth_token``。
 
     这份表只活在内存里，不写盘；`config.resolved.json` 仍用脱敏版本。
     """
     raw = roles_doc.get("roles") or {}
+    defaults = default_roles_doc()["roles"]
     return {
-        name: _resolved_role(raw.get(name) or {}, adapter, redact=False)
+        name: _resolved_role(
+            _role_with_defaults(name, raw, defaults), adapter, redact=False
+        )
         for name in ROLE_NAMES
     }
 
@@ -165,10 +189,11 @@ def resolve_config(
     """
     doc = roles_doc or load_roles(root)
     raw_roles = doc.get("roles") or {}
+    defaults = default_roles_doc()["roles"]
     resolved_roles: dict[str, dict] = {}
     warnings: list[str] = []
     for name in ROLE_NAMES:
-        role = raw_roles.get(name) or {}
+        role = _role_with_defaults(name, raw_roles, defaults)
         resolved_roles[name] = _resolved_role(role, adapter)
         if not resolved_roles[name]["auth_resolved"] and adapter != "mock":
             warnings.append(f"角色 {name} 的 auth 未解析（env 未设 / 无内联 token）")

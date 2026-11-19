@@ -74,6 +74,16 @@ def test_missing_evidence_is_red(gated, cli):
     assert "证据缺件" in err
 
 
+def test_report_accepts_md_flag(gated, cli):
+    """文档里的 `review report --md` 必须真的可用。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    code, out, err = cli("review", "report", "--root", str(gated), "--md")
+    assert code == C.EXIT_PASS, err
+    assert "review loop 报告" in out
+
+
 def test_report_renders_fixer_error():
     from witnessloop.review import report as R
 
@@ -133,10 +143,26 @@ def test_malformed_manifest_types_are_red(gated, cli):
     doc = _round_manifest(gated)
     doc["actors"] = "not-a-list"
     doc["findings"] = {"where": "x"}
+    doc["fixer"] = "bad"
+    doc["judge"] = []
     _write_round_manifest(gated, doc)
     code, _, err = _report(cli, gated)
     assert code == C.EXIT_FAIL
     assert "类型非法" in err
+    assert "fixer 类型非法" in err or "judge 类型非法" in err
+
+
+def test_missing_reviewer_actors_is_red(gated, cli):
+    """actors 为空不能被当成「验证通过」。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    doc = _round_manifest(gated)
+    doc["actors"] = []
+    _write_round_manifest(gated, doc)
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "缺少两路 reviewer" in err
 
 
 def test_non_integer_round_is_red(gated, cli):

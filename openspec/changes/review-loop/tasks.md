@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 36 条，合计 80 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 42 条，合计 86 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -79,6 +79,19 @@
       测试 `test_malformed_manifest_types_are_red`。
 - [x] B31 `load_roles` 读文件 OSError 回落默认（语法坏才 ValueError）；
       `review run --base <ref>` 显式指定 diff base；回落只尝试一次。
+- [x] B32 角色覆盖改为**字段级合并**；缺 `adapter` 抛 `ValueError`，不再隐式 mock。
+      测试 `test_load_roles_merges_partial_overrides` /
+      `test_resolved_role_requires_explicit_adapter`。
+- [x] B33 `review report` 校验每轮至少两路 reviewer actors；fixer/judge 非对象类型
+      判红。测试 `test_missing_reviewer_actors_is_red` /
+      `test_malformed_manifest_types_are_red`。
+- [x] B34 `review report --md` 真正可用（此前文档声称但 argparse 未注册）。
+      测试 `test_report_accepts_md_flag`。
+- [x] B35 适配器校验 HTTP 响应是 JSON 对象、Codex content 是字符串；
+      `cost_usd` 对非 dict usage 返回 0。测试
+      `test_claude_adapter_rejects_non_object_response` 等。
+- [x] B36 judge 同一 where 的重复裁决取「任一非 false-positive 即不放行」；
+      测试 `test_judge_duplicate_ruling_cannot_mask_real`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

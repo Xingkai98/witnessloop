@@ -42,7 +42,7 @@ def severity_rank(severity: str) -> int:
 
 def cost_usd(model: str, usage: dict | None) -> float:
     """按 usage 估这一轮的成本（USD）。"""
-    if not usage:
+    if not isinstance(usage, dict):
         return 0.0
     in_price, out_price = APPROX_PRICE_PER_MTOK.get(
         str(model).lower(), (0.0, 0.0)
@@ -230,6 +230,10 @@ class ClaudeAdapter:
             doc = _http_json(url, headers, payload)
         except AdapterError as exc:
             return ReviewResult(model=model, error=str(exc), error_kind=exc.kind)
+        if not isinstance(doc, dict):
+            return ReviewResult(
+                model=model, error="HTTP 响应不是 JSON 对象", error_kind="other"
+            )
         # Anthropic 形状：content 是 [{type:text|thinking, text|thinking}, ...]
         blocks = doc.get("content") or []
         texts = [b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
@@ -271,10 +275,15 @@ class CodexAdapter:
             doc = _http_json(url, headers, payload)
         except AdapterError as exc:
             return ReviewResult(model=model, error=str(exc), error_kind=exc.kind)
+        if not isinstance(doc, dict):
+            return ReviewResult(
+                model=model, error="HTTP 响应不是 JSON 对象", error_kind="other"
+            )
         try:
-            raw = doc["choices"][0]["message"]["content"] or ""
+            content = doc["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
-            raw = ""
+            content = ""
+        raw = content if isinstance(content, str) else ""
         findings, verdict, err = parse_review_output(raw)
         usage = doc.get("usage") or None
         # OpenAI 形状的 usage 键名换算成统一键，供 cost_usd 用。

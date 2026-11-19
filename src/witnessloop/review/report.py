@@ -101,12 +101,22 @@ def verify(root: Path) -> tuple[list[str], dict]:
             for actor in actors
             if str(actor.get("role", "")).startswith("reviewer")
         ]
+        if len(reviewers) < 2:
+            findings.append(
+                f"证据缺件：round {doc.get('round')} 缺少两路 reviewer actors"
+            )
         run_ids = [actor.get("run_id") for actor in reviewers]
         if len(run_ids) >= 2 and run_ids[0] and run_ids[0] == run_ids[1]:
             findings.append(
                 f"两路同一 actor：round {doc.get('round')} 的 reviewerA 与 reviewerB "
                 f"run_id 相同（{run_ids[0]}）"
             )
+        for field in ("fixer", "judge"):
+            value = doc.get(field)
+            if value is not None and not isinstance(value, dict):
+                findings.append(
+                    f"manifest {field} 类型非法：round {doc.get('round')}（应为对象或 null）"
+                )
         round_findings = doc.get("findings")
         if not isinstance(round_findings, list) or any(
             not isinstance(finding, dict) for finding in round_findings

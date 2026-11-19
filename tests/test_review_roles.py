@@ -52,6 +52,9 @@ def test_load_roles_merges_partial_overrides(tmp_path, monkeypatch):
     )
     doc = roles_mod.load_roles(tmp_path)
     assert doc["roles"]["reviewerA"]["model"] == "custom-model"
+    # 字段级合并：只写 model 不能丢掉默认 adapter/base_url/auth_env
+    assert doc["roles"]["reviewerA"]["adapter"] == "codex"
+    assert doc["roles"]["reviewerA"]["base_url"] == "https://heyroute.ai/v1"
     # 未覆盖的角色保持默认
     assert doc["roles"]["reviewerB"]["model"] == "glm-5.3"
 
@@ -77,6 +80,14 @@ def test_auth_resolved_matches_adapter_resolution(monkeypatch):
     assert roles_mod._auth_resolved(role) is False
     role["allow_host_auth_fallback"] = True
     assert roles_mod._auth_resolved(role) is True
+
+
+def test_resolved_role_requires_explicit_adapter():
+    """缺 adapter 不得静默落到 mock。"""
+    import pytest
+
+    with pytest.raises(ValueError, match="缺少 adapter"):
+        roles_mod._resolved_role({"model": "m"}, None)
 
 
 def test_resolved_role_keeps_host_fallback_flag(monkeypatch):

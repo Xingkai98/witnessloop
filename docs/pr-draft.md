@@ -59,11 +59,15 @@ Hardening from the real-model review runs: findings are structurally validated
 not misclassified by the reviewer parser; a judge `PASS` must cover every stalled
 finding with `false-positive` rulings and cannot override unstalled medium+ findings;
 the budget is checked both before judge/fixer and at each round entry; and the report
-is robust to tampered manifest field types.
+is robust to tampered manifest field types (including missing reviewer actors and
+non-object `fixer` / `judge`), validates HTTP response shapes before `.get`, and keeps
+role overrides field-level so a partial override cannot silently become `mock`.
+`review report --md` is accepted (the report is Markdown; the flag is kept for
+documented commands).
 
 ## Validation
 
-- `uv run pytest -q` → **868 passed** (788 existing + 80 review-loop tests).
+- `uv run pytest -q` → **874 passed** (788 existing + 86 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

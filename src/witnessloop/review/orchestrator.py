@@ -685,14 +685,21 @@ def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision
     if guessed_verdict == "PASS":
         # PASS 必须逐条覆盖送审的 stalled 项，且每条都是 false-positive；
         # 只凭一个 verdict 字段不足以放行。
-        by_where: dict[str, str] = {}
+        # 同一个 where 可能被裁多次；保守处理：只要出现任何非 false-positive
+        # 裁决就不得 PASS（后一条不能覆盖前一条 real/uncertain）。
+        by_where: dict[str, set[str]] = {}
         for ruling in rulings:
             if not isinstance(ruling, dict):
                 continue
-            by_where[str(ruling.get("where"))] = str(ruling.get("ruling") or "").strip().lower()
+            where = str(ruling.get("where"))
+            by_where.setdefault(where, set()).add(
+                str(ruling.get("ruling") or "").strip().lower()
+            )
         missing = [where for where in stalled if where not in by_where]
         not_cleared = [
-            where for where, ruling in by_where.items() if ruling != "false-positive"
+            where
+            for where, ruling_set in by_where.items()
+            if ruling_set != {"false-positive"}
         ]
         if not rulings:
             problem = "judge 返回 PASS 但没有 rulings"

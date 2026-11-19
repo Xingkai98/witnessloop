@@ -377,6 +377,21 @@ def test_judge_pass_with_real_ruling_is_blocked(monkeypatch):
     assert "非 false-positive" in record["error"]
 
 
+def test_judge_duplicate_ruling_cannot_mask_real(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = (
+        '{"verdict": "PASS", "rulings": ['
+        '{"where": "x:1", "ruling": "real"},'
+        '{"where": "x:1", "ruling": "false-positive"}]}'
+    )
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter(raw))
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "BLOCKED"
+
+
 def test_judge_pass_with_false_positive_is_pass(monkeypatch):
     from witnessloop.review import adapters as A
 
