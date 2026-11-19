@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 52 条，合计 96 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 57 条，合计 101 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -107,6 +107,16 @@
       测试 `test_bad_mock_scenario_content_is_usage_error`。
 - [x] B44 config.roles 的每个角色必须是对象；渲染逐角色防御；
       测试 `test_config_roles_non_object_is_red`。
+- [x] B45 回落前检查剩余预算；首次请求已超预算时不再发起 fallback 付费调用。
+      测试 `test_no_fallback_when_budget_already_exceeded`。
+- [x] B46 Claude 适配器对非对象 usage 置 None，避免成本静默为 0；
+      测试 `test_claude_adapter_tolerates_non_object_usage`。
+- [x] B47 git 模式的 change 文档从被审 revision 读取（`git show`），
+      不混入未提交修改；测试 `test_context_reads_docs_from_revision_not_worktree`。
+- [x] B48 roles 覆盖值非对象 ⇒ ValueError（不静默回落默认）；
+      测试 `test_load_roles_rejects_non_object_role`。
+- [x] B49 adapter 名不在 claude/codex/mock ⇒ 展开配置时 ValueError；
+      测试 `test_resolved_role_rejects_unknown_adapter`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

@@ -61,8 +61,8 @@ witnessloop review report [--md] [--out FILE]
 
 - 文件不存在 / 读不出 ⇒ 出厂默认；**语法坏** ⇒ `ValueError`（显式错误，不静默）。
 - 已知角色做**字段级合并**：只写 `model` 会保留默认 `adapter` / `base_url` /
-  `auth_env`。缺 `adapter` **不得**静默落到 `mock`（`ValueError`），否则空 findings
-  会假 PASS。
+  `auth_env`。缺 `adapter` **不得**静默落到 `mock`（`ValueError`）；`adapter` 不在
+  `claude`/`codex`/`mock` 内同样在展开时 `ValueError`，不把拼写错误带进工作线程。
 - `--adapter <name>` 覆盖**所有**角色的通路（`mock` 用于无网络打通链路）。
 - auth 只记录「已解析 / 未解析」；key 从不写进 `config.resolved.json`。
   实际调用使用**内存里的运行时角色表**（`runtime_roles`，保留内联 `auth_token`），
@@ -101,8 +101,10 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 1. 两路 reviewer **并发**（`ThreadPoolExecutor(max_workers=2)`），同一份
    `prompt + context`；context = tasks/design/proposal（各截 8000 字符）+
    变更文件清单 + diff（**代码/测试路径优先**，上限 120000 字符，超出显式标注），
-   或 digest 模式的说明。早先的 `diff[:20000]` 会被 docs/change 文档吃满预算，
-   reviewer 看不到 `src/**`，会把「没看到代码」误报成「代码不存在」。
+   或 digest 模式的说明。git 模式下 change 文档用 `git show <revision>:<path>`
+   读取——与 diff 同源，不混入工作树未提交修改。早先的 `diff[:20000]` 会被
+   docs/change 文档吃满预算，reviewer 看不到 `src/**`，会把「没看到代码」误报成
+   「代码不存在」。
 2. 合并：`_merge_findings` **只按 `where` 去重**，保留 severity 更高的那条；
    没有 `where` 的 finding **不丢弃**——用合成 `where`（`<missing-where>:batch…`）
    保留，继续参与收敛判定并出现在报告里。否则模型漏写定位的真实 medium+ 会被
@@ -160,7 +162,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 - `cost_usd(model, usage)`：`input_tokens/1e6 * in_price + output_tokens/1e6 * out_price`。
 - `APPROX_PRICE_PER_MTOK` 是**近似价**，只用于 `budget.max_cost_usd` 止损与报告。
 - 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止；
-  并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用。
+  并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用；
+  reviewer 内部回落前也看剩余预算，首次请求已超预算时不再发 fallback 请求。
   这是**软止损**：单次调用本身可能把累计值推过上限（不做事前额度预留），但不会
   在已超预算后继续发起额外调用。
 - 每轮 manifest 的 `cost_usd` = **两路 reviewer** 成本；fixer / judge 成本计入

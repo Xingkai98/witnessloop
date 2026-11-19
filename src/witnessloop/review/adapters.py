@@ -259,6 +259,9 @@ class ClaudeAdapter:
         ]
         raw = "\n".join(texts)
         findings, verdict, err = parse_review_output(raw)
+        usage = doc.get("usage")
+        if not isinstance(usage, dict):
+            usage = None
         return ReviewResult(
             findings=findings,
             verdict=verdict,
@@ -268,7 +271,7 @@ class ClaudeAdapter:
             # 解析失败是**通路失败**，不是「零 findings 的 PASS」——否则一个
             # 畸形输出会被编排器当成收敛。orchestrator 据此走回落 / BLOCKED。
             error_kind="parse" if err else None,
-            usage=doc.get("usage") or None,
+            usage=usage,
         )
 
 

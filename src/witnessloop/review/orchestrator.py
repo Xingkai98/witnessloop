@@ -219,11 +219,14 @@ def _build_context(
     """审阅素材：change 的 tasks / design + 实际 diff（git 模式）或工作树说明（digest）。"""
     pieces: list[str] = []
     directory = root / policy.changes_root / change
-    for name in ("tasks.md", "design.md", "proposal.md"):
-        path = directory / name
-        if path.is_file():
-            pieces.append(f"== {name} ==\n{path.read_text(encoding='utf-8')[:8000]}")
     if revision.mode == "git":
+        # 文档必须与被审 revision 同源：从工作树读会把未提交修改混进上下文，
+        # 而 manifest 绑定的是 HEAD。用 `git show <rev>:<path>` 读提交内容。
+        prefix = policy.changes_root.rstrip("/")
+        for name in ("tasks.md", "design.md", "proposal.md"):
+            text = gitutil.show_file(root, revision.value, f"{prefix}/{change}/{name}")
+            if text:
+                pieces.append(f"== {name} ==\n{text[:8000]}")
         base = gitutil.resolve_base(root, base_ref)
         head = revision.value
         try:
@@ -245,6 +248,10 @@ def _build_context(
             + _prioritize_diff(diff)
         )
     else:
+        for name in ("tasks.md", "design.md", "proposal.md"):
+            path = directory / name
+            if path.is_file():
+                pieces.append(f"== {name} ==\n{path.read_text(encoding='utf-8')[:8000]}")
         pieces.append(
             "== 工作树 ==\n"
             "（digest 模式，无 git 历史/diff；**不要因为看不到代码就报「代码不存在」**。"
@@ -321,6 +328,7 @@ def _call_reviewer(
     scenario: dict | None,
     adapter_override: str | None,
     revision: R.Revision,
+    budget_left: float | None = None,
 ) -> tuple[Actor, A.ReviewResult, float]:
     """跑一个 reviewer（含回落）。返回 ``(Actor, ReviewResult, cost)``。"""
     adapter_name = adapter_override or role_cfg.get("adapter") or "mock"
@@ -356,6 +364,7 @@ def _call_reviewer(
     if (
         result.error_kind in ("auth", "balance", "model_not_found", "parse", "other")
         and not is_fallback
+        and (budget_left is None or cost <= budget_left)
     ):
         # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash（**只回落一次**）。
         # 保留原始 model：先「缺 key 回落」再失败时，不要把 degraded_from 改成回落目标。
@@ -489,6 +498,7 @@ def run(args: argparse.Namespace) -> int:
                     scenario=scenario,
                     adapter_override=args.adapter,
                     revision=revision,
+                    budget_left=max(0.0, budget - cumulative_cost),
                 ): role_name
                 for role_name in roles_mod.REVIEWER_ROLES
             }

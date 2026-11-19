@@ -95,7 +95,11 @@ def load_roles(root: str | Path) -> dict:
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 的 roles 必须是 JSON 对象")
     defaults = merged["roles"]
     for name, override in roles.items():
-        if isinstance(override, dict) and name in defaults:
+        if not isinstance(override, dict):
+            raise ValueError(
+                f"{C.REVIEW_ROLES_PATH} 的角色 {name} 必须是 JSON 对象"
+            )
+        if name in defaults:
             merged_role = dict(defaults[name])
             merged_role.update(override)
             merged["roles"][name] = merged_role
@@ -126,6 +130,11 @@ def _resolved_role(role: dict, adapter: str | None, *, redact: bool = True) -> d
     if not resolved_adapter:
         # 不能把「缺 adapter」静默当成 mock：mock 返回空 findings 会假 PASS。
         raise ValueError("角色缺少 adapter，拒绝隐式 mock（请显式写 adapter 或 --adapter mock）")
+    if resolved_adapter not in ("claude", "codex", "mock"):
+        # 拼写错误要在展开配置时失败，而不是在工作线程里抛 ValueError。
+        raise ValueError(
+            f"未知 adapter：{resolved_adapter!r}（可选 claude/codex/mock）"
+        )
     out = {
         "adapter": resolved_adapter,
         "model": src.get("model") or C.REVIEW_FALLBACK_MODEL,
@@ -151,6 +160,8 @@ def _role_with_defaults(name: str, raw_roles: dict, defaults: dict) -> dict:
     """已知角色做字段级合并；缺的角色整份用默认。"""
     base = dict(defaults[name])
     override = raw_roles.get(name)
+    if override is not None and not isinstance(override, dict):
+        raise ValueError(f"角色 {name} 的配置必须是 JSON 对象")
     if isinstance(override, dict):
         base.update(override)
     return base

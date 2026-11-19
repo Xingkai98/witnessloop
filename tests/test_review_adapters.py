@@ -180,6 +180,22 @@ def test_cost_usd_tolerates_bad_usage():
     assert A.cost_usd("deepseek-flash", {"input_tokens": "bad", "output_tokens": None}) == 0
 
 
+def test_claude_adapter_tolerates_non_object_usage(monkeypatch):
+    monkeypatch.setattr(
+        A,
+        "_http_json",
+        lambda *args, **kwargs: {
+            "content": [{"type": "text", "text": '{"findings": []}'}],
+            "usage": [1],
+        },
+    )
+    result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error is None
+    assert result.usage is None
+
+
 def test_codex_adapter_tolerates_non_object_usage(monkeypatch):
     monkeypatch.setattr(
         A,

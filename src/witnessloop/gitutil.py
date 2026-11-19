@@ -81,6 +81,18 @@ def diff_text(root: str | Path, base: str, head: str) -> str:
     return proc.stdout
 
 
+def show_file(root: str | Path, rev: str, path: str) -> str | None:
+    """``rev:path`` 的文件内容；路径在该 revision 不存在 ⇒ None。
+
+    审阅上下文里的 change 文档必须与被审 revision 同源；从工作树读会让
+    未提交修改混进上下文，而 manifest 绑定的是 HEAD。
+    """
+    proc = _run(root, "show", f"{rev}:{path}")
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
 def is_ancestor(root: str | Path, ancestor: str, descendant: str) -> bool:
     """``ancestor`` 是否在 ``descendant`` 的历史里（含相等）。"""
     return _run(root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0

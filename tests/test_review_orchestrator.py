@@ -104,6 +104,21 @@ def test_bad_mock_scenario_content_is_usage_error(gated, cli):
         assert "mock-scenario" in err
 
 
+def test_context_reads_docs_from_revision_not_worktree(gated):
+    """git 模式的 change 文档必须来自被审 revision，不能混入未提交修改。"""
+    from witnessloop import policy as policy_mod
+    from witnessloop.review import revision as R
+
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    tasks = gated / "openspec/changes/add-x/tasks.md"
+    tasks.write_text("UNCOMMITTED-MARKER", encoding="utf-8")
+    context = O._build_context(
+        gated, "add-x", R.resolve_revision(gated, "git"), policy_mod.load_policy(gated)
+    )
+    assert "UNCOMMITTED-MARKER" not in context
+
+
 def test_invalid_base_fails_before_review(gated, cli):
     """diff 取不到时不能继续跑并产出绑定当前提交的 PASS 产物。"""
     write_change(gated, "add-x")
@@ -464,6 +479,46 @@ def test_judge_error_is_recorded(monkeypatch):
     )
     assert record["verdict"] == "BLOCKED"
     assert record["error"] == "boom"
+
+
+def test_no_fallback_when_budget_already_exceeded(monkeypatch):
+    """首次请求成本已超剩余预算时，不再发起 fallback 付费调用。"""
+    from types import SimpleNamespace
+
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setenv("WITNESSLOOP_CODEX_KEY", "sk-codex")
+    monkeypatch.setenv("WITNESSLOOP_DEEPSEEK_KEY", "sk-deepseek")
+    calls: list[str] = []
+
+    class Fake:
+        def run(self, request, *, model):
+            calls.append(model)
+            return A.ReviewResult(
+                model=model,
+                error="HTTP 524",
+                error_kind="other",
+                usage={"input_tokens": 1_000_000, "output_tokens": 0},
+            )
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: Fake())
+    actor, result, cost = O._call_reviewer(
+        "reviewerA",
+        {
+            "adapter": "codex",
+            "model": "gpt-6.1-sol",
+            "base_url": "https://example.invalid",
+            "auth_env": "WITNESSLOOP_CODEX_KEY",
+        },
+        A.ReviewRequest(prompt="", context=""),
+        scenario=None,
+        adapter_override=None,
+        revision=SimpleNamespace(value="abcdef123456", mode="git"),
+        budget_left=0.0,
+    )
+    assert calls == ["gpt-6.1-sol"]
+    assert actor.degraded_from is None
+    assert result.error_kind == "other"
 
 
 def test_runtime_other_error_falls_back(monkeypatch):
