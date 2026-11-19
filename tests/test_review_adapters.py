@@ -168,6 +168,21 @@ def test_parse_error_marks_adapter_result_as_parse_failure(monkeypatch):
     assert result.findings == []
 
 
+def test_http_timeout_is_adapter_error(monkeypatch):
+    """socket timeout 必须归一成 AdapterError，而不是让 CLI 崩成内部错误。"""
+    import urllib.request
+
+    def fake_urlopen(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error_kind == "other"
+    assert "超时" in result.error
+
+
 def test_claude_adapter_rejects_non_object_response(monkeypatch):
     monkeypatch.setattr(A, "_http_json", lambda *args, **kwargs: [])
     result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(

@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 42 条，合计 86 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 43 条，合计 87 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -92,6 +92,8 @@
       `test_claude_adapter_rejects_non_object_response` 等。
 - [x] B36 judge 同一 where 的重复裁决取「任一非 false-positive 即不放行」；
       测试 `test_judge_duplicate_ruling_cannot_mask_real`。
+- [x] B37 网络超时（`TimeoutError`/`OSError`）归一成 `AdapterError("other")`，
+      不再让 CLI 崩成「内部错误」。测试 `test_http_timeout_is_adapter_error`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

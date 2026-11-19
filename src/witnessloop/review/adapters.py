@@ -107,6 +107,10 @@ def _http_json(url: str, headers: dict, payload: dict, *, timeout: int = 300) ->
         raise AdapterError(kind, f"HTTP {exc.code}: {raw[:400]}") from exc
     except urllib.error.URLError as exc:
         raise AdapterError("other", f"网络错误：{exc}") from exc
+    except OSError as exc:
+        # socket timeout（TimeoutError）/ 连接重置等也是 OSError，不是 URLError；
+        # 不接住会让 review run 以「内部错误」崩溃，而不是走 BLOCKED + manifest。
+        raise AdapterError("other", f"网络超时/错误：{exc}") from exc
     try:
         return json.loads(data.decode("utf-8"))
     except ValueError as exc:
