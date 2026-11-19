@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 28 条，合计 72 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 36 条，合计 80 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -70,6 +70,15 @@
 - [x] B26 fixer / judge 的失败写进 round manifest（`fixer.error` / `judge.error`）
       并进 Markdown 报告；不再静默吞掉。测试 `test_fixer_error_is_recorded` /
       `test_judge_error_is_recorded` / `test_report_renders_fixer_error`。
+- [x] B27 severity 规范化贯穿解析/去重/收敛：`" HIGH "` 不得绕过阻塞判定。
+- [x] B28 fixer/judge 不再被 reviewer 的 `findings` 解析器误伤；合法 `fixes` /
+      `rulings` 不记为 parse 失败。测试 `test_fixer_valid_raw_is_not_marked_parse_error`。
+- [x] B29 judge PASS 必须逐条覆盖 stalled 且全为 false-positive；否则 BLOCKED。
+      测试 `test_judge_pass_requires_full_rulings` / `test_judge_pass_with_real_ruling_is_blocked`。
+- [x] B30 `review report` 对 actors/findings/fixer/judge 的类型篡改受控判红，不崩溃；
+      测试 `test_malformed_manifest_types_are_red`。
+- [x] B31 `load_roles` 读文件 OSError 回落默认（语法坏才 ValueError）；
+      `review run --base <ref>` 显式指定 diff base；回落只尝试一次。
 
 ## C. 真实模型验证（T-071 / T-075）
 

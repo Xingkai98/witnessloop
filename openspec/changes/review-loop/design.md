@@ -11,7 +11,7 @@
 
 ```text
 witnessloop review run --change <id> [--mode auto|git|digest]
-                       [--pass-rule …] [--stall-rounds N]
+                       [--base <ref>] [--pass-rule …] [--stall-rounds N]
                        [--budget USD] [--adapter claude|codex|mock]
                        [--max-rounds N] [--positive-control WHERE]
                        [--mock-scenario JSON]
@@ -82,7 +82,10 @@ witnessloop review report [--out FILE]
 错误归一成 `AdapterError(kind)`：`auth` / `balance` / `model_not_found` / `other`。
 输出解析只接受一个 JSON 对象（允许 fenced），字段 `findings` / `verdict`；
 解析不出 ⇒ `error_kind="parse"`，按通路失败处理（先回落；回落仍失败则本轮
-`BLOCKED`）。**绝不把空 findings 当成 PASS**。
+`BLOCKED`）。**绝不把空 findings 当成 PASS**。finding 必须是对象且 `severity`
+∈ blocker/high/medium/low/nit；解析层做 `strip().lower()` 规范化并**返回规范化值**，
+避免 `" HIGH "` 绕过阻塞判定。fixer/judge 的合法输出分别是 `fixes` / `rulings`，
+不能被 reviewer 的 `findings` 解析器误判为失败。
 
 auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env`；
 只有角色显式 `allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
@@ -108,7 +111,10 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
    `parse`）⇒ `BLOCKED`，本轮立即停止；空 findings 不会被判成收敛。
 4. 分支：
    - `PASS` ⇒ 收口，`final_verdict=PASS`；
-   - 停滞（同一 `where` 连续 `stall_rounds` 轮）⇒ 升级 judge，单点复核；
+   - 停滞（同一 `where` 连续 `stall_rounds` 轮）⇒ 升级 judge，单点复核。
+     judge 的 `PASS` 必须逐条覆盖送审的 stalled 项且每项为 `false-positive`；
+     只拿到 `verdict` 字段不足以放行。同轮还有未送审的 medium+ 时，judge 的
+     `PASS` 也不能覆盖它们（最终 `BLOCKED`）。
    - 累计成本 > budget ⇒ `BLOCKED`（成本止损）；
    - 否则跑 fixer，记录修复方案，进入下一轮。
 5. 每轮落一份 manifest：`revision` / `config_hash` / `actors[]` /
@@ -150,7 +156,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 
 - `cost_usd(model, usage)`：`input_tokens/1e6 * in_price + output_tokens/1e6 * out_price`。
 - `APPROX_PRICE_PER_MTOK` 是**近似价**，只用于 `budget.max_cost_usd` 止损与报告。
-- 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止。
+- 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止；
+  并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用。
   这是**软止损**：单次调用本身可能把累计值推过上限（不做事前额度预留），但不会
   在已超预算后继续发起额外调用。
 - 每轮 manifest 的 `cost_usd` = **两路 reviewer** 成本；fixer / judge 成本计入

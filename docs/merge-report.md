@@ -1,7 +1,7 @@
 # Merge Report: review loop（多模型复审闭环，T-071）
 
 > 状态：P1–P6 完成；T-071 当时 `uv run pytest -q` 为 832 passed，2026-11-19
-> 加固后为 860 passed（见 §6 的日期注记）。
+> 加固后为 868 passed（见 §6 的日期注记）。
 > 分支 `feat/review-loop`，基线 `origin/main` = `d5b380a`。本报告只陈述**实测**结果，
 > 不伪造；降级点逐条如实记录。
 
@@ -147,8 +147,8 @@ round-1 manifest 的 `actors[]`：
 ## 6. 验收对照（机器可判）
 
 > 2026-11-19 更新：加入 `gpt-6.1-sol` 价格回归、auth/parse/回落修复、预算前移、
-> 旧 rounds 清理、去重加固、host-token opt-in、上下文优先排序与第三轮
-> parse/judge/fixer 加固测试后为 **860 passed**；其余条目保留 T-071 当时的实测记录。
+> 旧 rounds 清理、去重加固、host-token opt-in、上下文优先排序与
+> parse/judge/fixer 多轮加固测试后为 **868 passed**；其余条目保留 T-071 当时的实测记录。
 
 1. ✅ `uv run pytest -q` 全绿：**832 passed**（原有 788 + 新增 44）。
    `git diff --stat origin/main...HEAD`：15 files changed, 1918 insertions(+), 4 deletions(-)。

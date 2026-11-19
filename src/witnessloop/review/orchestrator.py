@@ -156,7 +156,8 @@ def _pass_rule_satisfied(findings: list[dict], pass_rule: str) -> bool:
     if pass_rule != C.DEFAULT_PASS_RULE:
         raise ValueError(f"未知 pass_rule：{pass_rule!r}")
     return not any(
-        str(f.get("severity", "")).lower() in BLOCKING_SEVERITIES for f in findings
+        str(f.get("severity", "")).strip().lower() in BLOCKING_SEVERITIES
+        for f in findings
     )
 
 
@@ -195,7 +196,9 @@ def _prioritize_diff(diff: str, limit: int = DIFF_CONTEXT_LIMIT) -> str:
     return "".join(out)
 
 
-def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str:
+def _build_context(
+    root: Path, change: str, revision: R.Revision, policy, base_ref: str | None = None
+) -> str:
     """审阅素材：change 的 tasks / design + 实际 diff（git 模式）或工作树说明（digest）。"""
     pieces: list[str] = []
     directory = root / policy.changes_root / change
@@ -204,7 +207,7 @@ def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str
         if path.is_file():
             pieces.append(f"== {name} ==\n{path.read_text(encoding='utf-8')[:8000]}")
     if revision.mode == "git":
-        base = gitutil.resolve_base(root, None)
+        base = gitutil.resolve_base(root, base_ref)
         head = revision.value
         try:
             names = gitutil.diff_names(root, base, head)
@@ -304,10 +307,12 @@ def _call_reviewer(
     model = role_cfg.get("model") or FALLBACK_MODEL
     degraded_from: str | None = None
     used_adapter = adapter_name
+    is_fallback = False
 
     if adapter_name != "mock" and not _resolve_auth_token(role_cfg):
         # auth 一开始就缺 ⇒ 直接回落，不白打一次网络。
         degraded_from = model
+        is_fallback = True
         used_adapter, role_cfg, still_down = _degrade_to_fallback(role_cfg)
         if still_down:
             # 回落 key 也没有：不跑 mock、不产生「零 findings 的 PASS」。
@@ -328,8 +333,11 @@ def _call_reviewer(
     result = adapter.run(request, model=model)
     cost = A.cost_usd(model, result.usage)
 
-    if result.error_kind in ("auth", "balance", "model_not_found", "parse"):
-        # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash。
+    if (
+        result.error_kind in ("auth", "balance", "model_not_found", "parse")
+        and not is_fallback
+    ):
+        # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash（**只回落一次**）。
         # 保留原始 model：先「缺 key 回落」再失败时，不要把 degraded_from 改成回落目标。
         if degraded_from is None:
             degraded_from = model
@@ -424,7 +432,7 @@ def run(args: argparse.Namespace) -> int:
     # 实际调用用**未脱敏**的运行时角色表（保留内联 auth_token）；写盘的
     # config.resolved.json 仍是脱敏版本。
     role_cfgs = roles_mod.runtime_roles(roles_doc, adapter=args.adapter)
-    context = _build_context(root, change, revision, pol)
+    context = _build_context(root, change, revision, pol, getattr(args, "base", None))
 
     round_manifests: list[dict] = []
     merged_history: list[dict] = []  # 每轮的 merged findings（用于停滞判定）
@@ -634,7 +642,9 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
         "fixes": fixes if isinstance(fixes, list) else [],
         "raw": result.raw,
     }
-    if result.error:
+    # reviewer 解析器要求 findings 数组；fixer 的合法输出是 fixes，会被它误标
+    # parse 失败。只有 **fixes 也解析不出来** 时才算 fixer 失败。
+    if result.error and not isinstance(fixes, list):
         # fixer 失败不能静默：错误进 manifest，loop 继续但产物里必须看得到。
         record["error"] = result.error
         record["error_kind"] = result.error_kind
@@ -655,15 +665,48 @@ def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision
     doc = A._extract_json(result.raw) if result.raw else None
     if not isinstance(doc, dict):
         doc = {}
+    rulings = doc.get("rulings") if isinstance(doc.get("rulings"), list) else []
+    guessed_verdict = str(doc.get("verdict") or "BLOCKED").upper()
     record = {
-        "verdict": str(doc.get("verdict") or "BLOCKED").upper(),
-        "rulings": doc.get("rulings") if isinstance(doc.get("rulings"), list) else [],
+        "verdict": guessed_verdict,
+        "rulings": rulings,
         "raw": result.raw,
     }
-    if result.error:
-        # judge 失败同样要留痕（verdict 已退 BLOCKED，但错误原因不能丢）。
-        record["error"] = result.error
-        record["error_kind"] = result.error_kind
+    # 同 fixer：judge 的合法输出是 rulings，不是 findings；解析器误标 parse 失败
+    # 不应盖过 raw 里形状正确的裁决。真正的失败由 ruling 覆盖检查兜底。
+    shape_ok = bool(rulings) and guessed_verdict in (
+        "PASS",
+        "CHANGES_REQUESTED",
+        "BLOCKED",
+    )
+    problem: str | None = None
+    if result.error and not shape_ok:
+        problem = result.error
+    if guessed_verdict == "PASS":
+        # PASS 必须逐条覆盖送审的 stalled 项，且每条都是 false-positive；
+        # 只凭一个 verdict 字段不足以放行。
+        by_where: dict[str, str] = {}
+        for ruling in rulings:
+            if not isinstance(ruling, dict):
+                continue
+            by_where[str(ruling.get("where"))] = str(ruling.get("ruling") or "").strip().lower()
+        missing = [where for where in stalled if where not in by_where]
+        not_cleared = [
+            where for where, ruling in by_where.items() if ruling != "false-positive"
+        ]
+        if not rulings:
+            problem = "judge 返回 PASS 但没有 rulings"
+        elif missing:
+            problem = f"judge 返回 PASS 但未覆盖 stalled 项：{', '.join(missing)}"
+        elif not_cleared:
+            problem = (
+                "judge 返回 PASS 但存在非 false-positive 裁决："
+                + ", ".join(not_cleared)
+            )
+    if problem:
+        record["verdict"] = "BLOCKED"
+        record["error"] = problem
+        record["error_kind"] = result.error_kind or "judge"
     return record, A.cost_usd(result.model, result.usage)
 
 

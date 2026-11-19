@@ -31,6 +31,14 @@ def test_parse_review_output_accepts_issues_alias():
     assert verdict == "PASS"
 
 
+def test_parse_review_output_normalizes_severity():
+    findings, _, err = A.parse_review_output(
+        '{"findings": [{"where": "x:1", "severity": " HIGH "}]}'
+    )
+    assert err is None
+    assert findings[0]["severity"] == "high"
+
+
 def test_parse_review_output_rejects_non_object_finding():
     _, _, err = A.parse_review_output('{"findings": ["发现严重问题"]}')
     assert err is not None

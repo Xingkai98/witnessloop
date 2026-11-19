@@ -176,6 +176,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "git", "digest"],
         help="revision 锚点：auto 有 .git 用 Git、否则用 Digest",
     )
+    p_run.add_argument(
+        "--base",
+        default=None,
+        help="diff 的 base ref（缺省与 check 同一套解析：WITNESSLOOP_BASE_REF / "
+        "GITHUB_BASE_REF / 主干）",
+    )
     p_run.add_argument("--pass-rule", default=DEFAULT_PASS_RULE, help="收敛判据（默认 medium_plus_zero）")
     p_run.add_argument(
         "--stall-rounds", type=int, default=DEFAULT_STALL_ROUNDS,

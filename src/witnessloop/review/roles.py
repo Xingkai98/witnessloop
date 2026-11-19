@@ -77,8 +77,13 @@ def load_roles(root: str | Path) -> dict:
     if not path.is_file():
         return default_roles_doc()
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        # 读不出（权限 / IO 错误）⇒ 按「缺配置」回落默认；语法坏才是显式 ValueError。
+        return default_roles_doc()
+    try:
+        doc = json.loads(text)
+    except ValueError as exc:
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 无法解析：{exc}") from exc
     if not isinstance(doc, dict):
         raise ValueError(f"{C.REVIEW_ROLES_PATH} 根必须是 JSON 对象")

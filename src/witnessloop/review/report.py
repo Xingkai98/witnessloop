@@ -85,15 +85,37 @@ def verify(root: Path) -> tuple[list[str], dict]:
                 f"{C.REVIEW_CONFIG_FILENAME} 不符"
             )
 
-    # 3. 两路同一 actor
+    # 3. 两路同一 actor + findings 类型校验
+    all_findings: list[dict] = []
     for doc in rounds:
-        reviewers = [a for a in doc.get("actors", []) if a.get("role", "").startswith("reviewer")]
-        run_ids = [a.get("run_id") for a in reviewers]
+        actors = doc.get("actors")
+        if not isinstance(actors, list) or any(
+            not isinstance(actor, dict) for actor in actors
+        ):
+            findings.append(
+                f"manifest actors 类型非法：round {doc.get('round')}（应为对象数组）"
+            )
+            actors = []
+        reviewers = [
+            actor
+            for actor in actors
+            if str(actor.get("role", "")).startswith("reviewer")
+        ]
+        run_ids = [actor.get("run_id") for actor in reviewers]
         if len(run_ids) >= 2 and run_ids[0] and run_ids[0] == run_ids[1]:
             findings.append(
                 f"两路同一 actor：round {doc.get('round')} 的 reviewerA 与 reviewerB "
                 f"run_id 相同（{run_ids[0]}）"
             )
+        round_findings = doc.get("findings")
+        if not isinstance(round_findings, list) or any(
+            not isinstance(finding, dict) for finding in round_findings
+        ):
+            findings.append(
+                f"manifest findings 类型非法：round {doc.get('round')}（应为对象数组）"
+            )
+            continue
+        all_findings.extend(round_findings)
 
     # 4. 正控漏报
     positive = None
@@ -110,11 +132,7 @@ def verify(root: Path) -> tuple[list[str], dict]:
     if isinstance(summary_doc, dict) and summary_doc.get("final_verdict"):
         final_verdict = summary_doc["final_verdict"]
     if positive:
-        seen = any(
-            str(f.get("where")) == positive
-            for doc in rounds
-            for f in doc.get("findings", [])
-        )
+        seen = any(str(f.get("where")) == positive for f in all_findings)
         if final_verdict == "PASS" and not seen:
             findings.append(f"正控漏报：positive_control.where={positive} 未在任何一轮被报出")
 
@@ -158,26 +176,37 @@ def _render_markdown(summary: dict) -> str:
 
     lines.append("## 各轮")
     for doc in rounds:
+        actor_items = doc.get("actors")
+        if not isinstance(actor_items, list):
+            actor_items = []
         actors = ", ".join(
             f"{a.get('role')}/{a.get('adapter')}/{a.get('model')}"
             + (f"（degraded_from {a.get('degraded_from')}）" if a.get("degraded_from") else "")
-            for a in doc.get("actors", [])
+            for a in actor_items
+            if isinstance(a, dict)
         )
         lines.append(f"### round {doc.get('round')} — verdict={doc.get('verdict')}")
         lines.append(f"- actors：{actors}")
         lines.append(f"- cost_usd={doc.get('cost_usd')}")
         if doc.get("note"):
             lines.append(f"- note：{doc.get('note')}")
-        for f in doc.get("findings", []):
+        finding_items = doc.get("findings")
+        if not isinstance(finding_items, list):
+            finding_items = []
+        for f in finding_items:
+            if not isinstance(f, dict):
+                continue
             lines.append(
                 f"- [{f.get('severity')}] {f.get('where')} — {f.get('what')}"
             )
-        if doc.get("fixer") and doc["fixer"].get("error"):
-            lines.append(f"- fixer 错误：{doc['fixer'].get('error')}")
-        if doc.get("judge"):
-            lines.append(f"- judge：{doc.get('judge').get('verdict')}")
-            if doc["judge"].get("error"):
-                lines.append(f"- judge 错误：{doc['judge'].get('error')}")
+        fixer = doc.get("fixer")
+        if isinstance(fixer, dict) and fixer.get("error"):
+            lines.append(f"- fixer 错误：{fixer.get('error')}")
+        judge = doc.get("judge")
+        if isinstance(judge, dict):
+            lines.append(f"- judge：{judge.get('verdict')}")
+            if judge.get("error"):
+                lines.append(f"- judge 错误：{judge.get('error')}")
         lines.append("")
     lines.append(f"## 最终判定：{summary.get('final_verdict')}")
     if summary.get("degraded_note"):

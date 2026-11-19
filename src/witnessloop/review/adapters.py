@@ -37,7 +37,7 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
 
 
 def severity_rank(severity: str) -> int:
-    return SEVERITY_RANK.get(str(severity).lower(), -1)
+    return SEVERITY_RANK.get(str(severity).strip().lower(), -1)
 
 
 def cost_usd(model: str, usage: dict | None) -> float:
@@ -163,6 +163,7 @@ def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
     if not isinstance(findings, list):
         return [], "PASS", "JSON 里没有 findings 数组"
     allowed = {"blocker", "high", "medium", "low", "nit"}
+    normalized: list[dict] = []
     for index, item in enumerate(findings):
         if not isinstance(item, dict):
             return [], "PASS", f"findings[{index}] 不是对象"
@@ -171,6 +172,10 @@ def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
             # 缺 severity 的 finding 会被 _pass_rule 当成「不阻塞」——必须在解析层
             # fail closed，否则畸形输出（含字符串 finding / 漏 severity）会假 PASS。
             return [], "PASS", f"findings[{index}] 的 severity 非法：{item.get('severity')!r}"
+        # 校验用规范化后的值，返回给判定层的也必须是同一个值；否则
+        # `severity=" high "` 会通过解析却不阻塞收敛。
+        normalized.append(dict(item, severity=severity))
+    findings = normalized
     verdict = str(doc.get("verdict") or "PASS").strip().upper()
     if verdict not in ("PASS", "CHANGES_REQUESTED", "BLOCKED"):
         verdict = "CHANGES_REQUESTED" if findings else "PASS"

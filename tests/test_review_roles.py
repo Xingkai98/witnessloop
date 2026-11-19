@@ -29,6 +29,23 @@ def test_load_roles_falls_back_to_default_when_missing(tmp_path):
     assert roles_mod.load_roles(tmp_path)["roles"]["reviewerA"]["model"] == "gpt-6.1-terra"
 
 
+def test_load_roles_unreadable_file_falls_back(tmp_path, monkeypatch):
+    """读不出（OSError）按缺配置回落；语法坏才是显式 ValueError。"""
+    from pathlib import Path
+
+    path = tmp_path / C.REVIEW_ROLES_PATH
+    path.write_text("{}", encoding="utf-8")
+    original = Path.read_text
+
+    def fake_read_text(self, *args, **kwargs):
+        if self == path:
+            raise OSError("denied")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    assert roles_mod.load_roles(tmp_path)["roles"]["reviewerA"]["model"] == "gpt-6.1-terra"
+
+
 def test_load_roles_merges_partial_overrides(tmp_path, monkeypatch):
     (tmp_path / C.REVIEW_ROLES_PATH).write_text(
         json.dumps({"roles": {"reviewerA": {"model": "custom-model"}}}), encoding="utf-8"

@@ -315,6 +315,85 @@ class _FailingAdapter:
         return A.ReviewResult(model=model, error="boom", error_kind="auth")
 
 
+class _RawAdapter:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def run(self, request, *, model):
+        from witnessloop.review import adapters as A
+
+        return A.ReviewResult(
+            model=model,
+            raw=self.raw,
+            error="JSON 里没有 findings 数组",
+            error_kind="parse",
+        )
+
+
+def _fixer_cfg():
+    return {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"}
+
+
+def test_fixer_valid_raw_is_not_marked_parse_error(monkeypatch):
+    """fixer 的合法输出是 fixes；reviewer 解析器的 parse error 不应误伤。"""
+    monkeypatch.setattr(
+        O.A,
+        "build_adapter",
+        lambda *args, **kwargs: _RawAdapter('{"fixes": [{"where": "x", "action": "a"}]}'),
+    )
+    from witnessloop.review import adapters as A
+
+    record, _ = O._run_fixer(
+        [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["fixes"] == [{"where": "x", "action": "a"}]
+    assert "error" not in record
+
+
+def test_judge_pass_requires_full_rulings(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setattr(
+        O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter('{"verdict": "PASS"}')
+    )
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "BLOCKED"
+    assert "没有 rulings" in record["error"]
+
+
+def test_judge_pass_with_real_ruling_is_blocked(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = '{"verdict": "PASS", "rulings": [{"where": "x:1", "ruling": "real"}]}'
+    monkeypatch.setattr(
+        O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter(raw)
+    )
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "BLOCKED"
+    assert "非 false-positive" in record["error"]
+
+
+def test_judge_pass_with_false_positive_is_pass(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = (
+        '{"verdict": "PASS", "rulings": '
+        '[{"where": "x:1", "ruling": "false-positive"}]}'
+    )
+    monkeypatch.setattr(
+        O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter(raw)
+    )
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "PASS"
+    assert "error" not in record
+
+
 def test_fixer_error_is_recorded(monkeypatch):
     from witnessloop.review import adapters as A
 
@@ -345,6 +424,42 @@ def test_judge_error_is_recorded(monkeypatch):
     )
     assert record["verdict"] == "BLOCKED"
     assert record["error"] == "boom"
+
+
+def test_fallback_is_attempted_only_once(monkeypatch):
+    """先缺 key 回落、回落请求又失败时，不能把回落目标再回落一次。"""
+    from types import SimpleNamespace
+
+    from witnessloop.review import adapters as A
+
+    for name in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("WITNESSLOOP_DEEPSEEK_KEY", "sk-deepseek")
+    monkeypatch.delenv("WITNESSLOOP_MISSING_KEY", raising=False)
+    calls: list[str] = []
+
+    class Fake:
+        def run(self, request, *, model):
+            calls.append(model)
+            return A.ReviewResult(model=model, error="boom", error_kind="auth")
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: Fake())
+    actor, result, _ = O._call_reviewer(
+        "reviewerA",
+        {
+            "adapter": "claude",
+            "model": "m",
+            "base_url": "https://example.invalid",
+            "auth_env": "WITNESSLOOP_MISSING_KEY",
+        },
+        A.ReviewRequest(prompt="", context=""),
+        scenario=None,
+        adapter_override=None,
+        revision=SimpleNamespace(value="abcdef123456", mode="git"),
+    )
+    assert calls == ["deepseek-flash"]
+    assert result.error == "boom"
+    assert actor.degraded_from == "m"
 
 
 def test_prioritize_diff_puts_code_before_docs():

@@ -125,6 +125,20 @@ def test_non_object_config_is_red(gated, cli):
     assert "不是 JSON 对象" in err
 
 
+def test_malformed_manifest_types_are_red(gated, cli):
+    """篡改 actors/findings 类型时受控判红，不能崩溃。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    doc = _round_manifest(gated)
+    doc["actors"] = "not-a-list"
+    doc["findings"] = {"where": "x"}
+    _write_round_manifest(gated, doc)
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "类型非法" in err
+
+
 def test_non_integer_round_is_red(gated, cli):
     """round 字段不是整数时不能抛 ValueError 崩掉。"""
     write_change(gated, "add-x")
