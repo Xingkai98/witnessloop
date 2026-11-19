@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 79 条，合计 123 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 80 条，合计 124 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -170,6 +170,8 @@
       测试 `test_summary_rounds_malformed_entries_are_red`。
 - [x] B74 degraded_note 扫描所有轮次（不只看最后一轮）；Markdown 报告显示
       cumulative_cost_usd。
+- [x] B75 顶层数组检测覆盖 `[0, {...}]` 等非单元素数组；散文 `[P1]` 仍放行。
+      测试 `test_parse_review_output_rejects_array_with_extra_elements`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

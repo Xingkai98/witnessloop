@@ -174,11 +174,11 @@ def _top_level_object_count(text: str) -> int:
     """数顶层 JSON 对象的个数（忽略字符串里的花括号）。"""
     count = 0
     depth = 0
+    array_depth = 0
+    inside_array = False
     in_string = False
     escape = False
-    first_start = -1
-    first_end = -1
-    for index, ch in enumerate(text):
+    for ch in text:
         if in_string:
             if escape:
                 escape = False
@@ -189,23 +189,23 @@ def _top_level_object_count(text: str) -> int:
             continue
         if ch == '"':
             in_string = True
+        elif depth == 0 and ch == "[":
+            array_depth += 1
+        elif depth == 0 and ch == "]" and array_depth > 0:
+            array_depth -= 1
         elif ch == "{":
             if depth == 0:
                 count += 1
-                if first_start < 0:
-                    first_start = index
+                if array_depth > 0:
+                    inside_array = True
             depth += 1
         elif ch == "}":
             if depth > 0:
                 depth -= 1
-                if depth == 0 and first_end < 0:
-                    first_end = index
-    if first_start >= 0 and first_end >= 0:
-        # 只拒绝**数组包裹对象**（`[{...}]`）；散文里的 `[P1]` / `[1]` 不算。
-        before = text[:first_start].rstrip()
-        after = text[first_end + 1 :].lstrip()
-        if before.endswith("[") and after.startswith("]"):
-            return -1
+    # 对象若位于顶层数组内（`[{...}]` / `[0, {...}]`）⇒ 不是「一个 JSON 对象」。
+    # 散文里的 `[P1]` 会在对象前闭合，array_depth 归零，不会误伤。
+    if inside_array:
+        return -1
     return count
 
 

@@ -64,6 +64,11 @@ def test_parse_review_output_rejects_top_level_array():
     assert A.extract_single_json('[{"fixes": []}]') is None
 
 
+def test_parse_review_output_rejects_array_with_extra_elements():
+    _, _, err = A.parse_review_output('[0, {"findings": []}]')
+    assert err is not None
+
+
 def test_parse_review_output_allows_prose_brackets():
     text = '以下按 [P1][P2] 分组：\n{"findings": []}'
     findings, _, err = A.parse_review_output(text)
