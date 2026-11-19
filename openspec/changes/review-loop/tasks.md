@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 74 条，合计 118 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 77 条，合计 121 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -154,6 +154,15 @@
       测试 `test_fixer_invalid_fix_items_are_recorded`。
 - [x] B66 reviewer 返回 CHANGES_REQUESTED 但无 findings 时，即使另一路有 findings
       也保留合成 medium，不让其他 finding 掩盖。
+- [x] B67 合成 medium 只补给**自己没给 medium+** 的 reviewer；正常报出缺陷的
+      reviewer 不再被扣假问题。
+- [x] B68 judge 上下文包含 stalled finding 的 what/suggestion/severity 与
+      截断的 review context（diff/设计），不再只给 where 串；测试
+      `test_judge_context_includes_findings_and_diff`。
+- [x] B69 fixer 混合有效/非法条目也判失败（不静默过滤坏条目）；
+      测试 `test_fixer_mixed_valid_and_invalid_items_is_error`。
+- [x] B70 达到 max_rounds / 下一轮入口预算止损时，最后一轮 manifest 的 verdict
+      同步为最终 verdict；测试 `test_max_rounds_syncs_last_manifest_verdict`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

@@ -290,6 +290,18 @@ def test_budget_stops_before_judge(gated, cli, monkeypatch):
     assert "成本止损" in last["note"]
 
 
+def test_max_rounds_syncs_last_manifest_verdict(gated, cli):
+    """达到 max_rounds 时最后一轮 manifest 也要记 BLOCKED。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    code, _, _ = _mock_run(cli, gated, mock_scenario=_scenario([FINDING]), max_rounds=1)
+    assert code == C.EXIT_FAIL
+    manifest = json.loads(
+        (gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR / "round-0001.json").read_text()
+    )
+    assert manifest["verdict"] == "BLOCKED"
+
+
 def test_missing_where_does_not_converge(gated, cli):
     """没有 where 的 medium finding 也要阻塞收敛，不能静默变成 PASS。"""
     write_change(gated, "add-x")
@@ -374,7 +386,8 @@ def test_reviewer_changes_requested_without_findings_blocks_pass(gated, cli, mon
     manifest = json.loads(
         (gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR / "round-0001.json").read_text()
     )
-    assert manifest["verdict"] == "CHANGES_REQUESTED"
+    # 达到 max_rounds 后最后一轮 verdict 同步为最终 BLOCKED；合成项仍须在。
+    assert manifest["verdict"] == "BLOCKED"
     assert any(
         f["where"].startswith("<reviewer-verdict:") for f in manifest["findings"]
     )
@@ -501,6 +514,18 @@ def test_fixer_invalid_fix_items_are_recorded(monkeypatch):
     assert record["error"]
 
 
+def test_fixer_mixed_valid_and_invalid_items_is_error(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = '{"fixes": [{"where": "x", "action": "a"}, null]}'
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _RawOkAdapter(raw))
+    record, _ = O._run_fixer(
+        [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["error"]
+    assert "条目非法" in record["error"]
+
+
 def test_fixer_missing_fixes_is_recorded(monkeypatch):
     from witnessloop.review import adapters as A
 
@@ -573,6 +598,40 @@ def test_fixer_valid_raw_is_not_marked_parse_error(monkeypatch):
     )
     assert record["fixes"] == [{"where": "x", "action": "a"}]
     assert "error" not in record
+
+
+def test_judge_context_includes_findings_and_diff(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    captured: dict = {}
+
+    class Capture:
+        def run(self, request, *, model):
+            captured["context"] = request.context
+            return A.ReviewResult(
+                model=model,
+                raw='{"verdict": "BLOCKED", "rulings": [{"where": "x:1", "ruling": "uncertain"}]}',
+            )
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: Capture())
+    O._run_judge(
+        ["x:1"],
+        _fixer_cfg(),
+        A.ReviewRequest(prompt="", context="DIFF-CONTEXT"),
+        None,
+        None,
+        None,
+        merged=[
+            {
+                "where": "x:1",
+                "severity": "medium",
+                "what": "具体问题",
+                "suggestion": "改法",
+            }
+        ],
+    )
+    assert "具体问题" in captured["context"]
+    assert "DIFF-CONTEXT" in captured["context"]
 
 
 def test_judge_pass_requires_full_rulings(monkeypatch):

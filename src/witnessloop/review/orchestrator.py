@@ -559,9 +559,16 @@ def run(args: argparse.Namespace) -> int:
         elif blocked_roles:
             verdict = "BLOCKED"
         elif changes_roles:
-            # reviewer 明确说「要改」但没给 medium+ findings：不能静默 PASS。
-            # 即使另一路已有 findings，也要保留这条异常意见（它可能被 judge 放行）。
+            # 只对**自己没给 medium+ findings** 的 reviewer 补合成项；正常报出缺陷
+            # 的 reviewer 不能被扣上「未给出 findings」的假问题。
             for role in changes_roles:
+                own_findings = reviewer_results[role][1].findings
+                if any(
+                    A.severity_rank(f.get("severity")) >= A.severity_rank("medium")
+                    for f in own_findings
+                    if isinstance(f, dict)
+                ):
+                    continue
                 where = f"<reviewer-verdict:{role}>"
                 if not any(f.get("where") == where for f in merged):
                     merged.append(
@@ -606,7 +613,13 @@ def run(args: argparse.Namespace) -> int:
         elif stalled:
             # 升级 judge 单点复核，不继续磨。
             judge_record, judge_cost = _run_judge(
-                stalled, role_cfgs["judge"], request, scenario, args.adapter, revision
+                stalled,
+                role_cfgs["judge"],
+                request,
+                scenario,
+                args.adapter,
+                revision,
+                merged=merged,
             )
             cumulative_cost += judge_cost
             judge_verdict = str(judge_record.get("verdict", "BLOCKED")).upper()
@@ -674,6 +687,13 @@ def run(args: argparse.Namespace) -> int:
     if final_note is None:
         final_note = f"达到最大轮数 {args.max_rounds} 仍未收敛"
 
+    # 达到最大轮数 / 下一轮入口预算止损时，最后一轮 manifest 已写出但 verdict
+    # 仍是 CHANGES_REQUESTED；同步成最终 verdict，避免 summary 与 round 打架。
+    if round_manifests and round_manifests[-1]["verdict"] != final_verdict:
+        round_manifests[-1]["verdict"] = final_verdict
+        round_manifests[-1]["note"] = final_note
+        _write_round_manifest(root, round_manifests[-1]["round"], round_manifests[-1])
+
     # 收尾：写最终 summary.json（final verdict / 轮数 / 累计成本等元数据）。
     _write_final_report(
         root,
@@ -731,33 +751,46 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
     result = adapter.run(fix_request, model=fixer_cfg.get("model") or FALLBACK_MODEL)
     doc = A.extract_single_json(result.raw) if result.raw else None
     fixes = (doc or {}).get("fixes") if isinstance(doc, dict) else None
-    valid_fixes = (
-        [
-            fix
-            for fix in fixes
-            if isinstance(fix, dict)
-            and str(fix.get("where") or "").strip()
-            and str(fix.get("action") or "").strip()
-        ]
-        if isinstance(fixes, list)
-        else []
-    )
+    raw_fixes = fixes if isinstance(fixes, list) else []
+    valid_fixes = [
+        fix
+        for fix in raw_fixes
+        if isinstance(fix, dict)
+        and str(fix.get("where") or "").strip()
+        and str(fix.get("action") or "").strip()
+    ]
     record = {"fixes": valid_fixes, "raw": result.raw}
     # reviewer 解析器要求 findings 数组；fixer 的合法输出是 fixes，会被它误标
-    # parse 失败。fixes 缺失/空/条目无效都算 fixer 失败——无论适配器是否报了 error。
-    if not valid_fixes:
+    # parse 失败。fixes 缺失/空/**任一条目非法**都算 fixer 失败（不静默跳过坏条目）。
+    if not raw_fixes or len(valid_fixes) != len(raw_fixes):
         record["error"] = result.error or "fixer 输出没有有效 fixes（缺数组/空/条目非法）"
         record["error_kind"] = result.error_kind or "parse"
     return record, A.cost_usd(result.model, result.usage)
 
 
-def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision):
+def _run_judge(
+    stalled, judge_cfg, request, scenario, adapter_override, revision, *, merged=None
+):
     adapter_name = adapter_override or judge_cfg.get("adapter") or "mock"
     if adapter_name == "mock":
         return {"verdict": "BLOCKED", "rulings": [{"where": w, "ruling": "uncertain"} for w in stalled]}, 0.0
+    stalled_set = set(stalled)
+    stalled_findings = [
+        finding
+        for finding in (merged or [])
+        if str(finding.get("where")) in stalled_set
+    ]
     judge_request = A.ReviewRequest(
         prompt=JUDGE_PROMPT,
-        context=json.dumps({"stalled": stalled}, ensure_ascii=False, indent=2),
+        context=json.dumps(
+            {
+                "findings": stalled_findings,
+                # judge 需要看到代码/设计上下文才能独立核验；截断以控制成本。
+                "review_context": (request.context or "")[:40000],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         round=request.round,
     )
     adapter = A.build_adapter(adapter_name, role=judge_cfg, scenario=scenario)

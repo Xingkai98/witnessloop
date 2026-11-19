@@ -122,7 +122,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 4. 分支：
    - `PASS` ⇒ 收口，`final_verdict=PASS`；
    - 停滞（同一 `where` 连续 `stall_rounds` 轮）⇒ 升级 judge，单点复核。
-     judge 的 `PASS` 必须逐条覆盖送审的 stalled 项且每项为 `false-positive`；
+     judge 收到 stalled finding 的完整对象 + 截断的 review context；
+     它的 `PASS` 必须逐条覆盖送审的 stalled 项且每项为 `false-positive`；
      只拿到 `verdict` 字段不足以放行。同轮还有未送审的 medium+ 时，judge 的
      `PASS` 也不能覆盖它们（最终 `BLOCKED`）。
    - 累计成本 > budget ⇒ `BLOCKED`（成本止损）；
@@ -189,8 +190,10 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 
 ## D9 已知限制（如实）
 
-1. **judge 上下文不足**：`_run_judge` 只把 `where` 字符串交给 judge，不给 finding
-   原文 / diff。T-075 实测两次都判 `uncertain` ⇒ `BLOCKED`。属既知设计限制。
+1. **judge 上下文有限**：`_run_judge` 现在包含 stalled finding 的完整对象与
+   截断到 40000 字符的 review context（diff / 设计资料），但仍不是完整仓库；
+   复杂问题可能判 `uncertain`。judge 的 `PASS` 必须逐条覆盖且全为
+   `false-positive` 才放行。
 2. **fixer 不自动改代码**：只产出 `fixes` JSON；安全边界。
 3. **`.reviewloop/` 不是门禁证据**：`check` 只认 `reviews/*.manifest.json`；
    闭环跑完仍需 `manifest build`。
