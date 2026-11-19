@@ -48,6 +48,20 @@ def test_resolve_config_records_auth_resolved(tmp_path, monkeypatch):
     assert any("reviewerB" in w for w in warnings)
 
 
+def test_auth_resolved_matches_adapter_resolution(monkeypatch):
+    """config.resolved 的 auth_resolved 必须与适配器实际取 token 同口径。"""
+    monkeypatch.delenv("WITNESSLOOP_CODEX_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "host-token")
+    role = {
+        "adapter": "codex",
+        "base_url": "https://heyroute.ai/v1",
+        "auth_env": "WITNESSLOOP_CODEX_KEY",
+    }
+    assert roles_mod._auth_resolved(role) is False
+    role["allow_host_auth_fallback"] = True
+    assert roles_mod._auth_resolved(role) is True
+
+
 def test_resolve_config_adapter_override_forces_all_roles(tmp_path):
     resolved, _ = roles_mod.resolve_config(tmp_path, adapter="mock")
     for name in ("reviewerA", "reviewerB", "fixer", "judge"):

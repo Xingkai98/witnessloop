@@ -26,6 +26,9 @@ SEVERITY_RANK = {"nit": 0, "low": 1, "medium": 2, "high": 3, "blocker": 4}
 #: 近似价格（USD / 1M tokens，输入, 输出）。成本是**估算**，只用于预算止损与报告，
 #: 不是计费依据。
 APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
+    # gpt-6.1-sol 不在本机 model_pricing 表里；按同代 Sol 档（gpt-5.6-sol $5/$30）
+    # 保守估算。换真实价格时只改这一行。
+    "gpt-6.1-sol": (5.0, 30.0),
     "gpt-6.1-terra": (2.0, 8.0),
     "glm-5.3": (0.6, 2.0),
     "deepseek-flash": (0.07, 0.28),
@@ -224,6 +227,9 @@ class ClaudeAdapter:
             model=model,
             raw=raw,
             error=err,
+            # 解析失败是**通路失败**，不是「零 findings 的 PASS」——否则一个
+            # 畸形输出会被编排器当成收敛。orchestrator 据此走回落 / BLOCKED。
+            error_kind="parse" if err else None,
             usage=doc.get("usage") or None,
         )
 
@@ -269,23 +275,45 @@ class CodexAdapter:
             model=model,
             raw=raw,
             error=err,
+            error_kind="parse" if err else None,
             usage=usage,
         )
+
+
+def resolve_auth_token(role: dict) -> str:
+    """一个角色可用的 auth token；**构造适配器与实际请求共用这一处**。
+
+    顺序：内联 ``auth_token`` → ``auth_env``；只有角色显式声明
+    ``allow_host_auth_fallback: true`` 时才再尝试 ``ANTHROPIC_AUTH_TOKEN`` /
+    ``ANTHROPIC_API_KEY``。
+
+    宿主 token **不能默认跨端点复用**：`reviewerA` 的 `auth_env` 缺失时，把宿主的
+    Anthropic token 发往 heyroute/deepseek 属于跨信任域凭据复用。需要宿主兜底的角色
+    （例如 deepseek 回落通路）必须在角色配置里显式打开开关。
+    """
+    token = (role.get("auth_token") or "").strip()
+    if token:
+        return token
+    env_name = (role.get("auth_env") or "").strip()
+    if env_name and os.environ.get(env_name, "").strip():
+        return os.environ[env_name].strip()
+    if role.get("allow_host_auth_fallback") is True:
+        for name in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
+            if os.environ.get(name, "").strip():
+                return os.environ[name].strip()
+    return ""
 
 
 def build_adapter(adapter: str, *, role: dict, scenario: dict | None = None):
     """按角色配置构造适配器实例。``adapter`` ∈ ``claude`` / ``codex`` / ``mock``。
 
-    auth 从 ``role`` 里取：内联 ``auth_token`` 优先，否则读 ``auth_env`` 指向的环境变量。
+    auth 走 ``resolve_auth_token``（与 orchestrator 的预检、回落判定同口径）；
     mock 不需要 auth。
     """
     if adapter == "mock":
         return MockAdapter(scenario=scenario)
 
-    token = (role.get("auth_token") or "").strip()
-    if not token:
-        env_name = (role.get("auth_env") or "").strip()
-        token = (os.environ.get(env_name, "") if env_name else "") or ""
+    token = resolve_auth_token(role)
     base_url = role.get("base_url") or ""
     if adapter == "claude":
         return ClaudeAdapter(base_url, token)

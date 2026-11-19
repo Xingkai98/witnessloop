@@ -124,7 +124,12 @@ round-1 manifest 的 `actors[]`：
 
 ## 5. 未完成项 / 阻塞点（如实）
 
-1. **`glm-5.3` 未跑真值**：第三把 key 在本机不存在，reviewerB 全程回落
+> **2026-11-19 更新**：item 1 已由 T-075 解决（真跑 `glm-5.3`，无 `degraded_from`，
+> 见 `docs/reviews/t075-glm-rerun.md`）；item 4 正由本 change 的三份 stage 证据补齐；
+> item 5 的「不 push / 不 PR」是 T-071 当时的约束，本轮用户已明确要求 push PR。
+> 原条目保留作历史记录。
+
+1. ~~**`glm-5.3` 未跑真值**~~（T-075 已解决）：第三把 key 在本机不存在，reviewerB 全程回落
    `deepseek-flash`。要真跑 glm-5.3 需补 heyroute 第三把 key（`hy-glm-5.3`）。
 2. **fixer 不自动改代码**：`review run` 的 fixer 只产出**修复方案**（JSON `fixes`），
    不把任意模型 patch 自动打到代码上（安全边界）。因此真模型在**有真实 bug** 的仓上
@@ -139,6 +144,9 @@ round-1 manifest 的 `actors[]`：
    `feat/review-loop` 分支提交；`docs/pr-draft.md` 只是草稿。
 
 ## 6. 验收对照（机器可判）
+
+> 2026-11-19 更新：加入 `gpt-6.1-sol` 价格回归、auth/parse/回落修复、预算前移、
+> 旧 rounds 清理与去重加固测试后为 **849 passed**；其余条目保留 T-071 当时的实测记录。
 
 1. ✅ `uv run pytest -q` 全绿：**832 passed**（原有 788 + 新增 44）。
    `git diff --stat origin/main...HEAD`：15 files changed, 1918 insertions(+), 4 deletions(-)。

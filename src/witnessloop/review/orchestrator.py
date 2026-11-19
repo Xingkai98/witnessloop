@@ -4,7 +4,7 @@
 → fixer 按 findings 出修复方案 → 收敛判断（``pass_rule``）/ 停滞升级（``stall_rounds``
 内同一 finding 连续重报 ⇒ 升级 judge 单点复核）/ 成本止损（``budget.max_cost_usd``）。
 
-每轮写一份 manifest 到 ``.witnessloop/review/rounds/round-<n>.json``，绑：
+每轮写一份 manifest 到 ``.reviewloop/rounds/round-<n>.json``，绑：
 
 * ``actors[]``：每个出场的角色 = {role, adapter, model, run_id, degraded_from}；
 * ``config_hash``：``config.resolved.json`` 的 sha256。
@@ -21,7 +21,7 @@ import argparse
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from witnessloop import constants as C
@@ -118,18 +118,21 @@ def _merge_findings(batches: list[list[dict]]) -> list[dict]:
     """合并去重：**只按 ``where``**，同 ``where`` 取 severity 高的那条。
 
     两条 finding 的 ``where`` 逐字相同才算同一条；severity 用 ``adapters.severity_rank``
-    比较，保留高的一条（等价时保留先出现的那条）。
+    比较，保留高的一条（等价时保留先出现的那条）。**没有 ``where`` 的 finding 不再
+    丢弃**——用合成 ``where`` 保留，避免真实 blocker 因模型漏写定位而静默变成 PASS。
     """
     best: dict[str, dict] = {}
     order: list[str] = []
-    for batch in batches:
-        for finding in batch:
+    for batch_index, batch in enumerate(batches):
+        for item_index, finding in enumerate(batch):
             if not isinstance(finding, dict):
                 continue
             where = str(finding.get("where") or "").strip()
             if not where:
-                # 没有 where 的 finding 无法去重、也无法回读——丢弃（并保留在 raw 里）。
-                continue
+                # 没有 where 的 medium+ 绝不能静默丢成 PASS：用合成 where 保留，
+                # 让它继续参与收敛判定并出现在报告里（不去重——没有共同键）。
+                where = f"<missing-where>:batch{batch_index}:item{item_index}"
+                finding = dict(finding, where=where)
             current = best.get(where)
             if current is None:
                 best[where] = dict(finding)
@@ -179,24 +182,14 @@ def _actor_run_id(role: str, adapter: str, revision: R.Revision) -> str:
 
 
 def _resolve_auth_token(role: dict) -> str:
-    """读一个角色的 auth token：内联 ``auth_token`` → ``auth_env`` → 标准 Anthropic 环境。
+    """读一个角色的 auth token——**委托 adapters 的同一实现**。
 
-    链式回落是为了「deepseek key 住在 ``ANTHROPIC_AUTH_TOKEN``」这类宿主事实——
-    不硬编码 key 路径进代码，但接受标准环境变量作为最后兜底。
+    历史教训：这里曾有一套带 ``ANTHROPIC_*`` 兜底的解析，而 ``build_adapter``
+    只认 ``auth_token`` / ``auth_env``；当 key 只住在 ``ANTHROPIC_AUTH_TOKEN`` 时，
+    预检说「有 key」、适配器却拿到空串，回落路径还会重复打一次空 key 的请求。
+    两处必须共用 ``adapters.resolve_auth_token``。
     """
-    import os
-
-    token = (role.get("auth_token") or "").strip()
-    if token:
-        return token
-    for env_name in (
-        (role.get("auth_env") or "").strip(),
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_API_KEY",
-    ):
-        if env_name and os.environ.get(env_name, "").strip():
-            return os.environ[env_name].strip()
-    return ""
+    return A.resolve_auth_token(role)
 
 
 #: 回落目标（deepseek-flash via claude）的固定通路。key 经 `_resolve_auth_token` 的链式兜底找。
@@ -205,14 +198,25 @@ FALLBACK_ROLE = {
     "model": FALLBACK_MODEL,
     "base_url": "https://api.deepseek.com/anthropic",
     "auth_env": "WITNESSLOOP_DEEPSEEK_KEY",
+    # 回落目标显式允许宿主 Anthropic token 兜底（deepseek key 可能住在
+    # ANTHROPIC_AUTH_TOKEN 里）；普通 reviewer 角色默认**不**允许。
+    "allow_host_auth_fallback": True,
 }
+
+#: 连 deepseek 回落 key 都没有时的错误——**不再用 mock 冒充审阅**。
+#: 显式 `--adapter mock` 的烟测路径不受影响（那条路不会进入回落分支）。
+_NO_FALLBACK_ERROR = (
+    "reviewer 通路不可用，且 deepseek 回落 key 也未解析；"
+    "拒绝用 mock 冒充审阅（确需无网络烟测请显式 --adapter mock）"
+)
 
 
 def _degrade_to_fallback(role: dict) -> tuple[str, dict, bool]:
     """构造回落角色配置（deepseek-flash via claude）；deepseek key 也不可用 ⇒ mock。
 
-    返回 ``(adapter, role_cfg, still_down)``：``still_down=True`` 表示连 deepseek 都没有，
-    只能降 mock（诚实标注）。
+    返回 ``(adapter, role_cfg, still_down)``：``still_down=True`` 表示连 deepseek 都没有。
+    调用方**不得**把 mock 当真实审阅继续跑——应返回 ``_NO_FALLBACK_ERROR``，
+    由 round 级 `reviewer_errors` 判 BLOCKED。
     """
     if _resolve_auth_token(FALLBACK_ROLE):
         return FALLBACK_ADAPTER, dict(FALLBACK_ROLE), False
@@ -238,21 +242,42 @@ def _call_reviewer(
         # auth 一开始就缺 ⇒ 直接回落，不白打一次网络。
         degraded_from = model
         used_adapter, role_cfg, still_down = _degrade_to_fallback(role_cfg)
-        model = FALLBACK_MODEL if not still_down else "mock"
+        if still_down:
+            # 回落 key 也没有：不跑 mock、不产生「零 findings 的 PASS」。
+            actor = Actor(
+                role=role_name,
+                adapter="mock",
+                model="mock",
+                run_id=_actor_run_id(role_name, "mock", revision),
+                degraded_from=degraded_from,
+            )
+            result = A.ReviewResult(
+                model="mock", error=_NO_FALLBACK_ERROR, error_kind="auth"
+            )
+            return actor, result, 0.0
+        model = FALLBACK_MODEL
 
     adapter = A.build_adapter(used_adapter, role=role_cfg, scenario=scenario)
     result = adapter.run(request, model=model)
     cost = A.cost_usd(model, result.usage)
 
-    if result.error_kind in ("auth", "balance", "model_not_found"):
+    if result.error_kind in ("auth", "balance", "model_not_found", "parse"):
         # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash。
-        degraded_from = model
+        # 保留原始 model：先「缺 key 回落」再失败时，不要把 degraded_from 改成回落目标。
+        if degraded_from is None:
+            degraded_from = model
         used_adapter, fallback_cfg, still_down = _degrade_to_fallback(role_cfg)
-        fallback_model = FALLBACK_MODEL if not still_down else "mock"
-        adapter = A.build_adapter(used_adapter, role=fallback_cfg, scenario=scenario)
-        result = adapter.run(request, model=fallback_model)
-        model = fallback_model
-        cost += A.cost_usd(fallback_model, result.usage)
+        if still_down:
+            used_adapter = "mock"
+            result = A.ReviewResult(
+                model="mock", error=_NO_FALLBACK_ERROR, error_kind="auth"
+            )
+            model = "mock"
+        else:
+            adapter = A.build_adapter(used_adapter, role=fallback_cfg, scenario=scenario)
+            result = adapter.run(request, model=FALLBACK_MODEL)
+            model = FALLBACK_MODEL
+            cost += A.cost_usd(model, result.usage)
 
     actor = Actor(
         role=role_name,
@@ -290,6 +315,23 @@ def run(args: argparse.Namespace) -> int:
         )
         return C.EXIT_FAIL
 
+    # 用法错误在落盘前判掉：坏 pass_rule / 坏 mock-scenario 不应以 traceback 收场。
+    if args.pass_rule != C.DEFAULT_PASS_RULE:
+        print(
+            f"review run：不支持的 pass_rule={args.pass_rule!r}"
+            f"（当前只支持 {C.DEFAULT_PASS_RULE}）",
+            file=sys.stderr,
+        )
+        return C.EXIT_USAGE
+    try:
+        scenario = _parse_mock_scenario(getattr(args, "mock_scenario", None))
+    except ValueError as exc:
+        print(f"review run：{exc}", file=sys.stderr)
+        return C.EXIT_USAGE
+
+    # 上一次 run 的 round 文件不能混进本次报告（report 会读整个 rounds/ 目录）。
+    _reset_rounds(root)
+
     revision = R.resolve_revision(root, args.mode)
 
     try:
@@ -314,7 +356,6 @@ def run(args: argparse.Namespace) -> int:
 
     role_cfgs = resolved["roles"]
     context = _build_context(root, change, revision, pol)
-    scenario = _parse_mock_scenario(getattr(args, "mock_scenario", None))
 
     round_manifests: list[dict] = []
     merged_history: list[dict] = []  # 每轮的 merged findings（用于停滞判定）
@@ -352,9 +393,18 @@ def run(args: argparse.Namespace) -> int:
         cumulative_cost += round_cost
 
         merged = _merge_findings(batches)
+        # reviewer 通路失败（含输出无法解析）时 findings 为空——绝不能因此判 PASS。
+        # 回落已由 `_call_reviewer` 机械执行；这里是**最后一次**失败的结果。
+        reviewer_errors = {
+            role: str(res.error)
+            for role, (_, res, _) in reviewer_results.items()
+            if res.error
+        }
         verdict = (
             "PASS" if _pass_rule_satisfied(merged, args.pass_rule) else "CHANGES_REQUESTED"
         )
+        if reviewer_errors:
+            verdict = "BLOCKED"
 
         # 停滞判定：同一 where 连续 stall_rounds 轮都在 merged 里。
         stalled = _stalled_findings(merged, merged_history, args.stall_rounds)
@@ -364,9 +414,21 @@ def run(args: argparse.Namespace) -> int:
         note = None
         stop = False
 
-        if verdict == "PASS":
+        if reviewer_errors:
+            final_verdict = "BLOCKED"
+            note = "reviewer 失败（不把空 findings 判 PASS）：" + "; ".join(
+                f"{role}={err}" for role, err in sorted(reviewer_errors.items())
+            )
+            stop = True
+        elif verdict == "PASS":
             final_verdict = "PASS"
             note = "收敛：medium+ 为零"
+            stop = True
+        elif cumulative_cost > budget:
+            # 预算检查在 judge / fixer 之前：超预算就不再发起额外付费调用。
+            # （单次调用本身可能把累计值推过上限——预算是软止损，不做事前额度预留。）
+            final_verdict = "BLOCKED"
+            note = f"成本止损（累计 ${cumulative_cost:.4f} > budget ${budget:.2f}）"
             stop = True
         elif stalled:
             # 升级 judge 单点复核，不继续磨。
@@ -376,10 +438,6 @@ def run(args: argparse.Namespace) -> int:
             cumulative_cost += judge_cost
             final_verdict = str(judge_record.get("verdict", "BLOCKED")).upper()
             note = f"停滞升级 judge（stall_rounds={args.stall_rounds}）：{', '.join(stalled)}"
-            stop = True
-        elif cumulative_cost > budget:
-            final_verdict = "BLOCKED"
-            note = f"成本止损（累计 ${cumulative_cost:.4f} > budget ${budget:.2f}）"
             stop = True
         else:
             # 未收敛：跑 fixer（记录修复方案；不自动改代码，见 docs/merge-report）。
@@ -413,7 +471,7 @@ def run(args: argparse.Namespace) -> int:
     if final_note is None:
         final_note = f"达到最大轮数 {args.max_rounds} 仍未收敛"
 
-    # 收尾：写最终 report.md 的**摘要**（readable 文本 + JSON 元数据）。
+    # 收尾：写最终 summary.json（final verdict / 轮数 / 累计成本等元数据）。
     _write_final_report(
         root,
         revision=revision,
@@ -525,6 +583,23 @@ def _round_manifest(record: RoundRecord) -> dict:
     return doc
 
 
+def _reset_rounds(root: Path) -> None:
+    """清掉上一次 run 的 round/summary，避免 report 把两次 run 混读。
+
+    `.reviewloop/` 是本地审计目录，不是跨 run 的持久账本；一次 `review run`
+    的输出必须只包含本次的轮次。旧 round 若残留，report 会照读并可能把两次
+    run 的 config_hash 差异误报成「篡改 manifest」。
+    """
+    out_dir = Path(root) / C.REVIEW_OUTPUT_DIR
+    rounds_dir = out_dir / C.REVIEW_ROUNDS_SUBDIR
+    if rounds_dir.is_dir():
+        for path in rounds_dir.glob("round-*.json"):
+            path.unlink()
+    summary = out_dir / "summary.json"
+    if summary.is_file():
+        summary.unlink()
+
+
 def _write_round_manifest(root: Path, round_no: int, doc: dict) -> Path:
     out_dir = Path(root) / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -553,7 +628,12 @@ def _write_final_report(
         last = round_manifests[-1]
         reviewers = [a for a in last.get("actors", []) if a.get("role", "").startswith("reviewer")]
         if reviewers and all(a.get("degraded_from") for a in reviewers):
-            degraded_note = "本轮为同源双审"
+            if any(str(a.get("model") or "") == "mock" for a in reviewers):
+                # 连回落 key 都没有的 mock 降级不是「同源双审」，不能误导成
+                # 「两路真实模型都回落到了同一个模型」。
+                degraded_note = "本轮存在 mock 降级（不代表真实双审）"
+            else:
+                degraded_note = "本轮为同源双审"
     doc = {
         "schema": C.REVIEW_ROUND_SCHEMA,
         "final_verdict": final_verdict,

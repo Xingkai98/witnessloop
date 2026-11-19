@@ -57,7 +57,7 @@ def _excluded(rel: str, excludes) -> bool:
 def worktree_digest(root: str | Path, *, excludes=DIGEST_EXCLUDED_TOP) -> str:
     """工作树的 sha256：对按 posix 相对路径排序的 ``(路径, 内容)`` 对做 sha256。
 
-    排除 ``excludes`` 里的顶层路径（``.git`` 单段、``.witnessloop/review`` 多段都按
+    排除 ``excludes`` 里的顶层路径（``.git`` 单段、``.reviewloop`` 多段都按
     **路径前缀**排除）。与 ``hashing.sha256_tree`` 同一条「稳定排序」约定，
     但多一个**排除**维度——review loop 的产物目录必须在锚之外，否则会自指。
     """

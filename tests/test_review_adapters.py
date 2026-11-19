@@ -44,11 +44,14 @@ def test_merge_findings_dedups_by_where_keeping_higher_severity():
     assert "b:2" in by_where
 
 
-def test_merge_findings_drops_findings_without_where():
+def test_merge_findings_keeps_findings_without_where():
+    """没有 where 的 medium+ 不能被静默丢成 PASS；用合成 where 保留。"""
     from witnessloop.review import orchestrator as O
 
     merged = O._merge_findings([[{"severity": "high", "what": "no where"}]])
-    assert merged == []
+    assert len(merged) == 1
+    assert merged[0]["where"].startswith("<missing-where>")
+    assert merged[0]["what"] == "no where"
 
 
 def test_pass_rule_medium_plus_zero():
@@ -80,6 +83,62 @@ def test_cost_usd_computed_from_usage():
     usage = {"input_tokens": 1000, "output_tokens": 500}
     cost = A.cost_usd("deepseek-flash", usage)
     assert cost == 1000 / 1e6 * 0.07 + 500 / 1e6 * 0.28
+
+
+def test_cost_usd_knows_gpt_6_1_sol():
+    """gpt-6.1-sol 必须进价格表；否则未知模型恒 0，预算止损静默失效。"""
+    usage = {"input_tokens": 1000, "output_tokens": 500}
+    cost = A.cost_usd("gpt-6.1-sol", usage)
+    assert cost == 1000 / 1e6 * 5.0 + 500 / 1e6 * 30.0
+
+
+def test_build_adapter_uses_shared_auth_resolution(monkeypatch):
+    """显式 opt-in 时，预检与构造适配器共用 ANTHROPIC_* 兜底。"""
+    monkeypatch.delenv("WITNESSLOOP_MISSING_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-host-token")
+    adapter = A.build_adapter(
+        "claude",
+        role={
+            "adapter": "claude",
+            "base_url": "https://example.invalid",
+            "auth_env": "WITNESSLOOP_MISSING_KEY",
+            "allow_host_auth_fallback": True,
+        },
+    )
+    assert adapter.auth_token == "sk-host-token"
+
+
+def test_build_adapter_does_not_reuse_host_token_by_default(monkeypatch):
+    """普通 reviewer 角色不得把宿主 Anthropic token 发往别的 base_url。"""
+    monkeypatch.delenv("WITNESSLOOP_MISSING_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-host-token")
+    adapter = A.build_adapter(
+        "codex",
+        role={
+            "adapter": "codex",
+            "base_url": "https://heyroute.ai/v1",
+            "auth_env": "WITNESSLOOP_MISSING_KEY",
+        },
+    )
+    assert adapter.auth_token == ""
+
+
+def test_parse_error_marks_adapter_result_as_parse_failure(monkeypatch):
+    """畸形输出不能是「零 findings 的 PASS」；必须带 error_kind 供回落/阻断。"""
+    monkeypatch.setattr(
+        A,
+        "_http_json",
+        lambda *args, **kwargs: {
+            "content": [{"type": "text", "text": "没有 JSON"}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    adapter = A.ClaudeAdapter("https://example.invalid", "sk-x")
+    result = adapter.run(A.ReviewRequest(prompt="", context=""), model="mock")
+    assert result.error is not None
+    assert result.error_kind == "parse"
+    assert result.verdict == "PASS"  # 解析函数自己的占位 verdict …
+    assert result.findings == []
 
 
 def test_classify_auth_error():

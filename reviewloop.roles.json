@@ -1,0 +1,29 @@
+{
+  "schema": "witnessloop/roles@v1",
+  "roles": {
+    "reviewerA": {
+      "adapter": "codex",
+      "model": "gpt-6.1-sol",
+      "base_url": "https://heyroute.ai/v1",
+      "auth_env": "WITNESSLOOP_CODEX_KEY"
+    },
+    "reviewerB": {
+      "adapter": "claude",
+      "model": "glm-5.3",
+      "base_url": "https://heyroute.ai",
+      "auth_env": "WITNESSLOOP_GLM_KEY"
+    },
+    "fixer": {
+      "adapter": "claude",
+      "model": "deepseek-flash",
+      "base_url": "https://api.deepseek.com/anthropic",
+      "auth_env": "WITNESSLOOP_DEEPSEEK_KEY"
+    },
+    "judge": {
+      "adapter": "claude",
+      "model": "deepseek-flash",
+      "base_url": "https://api.deepseek.com/anthropic",
+      "auth_env": "WITNESSLOOP_DEEPSEEK_KEY"
+    }
+  }
+}

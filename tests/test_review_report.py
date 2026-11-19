@@ -74,6 +74,48 @@ def test_missing_evidence_is_red(gated, cli):
     assert "证据缺件" in err
 
 
+def test_report_renders_degraded_note():
+    """两路都回落时的「同源双审」不能只留在 summary.json。"""
+    from witnessloop.review import report as R
+
+    md = R._render_markdown(
+        {
+            "config": {"roles": {}},
+            "config_digest": "x",
+            "rounds": [],
+            "final_verdict": "PASS",
+            "degraded_note": "本轮为同源双审",
+        }
+    )
+    assert "同源双审" in md
+
+
+def test_non_object_config_is_red(gated, cli):
+    """合法 JSON 但不是对象（如 []）不能被当成有效 config 放行。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    config_path = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_CONFIG_FILENAME
+    config_path.write_text("[]", encoding="utf-8")
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "证据缺件" in err
+    assert "不是 JSON 对象" in err
+
+
+def test_non_integer_round_is_red(gated, cli):
+    """round 字段不是整数时不能抛 ValueError 崩掉。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    doc = _round_manifest(gated)
+    doc["round"] = "one"
+    _write_round_manifest(gated, doc)
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "round 字段不是整数" in err
+
+
 def test_same_actor_twice_is_red(gated, cli):
     write_change(gated, "add-x")
     commit_all(gated, "内容")

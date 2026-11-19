@@ -17,6 +17,7 @@ from pathlib import Path
 
 from witnessloop import constants as C
 from witnessloop.hashing import sha256_bytes
+from witnessloop.review import adapters as A
 
 #: review loop 里出现的角色（顺序即产物里 actors 的顺序）。
 ROLE_NAMES = ("reviewerA", "reviewerB", "fixer", "judge")
@@ -92,12 +93,12 @@ def load_roles(root: str | Path) -> dict:
 
 
 def _auth_resolved(role: dict) -> bool:
-    """该角色的 auth 在**当前环境**里是否可用（env 引用有值 / 内联 token 非空）。"""
-    env_name = (role.get("auth_env") or "").strip()
-    if env_name:
-        return bool(os.environ.get(env_name, "").strip())
-    token = (role.get("auth_token") or "").strip()
-    return bool(token)
+    """该角色的 auth 在**当前环境**里是否可用。
+
+    **委托 adapters.resolve_auth_token**——预检、回落判定与实际构造适配器必须是
+    同一套口径；否则会出现「config 说未解析、实际请求却带着 token」的静默分叉。
+    """
+    return bool(A.resolve_auth_token(role))
 
 
 def _resolved_role(role: dict, adapter: str | None) -> dict:

@@ -1,7 +1,4 @@
-# PR Draft: Add the multi-model review loop (`witnessloop review`)
-
-> **Status: draft only — do not push, do not open a PR.** This file is a written
-> record of the intended PR, per T-071. Merging is a separate, later step.
+# Add the multi-model review loop (`witnessloop review`)
 
 ## Summary
 
@@ -32,6 +29,9 @@ loop** on top of a change, orthogonal to the existing gate (`contract` / `eviden
   `AdapterError` kinds so the orchestrator can degrade mechanically.
 - `src/witnessloop/review/orchestrator.py` — the loop.
 - `src/witnessloop/review/report.py` — read-back + verification.
+- `reviewloop.roles.json` — this repo's review routing: `reviewerA = gpt-6.1-sol`
+  (codex/heyroute), `reviewerB = glm-5.3` (claude/heyroute), `fixer = deepseek-flash`,
+  `judge = deepseek-flash`.
 
 ## Degradation rule (mechanical, never silent)
 
@@ -40,22 +40,42 @@ was never resolvable — that role degrades **immediately to `deepseek-flash`** 
 manifest/report record `degraded_from: <original-model>`. If both reviewer paths
 degrade, the report notes "same-source dual review" (`本轮为同源双审`).
 
+Auth resolution is single-sourced in `adapters.resolve_auth_token` (`auth_token` →
+`auth_env` → `ANTHROPIC_AUTH_TOKEN` → `ANTHROPIC_API_KEY`): the pre-check, the
+degrade decision, and the actual adapter construction cannot disagree. Malformed model
+output is marked `error_kind="parse"`, gets one fallback attempt, and if it still
+fails the round is `BLOCKED` — an empty finding list is never treated as `PASS`.
+If the deepseek fallback key is also unavailable, the round is likewise `BLOCKED`;
+mock is never used as a stand-in for a real review unless `--adapter mock` is
+explicitly requested (smoke-test path).
+
 ## Validation
 
-- `uv run pytest -q` → **832 passed** (788 existing + 44 new).
+- `uv run pytest -q` → **849 passed** (788 existing + 61 review-loop tests).
+- T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
+  `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
+  Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);
+  tamper positive control: the injected manifest defect was reported by **both**
+  reviewers at blocker/high severity. Costs: $0.0451 + $0.0364 (approximate).
 - Full (git) form: `check` walks the four exit codes 3 (not onboarded) → 1 (evidence
   missing) → 0 (evidence present) → 5 (empty range). Logs in `/tmp/wl-p5-logs/full.log`.
 - Lite (no `.git`) form: the same `review run` auto-detects digest mode and converges;
   `check` itself is git-only by design, so it stops at rc=1 there (documented boundary).
-- Real dual-review smoke test: `reviewerA = gpt-6.1-terra` (codex/heyroute),
-  `reviewerB = glm-5.3` → **degraded to `deepseek-flash`** (the third heyroute key
-  `hy-glm-5.3` is not present on this host). One round, `PASS`, cost ≈ $0.0145.
+- This change carries three stage manifests (`grill` / `grill-adversarial` /
+  `building`) bound to the content revision; `witnessloop check` is the gate.
 
 ## Out of scope / known limitations
 
 - The fixer produces fix **plans**, not auto-applied patches (safety boundary).
-- `glm-5.3` was not exercised for real — its key is unavailable, so reviewerB ran
-  degraded throughout (honestly marked).
+- `.reviewloop/` artifacts are **not** gate evidence; `manifest build` is still the
+  bridge to `reviews/*.manifest.json`.
+- The judge currently receives only `where` strings, not finding bodies or diffs, so
+  stalled loops tend to end `BLOCKED`/`uncertain` (known limitation, unchanged here).
+- `roles@v1` is a single repo-root table; there is no per-change / per-stage routing.
+  `grill` / `grill-adversarial` remain host-plugin driven.
+- `gpt-6.1-sol` is not in this host's `model_pricing` table; its price entry ($5/$30
+  per 1M tokens) is a conservative same-generation estimate used only for budget
+  stop-loss, not billing.
 - No version bump, no PyPI, no upstream/OpenDirector changes, no merge to `main`.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

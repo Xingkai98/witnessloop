@@ -43,8 +43,11 @@ def _read_rounds(root: Path) -> tuple[list[dict], list[str]]:
         if not isinstance(doc, dict):
             errors.append(f"round manifest 读不出：{path.name}")
             continue
+        if not isinstance(doc.get("round"), int):
+            errors.append(f"round manifest 的 round 字段不是整数：{path.name}")
+            continue
         rounds.append(doc)
-    rounds.sort(key=lambda d: int(d.get("round", 0)))
+    rounds.sort(key=lambda d: d["round"])
     return rounds, errors
 
 
@@ -60,9 +63,12 @@ def verify(root: Path) -> tuple[list[str], dict]:
 
     findings: list[str] = list(errors)
 
-    # 2. 证据缺件
-    if config is None:
-        findings.append(f"证据缺件：{C.REVIEW_OUTPUT_DIR}/{C.REVIEW_CONFIG_FILENAME} 缺失或不可解析")
+    # 2. 证据缺件（缺失 / 不可解析 / 合法 JSON 但不是对象）
+    if not isinstance(config, dict):
+        findings.append(
+            f"证据缺件：{C.REVIEW_OUTPUT_DIR}/{C.REVIEW_CONFIG_FILENAME} "
+            "缺失、不可解析或不是 JSON 对象"
+        )
     if not rounds:
         findings.append("证据缺件：没有任何 round manifest（loop 未产出证据）")
 
@@ -117,6 +123,11 @@ def verify(root: Path) -> tuple[list[str], dict]:
         "config_digest": config_digest,
         "rounds": rounds,
         "final_verdict": final_verdict,
+        # 两路都回落时 orchestrator 在 summary.json 里写「本轮为同源双审」；
+        # Markdown 报告也要显示它，不能只留在 JSON 里。
+        "degraded_note": (
+            summary_doc.get("degraded_note") if isinstance(summary_doc, dict) else None
+        ),
     }
     return findings, summary
 
@@ -160,6 +171,8 @@ def _render_markdown(summary: dict) -> str:
             lines.append(f"- judge：{doc.get('judge').get('verdict')}")
         lines.append("")
     lines.append(f"## 最终判定：{summary.get('final_verdict')}")
+    if summary.get("degraded_note"):
+        lines.append(f"- degraded_note：{summary['degraded_note']}")
     return "\n".join(lines) + "\n"
 
 
