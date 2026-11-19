@@ -222,7 +222,22 @@ def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str
                 + _prioritize_diff(diff)
             )
     else:
-        pieces.append("== 工作树 ==\n（digest 模式，无 git 历史；审阅以 change 目录内容为准）")
+        pieces.append(
+            "== 工作树 ==\n"
+            "（digest 模式，无 git 历史/diff；**不要因为看不到代码就报「代码不存在」**。"
+            "本模式只能审 change 文档与下面列出的文件清单；要审实现请用 git 模式。）"
+        )
+        skip = {".git", "__pycache__", ".reviewloop", ".pytest_cache", ".venv"}
+        tree: list[str] = []
+        for base in ("src", "tests", "templates", "plugin"):
+            directory = root / base
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.rglob("*")):
+                if path.is_file() and not (set(path.parts) & skip):
+                    tree.append(str(path.relative_to(root)))
+        if tree:
+            pieces.append("== 工作树文件（前 500 个）==\n" + "\n".join(tree[:500]))
     return "\n\n".join(pieces)
 
 
@@ -406,7 +421,9 @@ def run(args: argparse.Namespace) -> int:
     roles_mod.write_config(root, resolved)
     config_hash = roles_mod.config_hash(resolved)
 
-    role_cfgs = resolved["roles"]
+    # 实际调用用**未脱敏**的运行时角色表（保留内联 auth_token）；写盘的
+    # config.resolved.json 仍是脱敏版本。
+    role_cfgs = roles_mod.runtime_roles(roles_doc, adapter=args.adapter)
     context = _build_context(root, change, revision, pol)
 
     round_manifests: list[dict] = []
@@ -417,6 +434,15 @@ def run(args: argparse.Namespace) -> int:
     final_note = None
 
     for round_no in range(1, args.max_rounds + 1):
+        # fixer 成本可能把累计值推过预算；下一轮开始前再检查一次，避免继续发
+        # 两路 reviewer 请求后才发现超支。
+        if round_no > 1 and cumulative_cost > budget:
+            final_verdict = "BLOCKED"
+            final_note = (
+                f"成本止损（进入第 {round_no} 轮前累计 ${cumulative_cost:.4f} "
+                f"> budget ${budget:.2f}）"
+            )
+            break
         request = A.ReviewRequest(
             prompt=REVIEWER_PROMPT, context=context, round=round_no
         )
@@ -488,8 +514,30 @@ def run(args: argparse.Namespace) -> int:
                 stalled, role_cfgs["judge"], request, scenario, args.adapter, revision
             )
             cumulative_cost += judge_cost
-            final_verdict = str(judge_record.get("verdict", "BLOCKED")).upper()
-            note = f"停滞升级 judge（stall_rounds={args.stall_rounds}）：{', '.join(stalled)}"
+            judge_verdict = str(judge_record.get("verdict", "BLOCKED")).upper()
+            stalled_set = set(stalled)
+            uncovered = [
+                finding
+                for finding in merged
+                if str(finding.get("where")) not in stalled_set
+                and str(finding.get("severity", "")).lower() in BLOCKING_SEVERITIES
+            ]
+            if judge_verdict == "PASS" and uncovered:
+                # judge 只看到 stalled 子集；它的 PASS 不能替未送审的 blocking finding 背书。
+                final_verdict = "BLOCKED"
+                note = (
+                    f"停滞升级 judge（stall_rounds={args.stall_rounds}）："
+                    f"{', '.join(stalled)}；judge 只复核了停滞子集，仍有未复核的 "
+                    f"medium+：{', '.join(str(f.get('where')) for f in uncovered)}"
+                )
+            else:
+                final_verdict = judge_verdict
+                note = (
+                    f"停滞升级 judge（stall_rounds={args.stall_rounds}）："
+                    f"{', '.join(stalled)}"
+                )
+            if judge_record.get("error"):
+                note = f"{note}；judge 失败：{judge_record['error']}"
             stop = True
         else:
             # 未收敛：跑 fixer（记录修复方案；不自动改代码，见 docs/merge-report）。
@@ -497,6 +545,8 @@ def run(args: argparse.Namespace) -> int:
                 merged, role_cfgs["fixer"], request, scenario, args.adapter, revision
             )
             cumulative_cost += fixer_cost
+            if fixer_record.get("error"):
+                note = f"fixer 失败：{fixer_record['error']}"
 
         record = RoundRecord(
             round=round_no,
@@ -580,9 +630,15 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
     result = adapter.run(fix_request, model=fixer_cfg.get("model") or FALLBACK_MODEL)
     doc = A._extract_json(result.raw) if result.raw else None
     fixes = (doc or {}).get("fixes") if isinstance(doc, dict) else None
-    return {"fixes": fixes if isinstance(fixes, list) else [], "raw": result.raw}, A.cost_usd(
-        result.model, result.usage
-    )
+    record = {
+        "fixes": fixes if isinstance(fixes, list) else [],
+        "raw": result.raw,
+    }
+    if result.error:
+        # fixer 失败不能静默：错误进 manifest，loop 继续但产物里必须看得到。
+        record["error"] = result.error
+        record["error_kind"] = result.error_kind
+    return record, A.cost_usd(result.model, result.usage)
 
 
 def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision):
@@ -599,11 +655,16 @@ def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision
     doc = A._extract_json(result.raw) if result.raw else None
     if not isinstance(doc, dict):
         doc = {}
-    return {
+    record = {
         "verdict": str(doc.get("verdict") or "BLOCKED").upper(),
         "rulings": doc.get("rulings") if isinstance(doc.get("rulings"), list) else [],
         "raw": result.raw,
-    }, A.cost_usd(result.model, result.usage)
+    }
+    if result.error:
+        # judge 失败同样要留痕（verdict 已退 BLOCKED，但错误原因不能丢）。
+        record["error"] = result.error
+        record["error_kind"] = result.error_kind
+    return record, A.cost_usd(result.model, result.usage)
 
 
 def _actor_dict(actor: Actor) -> dict:

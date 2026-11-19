@@ -43,8 +43,9 @@ manifest/report record `degraded_from: <original-model>`. If both reviewer paths
 degrade, the report notes "same-source dual review" (`本轮为同源双审`).
 
 Auth resolution is single-sourced in `adapters.resolve_auth_token` (`auth_token` →
-`auth_env` → `ANTHROPIC_AUTH_TOKEN` → `ANTHROPIC_API_KEY`): the pre-check, the
-degrade decision, and the actual adapter construction cannot disagree. Malformed model
+`auth_env`; `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY` only when the role explicitly
+sets `allow_host_auth_fallback: true`): the pre-check, the degrade decision, and the
+actual adapter construction cannot disagree. Malformed model
 output is marked `error_kind="parse"`, gets one fallback attempt, and if it still
 fails the round is `BLOCKED` — an empty finding list is never treated as `PASS`.
 If the deepseek fallback key is also unavailable, the round is likewise `BLOCKED`;
@@ -55,7 +56,7 @@ fallback role only reads `WITNESSLOOP_DEEPSEEK_KEY` (no cross-endpoint token reu
 
 ## Validation
 
-- `uv run pytest -q` → **851 passed** (788 existing + 63 review-loop tests).
+- `uv run pytest -q` → **860 passed** (788 existing + 72 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

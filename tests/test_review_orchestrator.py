@@ -115,6 +115,28 @@ def test_stall_escalates_to_judge(gated, cli):
     assert len(manifests) == 2  # 没有继续磨第三轮
 
 
+def test_judge_pass_does_not_cover_unstalled_findings(gated, cli, monkeypatch):
+    """judge 只复核 stalled 子集；它判 PASS 不能把未送审的 blocking finding 放行。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    a = {"where": "src/a.py:1", "severity": "medium", "what": "停滞问题"}
+    b = {"where": "src/b.py:1", "severity": "high", "what": "首次出现"}
+    monkeypatch.setattr(
+        O, "_run_judge", lambda *args, **kwargs: ({"verdict": "PASS", "rulings": []}, 0.0)
+    )
+    code, _, _ = _mock_run(
+        cli, gated, mock_scenario=_scenario([a], [a, b]), stall_rounds=2
+    )
+    assert code == C.EXIT_FAIL
+    manifests = sorted(
+        (gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR).glob("round-*.json")
+    )
+    last = json.loads(manifests[-1].read_text())
+    assert "未复核" in last["note"]
+    summary = json.loads((gated / C.REVIEW_OUTPUT_DIR / "summary.json").read_text())
+    assert summary["final_verdict"] == "BLOCKED"
+
+
 def test_cost_stop_hits_budget(gated, cli):
     """成本止损：累计成本超预算 ⇒ BLOCKED。"""
     write_change(gated, "add-x")
@@ -148,6 +170,23 @@ def test_no_keys_blocks_instead_of_mock_pass(gated, cli, monkeypatch):
     )
     assert manifest["verdict"] == "BLOCKED"
     assert "mock 冒充审阅" in manifest["note"]
+
+
+def test_budget_stops_before_next_round_after_fixer(gated, cli, monkeypatch):
+    """fixer 把累计成本推过预算后，不得再发起下一轮 reviewer 调用。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    monkeypatch.setattr(
+        O, "_run_fixer", lambda *args, **kwargs: ({"fixes": []}, 10.0)
+    )
+    code, _, _ = _mock_run(
+        cli, gated, mock_scenario=_scenario([FINDING], []), budget=5
+    )
+    assert code == C.EXIT_FAIL
+    rounds_dir = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
+    assert len(list(rounds_dir.glob("round-*.json"))) == 1
+    summary = json.loads((gated / C.REVIEW_OUTPUT_DIR / "summary.json").read_text())
+    assert "成本止损" in summary["final_note"]
 
 
 def test_budget_stops_before_judge(gated, cli):
@@ -267,6 +306,45 @@ def test_rerun_clears_stale_rounds(gated, cli):
     assert _mock_run(cli, gated, mock_scenario=_scenario([], []))[0] == C.EXIT_PASS
     assert not (rounds_dir / "round-0002.json").exists()
     assert sorted(p.name for p in rounds_dir.glob("round-*.json")) == ["round-0001.json"]
+
+
+class _FailingAdapter:
+    def run(self, request, *, model):
+        from witnessloop.review import adapters as A
+
+        return A.ReviewResult(model=model, error="boom", error_kind="auth")
+
+
+def test_fixer_error_is_recorded(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _FailingAdapter())
+    record, _ = O._run_fixer(
+        [FINDING],
+        {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"},
+        A.ReviewRequest(prompt="", context=""),
+        None,
+        None,
+        None,
+    )
+    assert record["error"] == "boom"
+    assert record["error_kind"] == "auth"
+
+
+def test_judge_error_is_recorded(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _FailingAdapter())
+    record, _ = O._run_judge(
+        ["src/x.py:1"],
+        {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"},
+        A.ReviewRequest(prompt="", context=""),
+        None,
+        None,
+        None,
+    )
+    assert record["verdict"] == "BLOCKED"
+    assert record["error"] == "boom"
 
 
 def test_prioritize_diff_puts_code_before_docs():

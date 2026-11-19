@@ -74,6 +74,27 @@ def test_missing_evidence_is_red(gated, cli):
     assert "证据缺件" in err
 
 
+def test_report_renders_fixer_error():
+    from witnessloop.review import report as R
+
+    md = R._render_markdown(
+        {
+            "config": {},
+            "config_digest": "x",
+            "rounds": [
+                {
+                    "round": 1,
+                    "actors": [],
+                    "findings": [],
+                    "fixer": {"error": "boom"},
+                }
+            ],
+            "final_verdict": "BLOCKED",
+        }
+    )
+    assert "fixer 错误：boom" in md
+
+
 def test_report_renders_degraded_note():
     """两路都回落时的「同源双审」不能只留在 summary.json。"""
     from witnessloop.review import report as R
@@ -96,7 +117,8 @@ def test_non_object_config_is_red(gated, cli):
     commit_all(gated, "内容")
     assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
     config_path = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_CONFIG_FILENAME
-    config_path.write_text("[]", encoding="utf-8")
+    # 用非空数组：`config or {}` 会放过空数组，但 [1] 会暴露渲染路径的 .get 崩溃。
+    config_path.write_text("[1]", encoding="utf-8")
     code, _, err = _report(cli, gated)
     assert code == C.EXIT_FAIL
     assert "证据缺件" in err

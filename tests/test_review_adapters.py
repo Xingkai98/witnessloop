@@ -12,18 +12,37 @@ def test_severity_rank_orders_blocker_highest():
 
 
 def test_parse_review_output_extracts_json_from_fenced_text():
-    text = '前置说明\n```json\n{"verdict": "CHANGES_REQUESTED", "findings": [{"where": "a:1"}]}\n```'
+    text = (
+        '前置说明\n```json\n{"verdict": "CHANGES_REQUESTED", '
+        '"findings": [{"where": "a:1", "severity": "high"}]}\n```'
+    )
     findings, verdict, err = A.parse_review_output(text)
     assert err is None
     assert verdict == "CHANGES_REQUESTED"
-    assert findings == [{"where": "a:1"}]
+    assert findings == [{"where": "a:1", "severity": "high"}]
 
 
 def test_parse_review_output_accepts_issues_alias():
-    findings, verdict, err = A.parse_review_output('{"issues": [{"where": "b:2"}]}')
+    findings, verdict, err = A.parse_review_output(
+        '{"issues": [{"where": "b:2", "severity": "medium"}]}'
+    )
     assert err is None
-    assert findings == [{"where": "b:2"}]
+    assert findings == [{"where": "b:2", "severity": "medium"}]
     assert verdict == "PASS"
+
+
+def test_parse_review_output_rejects_non_object_finding():
+    _, _, err = A.parse_review_output('{"findings": ["发现严重问题"]}')
+    assert err is not None
+
+
+def test_parse_review_output_rejects_missing_or_unknown_severity():
+    _, _, err = A.parse_review_output('{"findings": [{"where": "x:1"}]}')
+    assert err is not None
+    _, _, err = A.parse_review_output(
+        '{"findings": [{"where": "x:1", "severity": "critical"}]}'
+    )
+    assert err is not None
 
 
 def test_parse_review_output_reports_error_when_no_json():

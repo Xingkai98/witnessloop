@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 19 条，合计 63 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 28 条，合计 72 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -52,6 +52,24 @@
 - [x] B19 审阅上下文：变更文件清单 + diff 按代码/测试优先排序，上限 120000 字符；
       修掉 `diff[:20000]` 让 reviewer 看不到 `src/**` 的误报（实测 building review
       因此把「没看到代码」报成 blocker/high）。测试 `test_prioritize_diff_puts_code_before_docs`。
+- [x] B20 digest 模式显式告知「无 diff、不要报代码不存在」并附工作树文件清单；
+      design D9.8 登记限制。
+- [x] B21 解析层结构校验：finding 必须是对象且 severity ∈
+      blocker/high/medium/low/nit；字符串 finding / 缺 severity 判 parse 失败，
+      不再静默丢成 PASS。测试 `test_parse_review_output_rejects_*`。
+- [x] B22 judge 只复核 stalled 子集：其 PASS 不得覆盖同轮未送审的 medium+；
+      有未复核项时最终判 BLOCKED。测试
+      `test_judge_pass_does_not_cover_unstalled_findings`。
+- [x] B23 预算检查前移到**每轮入口**：fixer 把累计成本推过预算后不再发起下一轮
+      reviewer 调用。测试 `test_budget_stops_before_next_round_after_fixer`。
+- [x] B24 `_render_markdown` 对非对象 config 受控渲染（不再 `.get` 崩溃）；
+      非空数组负样本 `test_non_object_config_is_red`。
+- [x] B25 内联 `auth_token` 只从写盘 config 脱敏；实际调用用内存运行时角色表
+      `runtime_roles`，避免「resolved 说已解析、适配器拿空串」。测试
+      `test_runtime_roles_keep_inline_token` / `test_resolve_config_redacts_inline_token`。
+- [x] B26 fixer / judge 的失败写进 round manifest（`fixer.error` / `judge.error`）
+      并进 Markdown 报告；不再静默吞掉。测试 `test_fixer_error_is_recorded` /
+      `test_judge_error_is_recorded` / `test_report_renders_fixer_error`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

@@ -134,9 +134,14 @@ def verify(root: Path) -> tuple[list[str], dict]:
 
 def _render_markdown(summary: dict) -> str:
     rounds = summary["rounds"]
-    config = summary["config"] or {}
+    config = summary["config"]
+    if not isinstance(config, dict):
+        # verify() 已把非对象 config 记为证据缺件；渲染仍要受控，不能 .get 崩溃。
+        config = {}
     lines: list[str] = ["# review loop 报告", ""]
-    roles = config.get("roles") or {}
+    roles = config.get("roles")
+    if not isinstance(roles, dict):
+        roles = {}
     lines.append("## 配置")
     for name in ("reviewerA", "reviewerB", "fixer", "judge"):
         role = roles.get(name) or {}
@@ -167,8 +172,12 @@ def _render_markdown(summary: dict) -> str:
             lines.append(
                 f"- [{f.get('severity')}] {f.get('where')} — {f.get('what')}"
             )
+        if doc.get("fixer") and doc["fixer"].get("error"):
+            lines.append(f"- fixer 错误：{doc['fixer'].get('error')}")
         if doc.get("judge"):
             lines.append(f"- judge：{doc.get('judge').get('verdict')}")
+            if doc["judge"].get("error"):
+                lines.append(f"- judge 错误：{doc['judge'].get('error')}")
         lines.append("")
     lines.append(f"## 最终判定：{summary.get('final_verdict')}")
     if summary.get("degraded_note"):

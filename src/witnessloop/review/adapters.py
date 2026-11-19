@@ -162,6 +162,15 @@ def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
         findings = doc.get("issues")
     if not isinstance(findings, list):
         return [], "PASS", "JSON 里没有 findings 数组"
+    allowed = {"blocker", "high", "medium", "low", "nit"}
+    for index, item in enumerate(findings):
+        if not isinstance(item, dict):
+            return [], "PASS", f"findings[{index}] 不是对象"
+        severity = str(item.get("severity") or "").strip().lower()
+        if severity not in allowed:
+            # 缺 severity 的 finding 会被 _pass_rule 当成「不阻塞」——必须在解析层
+            # fail closed，否则畸形输出（含字符串 finding / 漏 severity）会假 PASS。
+            return [], "PASS", f"findings[{index}] 的 severity 非法：{item.get('severity')!r}"
     verdict = str(doc.get("verdict") or "PASS").strip().upper()
     if verdict not in ("PASS", "CHANGES_REQUESTED", "BLOCKED"):
         verdict = "CHANGES_REQUESTED" if findings else "PASS"

@@ -101,8 +101,13 @@ def _auth_resolved(role: dict) -> bool:
     return bool(A.resolve_auth_token(role))
 
 
-def _resolved_role(role: dict, adapter: str | None) -> dict:
-    """展开一个角色：adapter 覆盖 + auth 解析状态。**不写密钥**进 resolved。"""
+def _resolved_role(role: dict, adapter: str | None, *, redact: bool = True) -> dict:
+    """展开一个角色：adapter 覆盖 + auth 解析状态。
+
+    ``redact=True``（写盘的 ``config.resolved.json``）**不写密钥**，只标
+    ``auth_token_provided``；``redact=False`` 用于**运行时**角色表——实际调用必须
+    拿到内联 ``auth_token``，否则会出现「resolved 说已解析、适配器拿到空串」。
+    """
     src = dict(role)
     out = {
         "adapter": adapter or src.get("adapter") or "mock",
@@ -112,14 +117,29 @@ def _resolved_role(role: dict, adapter: str | None) -> dict:
     if src.get("auth_env"):
         out["auth_env"] = src["auth_env"]
     if src.get("auth_token"):
-        # 内联 token 只标「已提供」，不落值。
-        out["auth_token_provided"] = True
+        if redact:
+            # 内联 token 只标「已提供」，不落值。
+            out["auth_token_provided"] = True
+        else:
+            out["auth_token"] = src["auth_token"]
     if src.get("allow_host_auth_fallback") is True:
         # 必须带进 resolved config：orchestrator 用的是展开后的角色，
         # 少了这个开关会出现「auth_resolved=True，但 build_adapter 拿到空 token」。
         out["allow_host_auth_fallback"] = True
     out["auth_resolved"] = _auth_resolved(src)
     return out
+
+
+def runtime_roles(roles_doc: dict, *, adapter: str | None = None) -> dict:
+    """返回**运行时**角色表：字段与 resolved 一致，但保留内联 ``auth_token``。
+
+    这份表只活在内存里，不写盘；`config.resolved.json` 仍用脱敏版本。
+    """
+    raw = roles_doc.get("roles") or {}
+    return {
+        name: _resolved_role(raw.get(name) or {}, adapter, redact=False)
+        for name in ROLE_NAMES
+    }
 
 
 def resolve_config(

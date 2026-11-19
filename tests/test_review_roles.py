@@ -81,6 +81,38 @@ def test_resolved_role_keeps_host_fallback_flag(monkeypatch):
     assert out["auth_resolved"] is True
 
 
+def test_resolve_config_redacts_inline_token(tmp_path):
+    doc = {
+        "roles": {
+            "reviewerA": {
+                "adapter": "codex",
+                "model": "m",
+                "base_url": "https://example.invalid",
+                "auth_token": "sk-inline",
+            }
+        }
+    }
+    resolved, _ = roles_mod.resolve_config(tmp_path, roles_doc=doc)
+    assert "auth_token" not in resolved["roles"]["reviewerA"]
+    assert resolved["roles"]["reviewerA"]["auth_token_provided"] is True
+
+
+def test_runtime_roles_keep_inline_token():
+    doc = {
+        "roles": {
+            "reviewerA": {
+                "adapter": "codex",
+                "model": "m",
+                "base_url": "https://example.invalid",
+                "auth_token": "sk-inline",
+            }
+        }
+    }
+    runtime = roles_mod.runtime_roles(doc)
+    assert runtime["reviewerA"]["auth_token"] == "sk-inline"
+    assert runtime["reviewerA"]["auth_resolved"] is True
+
+
 def test_resolve_config_adapter_override_forces_all_roles(tmp_path):
     resolved, _ = roles_mod.resolve_config(tmp_path, adapter="mock")
     for name in ("reviewerA", "reviewerB", "fixer", "judge"):

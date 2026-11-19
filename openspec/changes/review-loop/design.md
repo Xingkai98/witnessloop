@@ -64,6 +64,8 @@ witnessloop review report [--out FILE]
   默认 `adapter` / `base_url` / `auth_env`。要改就写全。
 - `--adapter <name>` 覆盖**所有**角色的通路（`mock` 用于无网络打通链路）。
 - auth 只记录「已解析 / 未解析」；key 从不写进 `config.resolved.json`。
+  实际调用使用**内存里的运行时角色表**（`runtime_roles`，保留内联 `auth_token`），
+  写盘/哈希用脱敏版本；两份表的 adapter/model/base_url/auth_resolved 一致。
 - `allow_host_auth_fallback: true` 是可选的宿主兜底开关（`ANTHROPIC_*`）；默认关闭，
   避免把宿主 token 发往角色声明的其它端点。该开关必须原样进 resolved config。
 - `config.resolved.json` 的 sha256 写入每轮 manifest 的 `config_hash`。
@@ -174,6 +176,9 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 7. **`--positive-control` 只做 `where` 逐字相等匹配**：真模型措辞不定，容易误报
    「正控漏报」；T-075 因此改用人工核对 finding 原文。该机制保留给 mock/确定性
    场景，不作为真实模型审阅的默认安全网。
+8. **digest 模式看不到 diff**：无 `.git` 时 context 只有 change 文档 + 工作树文件
+   清单，并在 prompt 里明确告知「不要因为看不到代码就报代码不存在」。要审实现必须
+   用 git 模式；digest 模式只保证链路与文档审阅可跑。
 
 ## D10 验收与证据
 
