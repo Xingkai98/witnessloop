@@ -126,8 +126,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 ## D6 回落规则（机械执行，不静默）
 
 - reviewer 的 auth 一开始未解析 ⇒ 直接回落 `deepseek-flash`，不白打一次网络。
-- 通路返回 `auth` / `balance` / `model_not_found` / `parse` ⇒ 当场回落
-  `deepseek-flash`。
+- 通路返回 `auth` / `balance` / `model_not_found` / `parse` / `other`（含 5xx /
+  超时 / 响应结构非法）⇒ 当场回落 `deepseek-flash`。
 - 回落成功：`actors[].degraded_from = 原 model`，manifest / report 可见。
 - 回落 key 只认 `WITNESSLOOP_DEEPSEEK_KEY`；**不**默认复用宿主 `ANTHROPIC_*`
   token（避免把宿主凭据发往 `api.deepseek.com`）。

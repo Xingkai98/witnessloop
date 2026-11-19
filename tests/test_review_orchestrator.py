@@ -92,6 +92,19 @@ def test_bad_mock_scenario_is_usage_error(gated, cli):
     assert "mock-scenario" in err
 
 
+def test_invalid_base_fails_before_review(gated, cli):
+    """diff 取不到时不能继续跑并产出绑定当前提交的 PASS 产物。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    code, _, err = _mock_run(
+        cli, gated, base="no-such-ref", mock_scenario=_scenario([], [])
+    )
+    assert code == C.EXIT_FAIL
+    assert "diff" in err
+    rounds_dir = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
+    assert not list(rounds_dir.glob("round-*.json")) if rounds_dir.is_dir() else True
+
+
 def test_run_requires_existing_change(gated, cli):
     code, _, err = cli(
         "review", "run", "--root", str(gated), "--change", "nope", "--adapter", "mock"
@@ -439,6 +452,42 @@ def test_judge_error_is_recorded(monkeypatch):
     )
     assert record["verdict"] == "BLOCKED"
     assert record["error"] == "boom"
+
+
+def test_runtime_other_error_falls_back(monkeypatch):
+    """5xx / 超时（error_kind=other）也要回落一次。"""
+    from types import SimpleNamespace
+
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setenv("WITNESSLOOP_CODEX_KEY", "sk-codex")
+    monkeypatch.setenv("WITNESSLOOP_DEEPSEEK_KEY", "sk-deepseek")
+    calls: list[str] = []
+
+    class Fake:
+        def run(self, request, *, model):
+            calls.append(model)
+            if len(calls) == 1:
+                return A.ReviewResult(model=model, error="HTTP 524", error_kind="other")
+            return A.ReviewResult(model=model, findings=[], verdict="PASS")
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: Fake())
+    actor, result, _ = O._call_reviewer(
+        "reviewerA",
+        {
+            "adapter": "codex",
+            "model": "sol",
+            "base_url": "https://example.invalid",
+            "auth_env": "WITNESSLOOP_CODEX_KEY",
+        },
+        A.ReviewRequest(prompt="", context=""),
+        scenario=None,
+        adapter_override=None,
+        revision=SimpleNamespace(value="abcdef123456", mode="git"),
+    )
+    assert calls == ["sol", "deepseek-flash"]
+    assert actor.degraded_from == "sol"
+    assert result.error is None
 
 
 def test_fallback_is_attempted_only_once(monkeypatch):

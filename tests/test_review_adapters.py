@@ -168,6 +168,34 @@ def test_parse_error_marks_adapter_result_as_parse_failure(monkeypatch):
     assert result.findings == []
 
 
+def test_claude_adapter_rejects_non_array_content(monkeypatch):
+    monkeypatch.setattr(A, "_http_json", lambda *args, **kwargs: {"content": 1})
+    result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error_kind == "other"
+
+
+def test_cost_usd_tolerates_bad_usage():
+    assert A.cost_usd("deepseek-flash", {"input_tokens": "bad", "output_tokens": None}) == 0
+
+
+def test_codex_adapter_tolerates_non_object_usage(monkeypatch):
+    monkeypatch.setattr(
+        A,
+        "_http_json",
+        lambda *args, **kwargs: {
+            "choices": [{"message": {"content": '{"findings": []}'}}],
+            "usage": 1,
+        },
+    )
+    result = A.CodexAdapter("https://example.invalid", "sk-x").run(
+        A.ReviewRequest(prompt="", context=""), model="m"
+    )
+    assert result.error is None
+    assert result.usage is None
+
+
 def test_http_timeout_is_adapter_error(monkeypatch):
     """socket timeout 必须归一成 AdapterError，而不是让 CLI 崩成内部错误。"""
     import urllib.request

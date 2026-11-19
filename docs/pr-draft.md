@@ -63,11 +63,13 @@ is robust to tampered manifest field types (including missing reviewer actors an
 non-object `fixer` / `judge`), validates HTTP response shapes before `.get`, and keeps
 role overrides field-level so a partial override cannot silently become `mock`.
 `review report --md` is accepted (the report is Markdown; the flag is kept for
-documented commands).
+documented commands). A diff acquisition failure aborts the run instead of proceeding
+without code context; transient 5xx/timeouts fall back once; and the report requires
+exactly `reviewerA` + `reviewerB` with non-empty, distinct run ids.
 
 ## Validation
 
-- `uv run pytest -q` → **875 passed** (788 existing + 87 review-loop tests).
+- `uv run pytest -q` → **882 passed** (788 existing + 94 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

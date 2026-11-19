@@ -218,12 +218,15 @@ def _build_context(
         try:
             diff = gitutil.diff_text(root, base, head)
         except gitutil.GitError as exc:
-            pieces.append(f"== diff ==\n（无法取 diff：{exc}）")
-        else:
-            pieces.append(
-                f"== diff（{base}..{head}；代码/测试优先，上限 {DIFF_CONTEXT_LIMIT} 字符）==\n"
-                + _prioritize_diff(diff)
-            )
+            # 没有 diff 就没有代码审阅素材；不能带着「无法取 diff」继续跑并可能
+            # 产出绑定当前提交的 PASS 产物。
+            raise gitutil.GitError(
+                f"无法取 diff（review 不能在没有代码变更的情况下继续）：{exc}"
+            ) from exc
+        pieces.append(
+            f"== diff（{base}..{head}；代码/测试优先，上限 {DIFF_CONTEXT_LIMIT} 字符）==\n"
+            + _prioritize_diff(diff)
+        )
     else:
         pieces.append(
             "== 工作树 ==\n"
@@ -334,7 +337,7 @@ def _call_reviewer(
     cost = A.cost_usd(model, result.usage)
 
     if (
-        result.error_kind in ("auth", "balance", "model_not_found", "parse")
+        result.error_kind in ("auth", "balance", "model_not_found", "parse", "other")
         and not is_fallback
     ):
         # 运行期失败 ⇒ 按回落规则当场回落 deepseek-flash（**只回落一次**）。
@@ -432,7 +435,11 @@ def run(args: argparse.Namespace) -> int:
     # 实际调用用**未脱敏**的运行时角色表（保留内联 auth_token）；写盘的
     # config.resolved.json 仍是脱敏版本。
     role_cfgs = roles_mod.runtime_roles(roles_doc, adapter=args.adapter)
-    context = _build_context(root, change, revision, pol, getattr(args, "base", None))
+    try:
+        context = _build_context(root, change, revision, pol, getattr(args, "base", None))
+    except gitutil.GitError as exc:
+        print(f"review run：{exc}", file=sys.stderr)
+        return C.EXIT_FAIL
 
     round_manifests: list[dict] = []
     merged_history: list[dict] = []  # 每轮的 merged findings（用于停滞判定）

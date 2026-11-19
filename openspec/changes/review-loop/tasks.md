@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 43 条，合计 87 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 50 条，合计 94 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -94,6 +94,13 @@
       测试 `test_judge_duplicate_ruling_cannot_mask_real`。
 - [x] B37 网络超时（`TimeoutError`/`OSError`）归一成 `AdapterError("other")`，
       不再让 CLI 崩成「内部错误」。测试 `test_http_timeout_is_adapter_error`。
+- [x] B38 diff 获取失败（含坏 `--base`）直接中止 run，不再带着「无法取 diff」
+      继续并可能产出 PASS；测试 `test_invalid_base_fails_before_review`。
+- [x] B39 适配器结构加固：content 必须数组、text 必须是字符串、usage 必须是对象、
+      token 字段容错；测试 `test_claude_adapter_rejects_non_array_content` 等。
+- [x] B40 `review report` 严格要求 reviewerA/reviewerB 各一个且 run_id 非空不同；
+      测试 `test_wrong_reviewer_roles_is_red` / `test_missing_run_id_is_red`。
+- [x] B41 5xx/超时（`other`）也回落一次；测试 `test_runtime_other_error_falls_back`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

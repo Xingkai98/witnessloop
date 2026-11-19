@@ -152,6 +152,32 @@ def test_malformed_manifest_types_are_red(gated, cli):
     assert "fixer 类型非法" in err or "judge 类型非法" in err
 
 
+def test_wrong_reviewer_roles_is_red(gated, cli):
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    doc = _round_manifest(gated)
+    doc["actors"][1]["role"] = "reviewerA"
+    _write_round_manifest(gated, doc)
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "reviewerB" in err
+
+
+def test_missing_run_id_is_red(gated, cli):
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    doc = _round_manifest(gated)
+    for actor in doc["actors"]:
+        if actor["role"] == "reviewerB":
+            actor["run_id"] = ""
+    _write_round_manifest(gated, doc)
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "缺少 run_id" in err
+
+
 def test_missing_reviewer_actors_is_red(gated, cli):
     """actors 为空不能被当成「验证通过」。"""
     write_change(gated, "add-x")
@@ -162,7 +188,7 @@ def test_missing_reviewer_actors_is_red(gated, cli):
     _write_round_manifest(gated, doc)
     code, _, err = _report(cli, gated)
     assert code == C.EXIT_FAIL
-    assert "缺少两路 reviewer" in err
+    assert "缺少 reviewerA, reviewerB" in err
 
 
 def test_non_integer_round_is_red(gated, cli):

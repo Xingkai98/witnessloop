@@ -96,21 +96,30 @@ def verify(root: Path) -> tuple[list[str], dict]:
                 f"manifest actors 类型非法：round {doc.get('round')}（应为对象数组）"
             )
             actors = []
-        reviewers = [
-            actor
+        by_role = {
+            str(actor.get("role")): actor
             for actor in actors
-            if str(actor.get("role", "")).startswith("reviewer")
+            if isinstance(actor, dict)
+        }
+        missing_roles = [
+            role for role in ("reviewerA", "reviewerB") if role not in by_role
         ]
-        if len(reviewers) < 2:
+        if missing_roles:
             findings.append(
-                f"证据缺件：round {doc.get('round')} 缺少两路 reviewer actors"
+                f"证据缺件：round {doc.get('round')} 缺少 "
+                f"{', '.join(missing_roles)} 的 actor"
             )
-        run_ids = [actor.get("run_id") for actor in reviewers]
-        if len(run_ids) >= 2 and run_ids[0] and run_ids[0] == run_ids[1]:
-            findings.append(
-                f"两路同一 actor：round {doc.get('round')} 的 reviewerA 与 reviewerB "
-                f"run_id 相同（{run_ids[0]}）"
-            )
+        else:
+            run_ids = [by_role[role].get("run_id") for role in ("reviewerA", "reviewerB")]
+            if not all(isinstance(value, str) and value.strip() for value in run_ids):
+                findings.append(
+                    f"证据缺件：round {doc.get('round')} 的 reviewerA/reviewerB 缺少 run_id"
+                )
+            elif run_ids[0] == run_ids[1]:
+                findings.append(
+                    f"两路同一 actor：round {doc.get('round')} 的 reviewerA 与 reviewerB "
+                    f"run_id 相同（{run_ids[0]}）"
+                )
         for field in ("fixer", "judge"):
             value = doc.get(field)
             if value is not None and not isinstance(value, dict):

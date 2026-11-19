@@ -47,8 +47,14 @@ def cost_usd(model: str, usage: dict | None) -> float:
     in_price, out_price = APPROX_PRICE_PER_MTOK.get(
         str(model).lower(), (0.0, 0.0)
     )
-    in_tokens = int(usage.get("input_tokens") or 0)
-    out_tokens = int(usage.get("output_tokens") or 0)
+    def _tokens(value) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    in_tokens = _tokens(usage.get("input_tokens"))
+    out_tokens = _tokens(usage.get("output_tokens"))
     return in_tokens / 1e6 * in_price + out_tokens / 1e6 * out_price
 
 
@@ -239,9 +245,19 @@ class ClaudeAdapter:
                 model=model, error="HTTP 响应不是 JSON 对象", error_kind="other"
             )
         # Anthropic 形状：content 是 [{type:text|thinking, text|thinking}, ...]
-        blocks = doc.get("content") or []
-        texts = [b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"]
-        raw = "\n".join(t for t in texts if t)
+        blocks = doc.get("content")
+        if not isinstance(blocks, list):
+            return ReviewResult(
+                model=model, error="HTTP 响应 content 不是数组", error_kind="other"
+            )
+        texts = [
+            block.get("text")
+            for block in blocks
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        ]
+        raw = "\n".join(texts)
         findings, verdict, err = parse_review_output(raw)
         return ReviewResult(
             findings=findings,
@@ -289,7 +305,9 @@ class CodexAdapter:
             content = ""
         raw = content if isinstance(content, str) else ""
         findings, verdict, err = parse_review_output(raw)
-        usage = doc.get("usage") or None
+        usage = doc.get("usage")
+        if not isinstance(usage, dict):
+            usage = None
         # OpenAI 形状的 usage 键名换算成统一键，供 cost_usd 用。
         if usage and "input_tokens" not in usage and "prompt_tokens" in usage:
             usage = {
