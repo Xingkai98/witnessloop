@@ -87,7 +87,7 @@ witnessloop review report [--md] [--out FILE]
 ∈ blocker/high/medium/low/nit；解析层做 `strip().lower()` 规范化并**返回规范化值**，
 避免 `" HIGH "` 绕过阻塞判定。fixer/judge 的合法输出分别是 `fixes` / `rulings`，
 不能被 reviewer 的 `findings` 解析器误判为失败；三者都要求**恰好一个**顶层 JSON
-对象，多对象是歧义输入，不得只取第一个。
+对象（**顶层数组 `[{...}]` 不算**），多对象/数组包裹都是歧义输入，不得只取第一个。
 
 auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env`；
 只有角色显式 `allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
@@ -113,6 +113,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 3. verdict：`medium_plus_zero` 判据下，blocker/high/medium 为零 ⇒ `PASS`，
    否则 `CHANGES_REQUESTED`。**任一 reviewer 在回落之后仍有 `error`**（含
    `parse`）⇒ `BLOCKED`，本轮立即停止；空 findings 不会被判成收敛。
+   reviewer 自己的 `verdict` 也参与判定：`BLOCKED` ⇒ 整轮 `BLOCKED`；
+   `CHANGES_REQUESTED` 但没给 medium+ findings ⇒ 合成 medium，不静默 `PASS`。
 4. 分支：
    - `PASS` ⇒ 收口，`final_verdict=PASS`；
    - 停滞（同一 `where` 连续 `stall_rounds` 轮）⇒ 升级 judge，单点复核。
@@ -156,8 +158,9 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 
 任一命中 ⇒ 退出码 1；全部通过 ⇒ 0。报告本身只渲染事实，不改判定。
 额外的结构校验：每轮必须恰有 `reviewerA` / `reviewerB` 各一个且 `run_id` 非空不同；
-`config.roles` 的每个值必须是 JSON 对象；`summary.json` 声明的轮次必须与磁盘
-`rounds/` 文件集合一致（少一轮不能验证通过）。损坏的产物要受控判红，不能让渲染崩溃。
+`config.roles` 的每个值必须是 JSON 对象；`summary.json` **必须存在且可解析**，
+其 `rounds` 必须是数组，且与磁盘 `rounds/` 文件集合一致（少一轮不能验证通过）。
+损坏的产物要受控判红，不能让渲染崩溃。
 
 ## D8 成本模型
 

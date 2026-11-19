@@ -205,6 +205,25 @@ def test_missing_reviewer_actors_is_red(gated, cli):
     assert "缺：reviewerA, reviewerB" in err
 
 
+def test_missing_or_malformed_summary_is_red(gated, cli):
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    summary_path = gated / C.REVIEW_OUTPUT_DIR / "summary.json"
+    summary_path.unlink()
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "summary.json 缺失" in err
+
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["rounds"] = None
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "rounds 字段" in err
+
+
 def test_missing_round_file_is_red(gated, cli):
     """summary.json 有两轮、磁盘少一轮时不能验证通过。"""
     write_change(gated, "add-x")

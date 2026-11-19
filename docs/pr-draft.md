@@ -71,7 +71,7 @@ non-empty, distinct run ids.
 
 ## Validation
 
-- `uv run pytest -q` → **896 passed** (788 existing + 108 review-loop tests).
+- `uv run pytest -q` → **902 passed** (788 existing + 114 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

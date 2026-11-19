@@ -161,19 +161,25 @@ def verify(root: Path) -> tuple[list[str], dict]:
         final_verdict = doc.get("verdict")
     summary_path = out_dir / "summary.json"
     summary_doc = _load_json(summary_path)
-    if isinstance(summary_doc, dict) and summary_doc.get("final_verdict"):
-        final_verdict = summary_doc["final_verdict"]
-    if isinstance(summary_doc, dict) and isinstance(summary_doc.get("rounds"), list):
-        expected_rounds = sorted(
-            item.get("round")
-            for item in summary_doc["rounds"]
-            if isinstance(item, dict) and isinstance(item.get("round"), int)
-        )
-        actual_rounds = [item["round"] for item in rounds]
-        if expected_rounds != actual_rounds:
-            findings.append(
-                "证据缺件：summary.json 的轮次与 rounds/ 下的文件不一致"
+    if not isinstance(summary_doc, dict):
+        findings.append("证据缺件：summary.json 缺失或不可解析")
+    else:
+        if summary_doc.get("final_verdict"):
+            final_verdict = summary_doc["final_verdict"]
+        rounds_field = summary_doc.get("rounds")
+        if not isinstance(rounds_field, list):
+            findings.append("summary.json 的 rounds 字段缺失或类型非法")
+        else:
+            expected_rounds = sorted(
+                item.get("round")
+                for item in rounds_field
+                if isinstance(item, dict) and isinstance(item.get("round"), int)
             )
+            actual_rounds = [item["round"] for item in rounds]
+            if expected_rounds != actual_rounds:
+                findings.append(
+                    "证据缺件：summary.json 的轮次与 rounds/ 下的文件不一致"
+                )
     if positive:
         seen = any(str(f.get("where")) == positive for f in all_findings)
         if final_verdict == "PASS" and not seen:

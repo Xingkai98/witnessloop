@@ -53,6 +53,12 @@ def test_parse_review_output_rejects_missing_or_unknown_severity():
     assert err is not None
 
 
+def test_parse_review_output_rejects_top_level_array():
+    _, _, err = A.parse_review_output('[{"findings": []}]')
+    assert err is not None
+    assert A.extract_single_json('[{"fixes": []}]') is None
+
+
 def test_parse_review_output_rejects_multiple_json_objects():
     text = (
         '{"findings": []} '

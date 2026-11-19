@@ -532,11 +532,37 @@ def run(args: argparse.Namespace) -> int:
             for role, (_, res, _) in reviewer_results.items()
             if res.error
         }
+        reviewer_verdicts = {
+            role: str(res.verdict or "").upper()
+            for role, (_, res, _) in reviewer_results.items()
+        }
+        blocked_roles = sorted(
+            role for role, value in reviewer_verdicts.items() if value == "BLOCKED"
+        )
+        changes_roles = sorted(
+            role
+            for role, value in reviewer_verdicts.items()
+            if value == "CHANGES_REQUESTED"
+        )
         verdict = (
             "PASS" if _pass_rule_satisfied(merged, args.pass_rule) else "CHANGES_REQUESTED"
         )
         if reviewer_errors:
             verdict = "BLOCKED"
+        elif blocked_roles:
+            verdict = "BLOCKED"
+        elif verdict == "PASS" and changes_roles:
+            # reviewer 明确说「要改」但没给 medium+ findings：不能静默 PASS。
+            for role in changes_roles:
+                merged.append(
+                    {
+                        "where": f"<reviewer-verdict:{role}>",
+                        "severity": "medium",
+                        "what": "reviewer 返回 CHANGES_REQUESTED 但未给出 medium+ findings",
+                        "suggestion": "检查 reviewer 输出或重跑该通路",
+                    }
+                )
+            verdict = "CHANGES_REQUESTED"
 
         # 停滞判定：同一 where 连续 stall_rounds 轮都在 merged 里。
         stalled = _stalled_findings(merged, merged_history, args.stall_rounds)
@@ -551,6 +577,10 @@ def run(args: argparse.Namespace) -> int:
             note = "reviewer 失败（不把空 findings 判 PASS）：" + "; ".join(
                 f"{role}={err}" for role, err in sorted(reviewer_errors.items())
             )
+            stop = True
+        elif blocked_roles:
+            final_verdict = "BLOCKED"
+            note = f"reviewer 返回 BLOCKED：{', '.join(blocked_roles)}"
             stop = True
         elif verdict == "PASS":
             final_verdict = "PASS"
@@ -689,11 +719,11 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
         "raw": result.raw,
     }
     # reviewer 解析器要求 findings 数组；fixer 的合法输出是 fixes，会被它误标
-    # parse 失败。只有 **fixes 也解析不出来** 时才算 fixer 失败。
-    if result.error and not isinstance(fixes, list):
-        # fixer 失败不能静默：错误进 manifest，loop 继续但产物里必须看得到。
-        record["error"] = result.error
-        record["error_kind"] = result.error_kind
+    # parse 失败。只有 **fixes 也解析不出来** 时才算 fixer 失败——无论适配器
+    # 是否报了 error，都要在产物里留痕。
+    if not isinstance(fixes, list):
+        record["error"] = result.error or "fixer 输出缺少 fixes 数组"
+        record["error_kind"] = result.error_kind or "parse"
     return record, A.cost_usd(result.model, result.usage)
 
 
@@ -726,7 +756,11 @@ def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision
         "BLOCKED",
     )
     problem: str | None = None
-    if result.error and not shape_ok:
+    if guessed_verdict not in ("PASS", "CHANGES_REQUESTED", "BLOCKED"):
+        problem = f"judge verdict 非法：{guessed_verdict}"
+    elif not rulings:
+        problem = result.error or "judge 输出缺少 rulings"
+    elif result.error and not shape_ok:
         problem = result.error
     if guessed_verdict == "PASS":
         # PASS 必须逐条覆盖送审的 stalled 项，且每条都是 false-positive；

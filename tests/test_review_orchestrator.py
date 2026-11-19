@@ -278,6 +278,50 @@ def test_merge_dedups_across_two_reviewers(gated, cli):
     assert len(findings) == 1
 
 
+def _fake_reviewer_with_verdict(verdict):
+    from witnessloop.review import adapters as A
+
+    def fake(role_name, role_cfg, request, **kwargs):
+        actor = O.Actor(
+            role=role_name, adapter="mock", model="mock", run_id=f"{role_name}-mock"
+        )
+        return actor, A.ReviewResult(model="mock", findings=[], verdict=verdict), 0.0
+
+    return fake
+
+
+def test_reviewer_blocked_verdict_blocks(gated, cli, monkeypatch):
+    """reviewer 明确 BLOCKED 时不能被空 findings 判 PASS。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    monkeypatch.setattr(O, "_call_reviewer", _fake_reviewer_with_verdict("BLOCKED"))
+    code, _, _ = _mock_run(cli, gated, mock_scenario=_scenario([], []))
+    assert code == C.EXIT_FAIL
+    manifest = json.loads(
+        (gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR / "round-0001.json").read_text()
+    )
+    assert manifest["verdict"] == "BLOCKED"
+    assert "BLOCKED" in manifest["note"]
+
+
+def test_reviewer_changes_requested_without_findings_blocks_pass(gated, cli, monkeypatch):
+    """reviewer 说 CHANGES_REQUESTED 但没给 findings 时也要阻塞。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    monkeypatch.setattr(
+        O, "_call_reviewer", _fake_reviewer_with_verdict("CHANGES_REQUESTED")
+    )
+    code, _, _ = _mock_run(cli, gated, mock_scenario=_scenario([], []), max_rounds=1)
+    assert code == C.EXIT_FAIL
+    manifest = json.loads(
+        (gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR / "round-0001.json").read_text()
+    )
+    assert manifest["verdict"] == "CHANGES_REQUESTED"
+    assert any(
+        f["where"].startswith("<reviewer-verdict:") for f in manifest["findings"]
+    )
+
+
 def test_reviewer_failure_blocks_instead_of_passing(gated, cli, monkeypatch):
     """reviewer 输出无法解析 ⇒ 空 findings 也绝不能判 PASS。"""
     write_change(gated, "add-x")
@@ -370,8 +414,45 @@ class _RawAdapter:
         )
 
 
+class _RawOkAdapter:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def run(self, request, *, model):
+        from witnessloop.review import adapters as A
+
+        return A.ReviewResult(model=model, raw=self.raw)
+
+
 def _fixer_cfg():
     return {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"}
+
+
+def test_fixer_missing_fixes_is_recorded(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setattr(
+        O.A, "build_adapter", lambda *args, **kwargs: _RawOkAdapter('{"findings": []}')
+    )
+    record, _ = O._run_fixer(
+        [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["fixes"] == []
+    assert "缺少 fixes" in record["error"]
+
+
+def test_judge_invalid_verdict_is_blocked(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = '{"findings": [], "verdict": "BOGUS"}'
+    monkeypatch.setattr(
+        O.A, "build_adapter", lambda *args, **kwargs: _RawOkAdapter(raw)
+    )
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "BLOCKED"
+    assert "verdict 非法" in record["error"]
 
 
 def test_fixer_rejects_multiple_json_objects(monkeypatch):

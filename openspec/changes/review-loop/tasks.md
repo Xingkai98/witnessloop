@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 64 条，合计 108 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 70 条，合计 114 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -132,6 +132,16 @@
       测试 `test_missing_round_file_is_red`。
 - [x] B56 缺 key 的回落分支同样检查剩余预算；预算已尽不再发 fallback。
       测试 `test_auth_missing_does_not_fallback_without_budget`。
+- [x] B57 reviewer 的 `verdict` 参与判定：BLOCKED ⇒ 整轮 BLOCKED；
+      CHANGES_REQUESTED 但无 findings ⇒ 合成 medium，不静默 PASS。测试
+      `test_reviewer_blocked_verdict_blocks` /
+      `test_reviewer_changes_requested_without_findings_blocks_pass`。
+- [x] B58 summary.json 缺失/不可解析/rounds 非数组 ⇒ 证据缺件；
+      测试 `test_missing_or_malformed_summary_is_red`。
+- [x] B59 fixer 缺 `fixes` / judge verdict 非法或缺 `rulings` ⇒ 记录失败并 BLOCKED；
+      测试 `test_fixer_missing_fixes_is_recorded` / `test_judge_invalid_verdict_is_blocked`。
+- [x] B60 顶层数组（`[{...}]`）不算「一个 JSON 对象」；测试
+      `test_parse_review_output_rejects_top_level_array`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

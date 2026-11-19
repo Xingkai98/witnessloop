@@ -187,6 +187,9 @@ def _top_level_object_count(text: str) -> int:
             continue
         if ch == '"':
             in_string = True
+        elif ch == "[" and depth == 0:
+            # 顶层数组不是「一个 JSON 对象」；数组包裹的对象也要 fail closed。
+            return -1
         elif ch == "{":
             if depth == 0:
                 count += 1
