@@ -197,6 +197,17 @@ def _top_level_object_count(text: str) -> int:
     return count
 
 
+def extract_single_json(text: str):
+    """恰好一个顶层 JSON 对象才返回；多对象/无对象 ⇒ None。
+
+    fixer/judge 也走这个入口——不能只用 `_extract_json` 取第一个对象而忽略
+    后面的歧义输出。
+    """
+    if _top_level_object_count(text) != 1:
+        return None
+    return _extract_json(text)
+
+
 def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
     """把模型输出解析成 ``(findings, verdict, error)``。
 

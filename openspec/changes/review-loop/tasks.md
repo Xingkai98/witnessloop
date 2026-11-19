@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 60 条，合计 104 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 64 条，合计 108 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -125,6 +125,13 @@
       测试 `test_digest_disambiguates_nul_in_content`。
 - [x] B53 并发 reviewer 的预算快照边界写进 design D8（两路各一次 fallback
       可能合计越过上限一个调用，软止损已知限制）。
+- [x] B54 fixer/judge 也走「恰好一个顶层 JSON 对象」校验；多对象不再取第一个
+      对象放行。测试 `test_fixer_rejects_multiple_json_objects` /
+      `test_judge_rejects_multiple_json_objects`。
+- [x] B55 report 用 summary.json 的轮次核对磁盘 round 文件；少一轮即判红。
+      测试 `test_missing_round_file_is_red`。
+- [x] B56 缺 key 的回落分支同样检查剩余预算；预算已尽不再发 fallback。
+      测试 `test_auth_missing_does_not_fallback_without_budget`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

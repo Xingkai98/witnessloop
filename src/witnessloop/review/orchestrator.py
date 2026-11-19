@@ -338,7 +338,19 @@ def _call_reviewer(
     is_fallback = False
 
     if adapter_name != "mock" and not _resolve_auth_token(role_cfg):
-        # auth 一开始就缺 ⇒ 直接回落，不白打一次网络。
+        # auth 一开始就缺 ⇒ 直接回落，不白打一次网络；但已无剩余预算时
+        # 不再发起这次付费回落。
+        if budget_left is not None and budget_left <= 0:
+            actor = Actor(
+                role=role_name,
+                adapter=adapter_name,
+                model=model,
+                run_id=_actor_run_id(role_name, adapter_name, revision),
+            )
+            result = A.ReviewResult(
+                model=model, error="剩余预算不足，跳过回落", error_kind="auth"
+            )
+            return actor, result, 0.0
         degraded_from = model
         is_fallback = True
         used_adapter, role_cfg, still_down = _degrade_to_fallback(role_cfg)
@@ -670,7 +682,7 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
     )
     adapter = A.build_adapter(adapter_name, role=fixer_cfg, scenario=scenario)
     result = adapter.run(fix_request, model=fixer_cfg.get("model") or FALLBACK_MODEL)
-    doc = A._extract_json(result.raw) if result.raw else None
+    doc = A.extract_single_json(result.raw) if result.raw else None
     fixes = (doc or {}).get("fixes") if isinstance(doc, dict) else None
     record = {
         "fixes": fixes if isinstance(fixes, list) else [],
@@ -696,7 +708,7 @@ def _run_judge(stalled, judge_cfg, request, scenario, adapter_override, revision
     )
     adapter = A.build_adapter(adapter_name, role=judge_cfg, scenario=scenario)
     result = adapter.run(judge_request, model=judge_cfg.get("model") or FALLBACK_MODEL)
-    doc = A._extract_json(result.raw) if result.raw else None
+    doc = A.extract_single_json(result.raw) if result.raw else None
     if not isinstance(doc, dict):
         doc = {}
     rulings = doc.get("rulings") if isinstance(doc.get("rulings"), list) else []

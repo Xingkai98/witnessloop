@@ -205,6 +205,20 @@ def test_missing_reviewer_actors_is_red(gated, cli):
     assert "缺：reviewerA, reviewerB" in err
 
 
+def test_missing_round_file_is_red(gated, cli):
+    """summary.json 有两轮、磁盘少一轮时不能验证通过。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(
+        cli, gated, mock_scenario=json.dumps({"1": [FINDING], "2": []})
+    )[0] == C.EXIT_PASS
+    rounds_dir = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
+    (rounds_dir / "round-0001.json").unlink()
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "轮次与 rounds/" in err
+
+
 def test_non_integer_round_is_red(gated, cli):
     """round 字段不是整数时不能抛 ValueError 崩掉。"""
     write_change(gated, "add-x")

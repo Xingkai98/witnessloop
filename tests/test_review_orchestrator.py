@@ -374,6 +374,37 @@ def _fixer_cfg():
     return {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"}
 
 
+def test_fixer_rejects_multiple_json_objects(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = (
+        '{"fixes": [{"where": "x", "action": "a"}]} '
+        '{"fixes": []}'
+    )
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter(raw))
+    record, _ = O._run_fixer(
+        [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["fixes"] == []
+    assert record["error"]
+
+
+def test_judge_rejects_multiple_json_objects(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    raw = (
+        '{"verdict": "PASS", "rulings": '
+        '[{"where": "x:1", "ruling": "false-positive"}]} '
+        '{"verdict": "BLOCKED", "rulings": [{"where": "x:1", "ruling": "real"}]}'
+    )
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: _RawAdapter(raw))
+    record, _ = O._run_judge(
+        ["x:1"], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["verdict"] == "BLOCKED"
+    assert record["error"]
+
+
 def test_fixer_valid_raw_is_not_marked_parse_error(monkeypatch):
     """fixer 的合法输出是 fixes；reviewer 解析器的 parse error 不应误伤。"""
     monkeypatch.setattr(
@@ -479,6 +510,46 @@ def test_judge_error_is_recorded(monkeypatch):
     )
     assert record["verdict"] == "BLOCKED"
     assert record["error"] == "boom"
+
+
+def test_auth_missing_does_not_fallback_without_budget(monkeypatch):
+    """缺 key 分支同样要遵守剩余预算：预算已尽时不再发 fallback。"""
+    from types import SimpleNamespace
+
+    from witnessloop.review import adapters as A
+
+    for name in (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "WITNESSLOOP_MISSING_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("WITNESSLOOP_DEEPSEEK_KEY", "sk-deepseek")
+    calls: list[str] = []
+
+    class Fake:
+        def run(self, request, *, model):
+            calls.append(model)
+            return A.ReviewResult(model=model, findings=[], verdict="PASS")
+
+    monkeypatch.setattr(O.A, "build_adapter", lambda *args, **kwargs: Fake())
+    actor, result, cost = O._call_reviewer(
+        "reviewerA",
+        {
+            "adapter": "claude",
+            "model": "m",
+            "base_url": "https://example.invalid",
+            "auth_env": "WITNESSLOOP_MISSING_KEY",
+        },
+        A.ReviewRequest(prompt="", context=""),
+        scenario=None,
+        adapter_override=None,
+        revision=SimpleNamespace(value="abcdef123456", mode="git"),
+        budget_left=0.0,
+    )
+    assert calls == []
+    assert result.error
+    assert cost == 0.0
 
 
 def test_no_fallback_when_budget_already_exceeded(monkeypatch):

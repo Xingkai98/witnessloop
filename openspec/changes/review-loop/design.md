@@ -86,7 +86,8 @@ witnessloop review report [--md] [--out FILE]
 `BLOCKED`）。**绝不把空 findings 当成 PASS**。finding 必须是对象且 `severity`
 ∈ blocker/high/medium/low/nit；解析层做 `strip().lower()` 规范化并**返回规范化值**，
 避免 `" HIGH "` 绕过阻塞判定。fixer/judge 的合法输出分别是 `fixes` / `rulings`，
-不能被 reviewer 的 `findings` 解析器误判为失败。
+不能被 reviewer 的 `findings` 解析器误判为失败；三者都要求**恰好一个**顶层 JSON
+对象，多对象是歧义输入，不得只取第一个。
 
 auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env`；
 只有角色显式 `allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
@@ -155,7 +156,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 
 任一命中 ⇒ 退出码 1；全部通过 ⇒ 0。报告本身只渲染事实，不改判定。
 额外的结构校验：每轮必须恰有 `reviewerA` / `reviewerB` 各一个且 `run_id` 非空不同；
-`config.roles` 的每个值必须是 JSON 对象。损坏的产物要受控判红，不能让渲染崩溃。
+`config.roles` 的每个值必须是 JSON 对象；`summary.json` 声明的轮次必须与磁盘
+`rounds/` 文件集合一致（少一轮不能验证通过）。损坏的产物要受控判红，不能让渲染崩溃。
 
 ## D8 成本模型
 
@@ -163,7 +165,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 - `APPROX_PRICE_PER_MTOK` 是**近似价**，只用于 `budget.max_cost_usd` 止损与报告。
 - 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止；
   并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用；
-  reviewer 内部回落前也看剩余预算，首次请求已超预算时不再发 fallback 请求。
+  reviewer 内部回落前也看剩余预算，首次请求已超预算时不再发 fallback 请求；
+  「auth 一开始缺 key」的回落分支同样受这条预算检查约束。
   ⚠️ 两路 reviewer 并发，各自拿到轮次开始时的剩余预算快照；极端情况下两路各发起
   一次 fallback 仍可能合计越过上限一个调用。这是软止损的**已知并发边界**，不做
   共享额度预留。

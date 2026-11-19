@@ -163,6 +163,17 @@ def verify(root: Path) -> tuple[list[str], dict]:
     summary_doc = _load_json(summary_path)
     if isinstance(summary_doc, dict) and summary_doc.get("final_verdict"):
         final_verdict = summary_doc["final_verdict"]
+    if isinstance(summary_doc, dict) and isinstance(summary_doc.get("rounds"), list):
+        expected_rounds = sorted(
+            item.get("round")
+            for item in summary_doc["rounds"]
+            if isinstance(item, dict) and isinstance(item.get("round"), int)
+        )
+        actual_rounds = [item["round"] for item in rounds]
+        if expected_rounds != actual_rounds:
+            findings.append(
+                "证据缺件：summary.json 的轮次与 rounds/ 下的文件不一致"
+            )
     if positive:
         seen = any(str(f.get("where")) == positive for f in all_findings)
         if final_verdict == "PASS" and not seen:
