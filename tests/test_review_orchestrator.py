@@ -155,6 +155,24 @@ def test_stall_escalates_to_judge(gated, cli):
     assert len(manifests) == 2  # 没有继续磨第三轮
 
 
+def test_fixer_failure_blocks_run(gated, cli, monkeypatch):
+    """fixer 失败后不能继续下一轮并让空 findings 收口为 PASS。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    monkeypatch.setattr(
+        O, "_run_fixer", lambda *args, **kwargs: ({"fixes": [], "error": "boom"}, 0.0)
+    )
+    code, _, _ = _mock_run(
+        cli, gated, mock_scenario=_scenario([FINDING], []), max_rounds=2
+    )
+    assert code == C.EXIT_FAIL
+    rounds_dir = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
+    assert len(list(rounds_dir.glob("round-*.json"))) == 1
+    summary = json.loads((gated / C.REVIEW_OUTPUT_DIR / "summary.json").read_text())
+    assert summary["final_verdict"] == "BLOCKED"
+    assert "fixer 失败" in summary["final_note"]
+
+
 def test_judge_pass_does_not_cover_unstalled_findings(gated, cli, monkeypatch):
     """judge 只复核 stalled 子集；它判 PASS 不能把未送审的 blocking finding 放行。"""
     write_change(gated, "add-x")

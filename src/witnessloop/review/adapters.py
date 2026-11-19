@@ -242,9 +242,14 @@ def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
         # `severity=" high "` 会通过解析却不阻塞收敛。
         normalized.append(dict(item, severity=severity))
     findings = normalized
-    verdict = str(doc.get("verdict") or "PASS").strip().upper()
-    if verdict not in ("PASS", "CHANGES_REQUESTED", "BLOCKED"):
-        verdict = "CHANGES_REQUESTED" if findings else "PASS"
+    raw_verdict = doc.get("verdict")
+    if raw_verdict is None or not str(raw_verdict).strip():
+        verdict = "PASS"
+    else:
+        verdict = str(raw_verdict).strip().upper()
+        if verdict not in ("PASS", "CHANGES_REQUESTED", "BLOCKED"):
+            # 显式给了非法 verdict 不能静默改写；fail closed 交给回落/BLOCKED。
+            return [], "PASS", f"verdict 非法：{raw_verdict!r}"
     return findings, verdict, None
 
 

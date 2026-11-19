@@ -630,7 +630,11 @@ def run(args: argparse.Namespace) -> int:
             )
             cumulative_cost += fixer_cost
             if fixer_record.get("error"):
+                # fixer 失败后没有修复方案；继续下一轮只会在同一代码上重报。
+                # 明确 BLOCKED，不把下一轮的空 findings 当成收敛。
                 note = f"fixer 失败：{fixer_record['error']}"
+                final_verdict = "BLOCKED"
+                stop = True
 
         record = RoundRecord(
             round=round_no,

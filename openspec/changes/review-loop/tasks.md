@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 70 条，合计 114 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 72 条，合计 116 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -142,6 +142,10 @@
       测试 `test_fixer_missing_fixes_is_recorded` / `test_judge_invalid_verdict_is_blocked`。
 - [x] B60 顶层数组（`[{...}]`）不算「一个 JSON 对象」；测试
       `test_parse_review_output_rejects_top_level_array`。
+- [x] B61 fixer 失败即停止并 `BLOCKED`，不进入下一轮让空 findings 收口；
+      测试 `test_fixer_failure_blocks_run`。
+- [x] B62 显式非法 verdict（如 `FAIL`）判 parse 失败，不静默改写为 PASS；
+      测试 `test_parse_review_output_rejects_illegal_explicit_verdict`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

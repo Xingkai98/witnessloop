@@ -88,6 +88,7 @@ witnessloop review report [--md] [--out FILE]
 避免 `" HIGH "` 绕过阻塞判定。fixer/judge 的合法输出分别是 `fixes` / `rulings`，
 不能被 reviewer 的 `findings` 解析器误判为失败；三者都要求**恰好一个**顶层 JSON
 对象（**顶层数组 `[{...}]` 不算**），多对象/数组包裹都是歧义输入，不得只取第一个。
+显式给出的 `verdict` 不在三态内（如 `FAIL`）⇒ parse 失败，不静默改写为 `PASS`。
 
 auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env`；
 只有角色显式 `allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
@@ -122,7 +123,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
      只拿到 `verdict` 字段不足以放行。同轮还有未送审的 medium+ 时，judge 的
      `PASS` 也不能覆盖它们（最终 `BLOCKED`）。
    - 累计成本 > budget ⇒ `BLOCKED`（成本止损）；
-   - 否则跑 fixer，记录修复方案，进入下一轮。
+   - 否则跑 fixer，记录修复方案，进入下一轮；**fixer 失败 ⇒ 本轮直接
+     `BLOCKED` 停止**，不进入下一轮让空 findings 收口。
 5. 每轮落一份 manifest：`revision` / `config_hash` / `actors[]` /
    `findings` / `verdict` / `cost_usd` / `fixer` / `judge` / `note`。
 6. `actors[]` 含 `{role, adapter, model, run_id, degraded_from?}`；run id 是
