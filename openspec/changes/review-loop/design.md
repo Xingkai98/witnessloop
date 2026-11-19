@@ -146,9 +146,9 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 - 连 deepseek key 也没有 ⇒ **不再用 mock 冒充审阅**：该 reviewer 记
   `error_kind=auth`，整轮按 reviewer 失败 `BLOCKED`。显式 `--adapter mock` 的
   无网络烟测路径不受影响（那条路不会进入回落分支）。
-- 两路都回落到 deepseek-flash ⇒ `final.degraded_note = 本轮为同源双审`；
-  两路都降到 mock ⇒ 写「本轮存在 mock 降级（不代表真实双审）」。`summary.json`
-  与 `review report` 的 Markdown 都显示它（不能只留在 JSON 里）。
+- **任意一轮**两路都回落到 deepseek-flash ⇒ `final.degraded_note = 本轮为同源双审`；
+  两路都降到 mock ⇒ 写「本轮存在 mock 降级（不代表真实双审）」。扫描所有轮次，
+  不只看最后一轮；`summary.json` 与 `review report` 的 Markdown 都显示它。
 - `--adapter mock` 时不回落（本来就是 mock）。
 
 ## D7 报告与负样本（`review/report.py`）
@@ -166,14 +166,16 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 任一命中 ⇒ 退出码 1；全部通过 ⇒ 0。报告本身只渲染事实，不改判定。
 额外的结构校验：每轮必须恰有 `reviewerA` / `reviewerB` 各一个且 `run_id` 非空不同；
 `config.roles` 的每个值必须是 JSON 对象；`summary.json` **必须存在且可解析**，
-其 `rounds` 必须是数组，且与磁盘 `rounds/` 文件集合一致（少一轮不能验证通过）。
+其 `rounds` 必须是数组、每个条目必须是含整数 `round` 的对象，且与磁盘
+`rounds/` 文件集合一致（少一轮不能验证通过）。
 损坏的产物要受控判红，不能让渲染崩溃。
 
 ## D8 成本模型
 
 - `cost_usd(model, usage)`：`input_tokens/1e6 * in_price + output_tokens/1e6 * out_price`。
 - `APPROX_PRICE_PER_MTOK` 是**近似价**，只用于 `budget.max_cost_usd` 止损与报告。
-- `--budget` 必须是**有限非负数**；nan/inf/负数会让比较恒假，直接 `EXIT_USAGE`。
+- `--budget` 必须是**有限正数**；nan/inf/0/负数会让比较恒假或禁用止损，
+  直接 `EXIT_USAGE`。
 - 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止；
   并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用；
   reviewer 内部回落前也看剩余预算，首次请求已超预算时不再发 fallback 请求；

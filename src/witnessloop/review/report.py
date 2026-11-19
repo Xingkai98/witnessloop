@@ -169,12 +169,15 @@ def verify(root: Path) -> tuple[list[str], dict]:
         rounds_field = summary_doc.get("rounds")
         if not isinstance(rounds_field, list):
             findings.append("summary.json 的 rounds 字段缺失或类型非法")
-        else:
-            expected_rounds = sorted(
-                item.get("round")
-                for item in rounds_field
-                if isinstance(item, dict) and isinstance(item.get("round"), int)
+        elif any(
+            not isinstance(item, dict) or not isinstance(item.get("round"), int)
+            for item in rounds_field
+        ):
+            findings.append(
+                "summary.json 的 rounds 条目非法（必须是含整数 round 的对象）"
             )
+        else:
+            expected_rounds = sorted(item["round"] for item in rounds_field)
             actual_rounds = [item["round"] for item in rounds]
             if expected_rounds != actual_rounds:
                 findings.append(
@@ -194,6 +197,11 @@ def verify(root: Path) -> tuple[list[str], dict]:
         # Markdown 报告也要显示它，不能只留在 JSON 里。
         "degraded_note": (
             summary_doc.get("degraded_note") if isinstance(summary_doc, dict) else None
+        ),
+        "cumulative_cost_usd": (
+            summary_doc.get("cumulative_cost_usd")
+            if isinstance(summary_doc, dict)
+            else None
         ),
     }
     return findings, summary
@@ -260,6 +268,8 @@ def _render_markdown(summary: dict) -> str:
                 lines.append(f"- judge 错误：{judge.get('error')}")
         lines.append("")
     lines.append(f"## 最终判定：{summary.get('final_verdict')}")
+    if summary.get("cumulative_cost_usd") is not None:
+        lines.append(f"- cumulative_cost_usd={summary['cumulative_cost_usd']}")
     if summary.get("degraded_note"):
         lines.append(f"- degraded_note：{summary['degraded_note']}")
     return "\n".join(lines) + "\n"

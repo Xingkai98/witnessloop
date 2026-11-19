@@ -95,7 +95,7 @@ def test_bad_mock_scenario_is_usage_error(gated, cli):
 def test_non_finite_budget_is_usage_error(gated, cli):
     write_change(gated, "add-x")
     commit_all(gated, "内容")
-    for raw in ("nan", "inf", "-1"):
+    for raw in ("nan", "inf", "0", "-1"):
         code, _, err = cli(
             "review", "run", "--root", str(gated), "--change", "add-x",
             "--adapter", "mock", "--budget", raw,

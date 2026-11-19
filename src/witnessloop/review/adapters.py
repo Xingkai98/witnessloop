@@ -176,7 +176,9 @@ def _top_level_object_count(text: str) -> int:
     depth = 0
     in_string = False
     escape = False
-    for ch in text:
+    first_start = -1
+    first_end = -1
+    for index, ch in enumerate(text):
         if in_string:
             if escape:
                 escape = False
@@ -187,16 +189,23 @@ def _top_level_object_count(text: str) -> int:
             continue
         if ch == '"':
             in_string = True
-        elif ch == "[" and depth == 0:
-            # 顶层数组不是「一个 JSON 对象」；数组包裹的对象也要 fail closed。
-            return -1
         elif ch == "{":
             if depth == 0:
                 count += 1
+                if first_start < 0:
+                    first_start = index
             depth += 1
         elif ch == "}":
             if depth > 0:
                 depth -= 1
+                if depth == 0 and first_end < 0:
+                    first_end = index
+    if first_start >= 0 and first_end >= 0:
+        # 只拒绝**数组包裹对象**（`[{...}]`）；散文里的 `[P1]` / `[1]` 不算。
+        before = text[:first_start].rstrip()
+        after = text[first_end + 1 :].lstrip()
+        if before.endswith("[") and after.startswith("]"):
+            return -1
     return count
 
 

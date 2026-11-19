@@ -434,9 +434,9 @@ def run(args: argparse.Namespace) -> int:
 
     # 用法错误在落盘前判掉：坏 pass_rule / budget / mock-scenario 不应以 traceback 收场。
     budget = float(args.budget_max_cost_usd)
-    if not math.isfinite(budget) or budget < 0:
+    if not math.isfinite(budget) or budget <= 0:
         print(
-            "review run：--budget 必须是有限的非负数（nan/inf/负数会绕过止损）",
+            "review run：--budget 必须是有限正数（nan/inf/0/负数会绕过或禁用止损）",
             file=sys.stderr,
         )
         return C.EXIT_USAGE
@@ -924,9 +924,13 @@ def _write_final_report(
     cumulative_cost: float,
 ) -> Path:
     degraded_note = None
-    if round_manifests:
-        last = round_manifests[-1]
-        reviewers = [a for a in last.get("actors", []) if a.get("role", "").startswith("reviewer")]
+    # 任何一轮两路都回落都要提示，不只看最后一轮（中间轮退化不能丢）。
+    for last in reversed(round_manifests):
+        reviewers = [
+            a
+            for a in last.get("actors", [])
+            if isinstance(a, dict) and a.get("role", "").startswith("reviewer")
+        ]
         if reviewers and all(a.get("degraded_from") for a in reviewers):
             if any(str(a.get("model") or "") == "mock" for a in reviewers):
                 # 连回落 key 都没有的 mock 降级不是「同源双审」，不能误导成
@@ -934,6 +938,7 @@ def _write_final_report(
                 degraded_note = "本轮存在 mock 降级（不代表真实双审）"
             else:
                 degraded_note = "本轮为同源双审"
+            break
     doc = {
         "schema": C.REVIEW_ROUND_SCHEMA,
         "final_verdict": final_verdict,
