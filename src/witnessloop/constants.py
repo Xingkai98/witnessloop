@@ -121,6 +121,34 @@ REVIEW_MANIFEST_REQUIRED_FIELDS = (
     "report_path",
 )
 
+# ---------------------------------------------------------------------------
+# review loop（change review-loop / T-071）：多模型复审闭环。
+# 与 check 的门禁判定**无关**——这是「产出证据」一侧的新动词，不改 contract/evidence/checkcmd。
+# ---------------------------------------------------------------------------
+
+# roles@v1 配置（用户可编辑的角色声明，住在目标仓根）。
+REVIEW_ROLES_PATH = "reviewloop.roles.json"
+REVIEW_ROLES_SCHEMA = "witnessloop/roles@v1"
+# review loop 的产物目录（仓根相对）。DigestRevision 计算时排除它，见 review/revision.py。
+# ⚠️ 刻意**不**放 `.witnessloop/` 下：那是受保护路径（写每个 round manifest 都得解释事件）。
+# `.reviewloop/` 不在任何受保护路径里，是 loop 的本地审计产物（如 .pytest_cache）。
+REVIEW_OUTPUT_DIR = ".reviewloop"
+# 展开后的配置（config.resolved.json）与各轮 manifest 都落在产物目录里。
+REVIEW_CONFIG_FILENAME = "config.resolved.json"
+REVIEW_ROUNDS_SUBDIR = "rounds"
+REVIEW_REPORT_FILENAME = "report.md"
+# 每轮 manifest 的 schema 标签。
+REVIEW_ROUND_SCHEMA = "witnessloop/review-round@v1"
+
+# 收敛判据：默认 `medium_plus_zero`（blocker/high/medium 全为零 ⇒ 收敛）。
+DEFAULT_PASS_RULE = "medium_plus_zero"
+# 停滞升级：同一 finding（按 where）连续这么多轮被重报 ⇒ 升级 judge 单点复核。
+DEFAULT_STALL_ROUNDS = 2
+# 成本止损上限（USD，近似）。
+DEFAULT_BUDGET_MAX_COST_USD = 30.0
+# 回落模型：任一 reviewer 通路不可用（401/402/model_not_found/余额耗尽）时的兜底。
+REVIEW_FALLBACK_MODEL = "deepseek-flash"
+
 # 退出码。
 EXIT_PASS = 0
 EXIT_FAIL = 1

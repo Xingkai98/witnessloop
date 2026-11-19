@@ -1,0 +1,14 @@
+{
+  "schema": "witnessloop/review-manifest@v1",
+  "change_id": "review-loop",
+  "stage": "building",
+  "reviewer_run_id": "building-sol-glm-2026-11-19",
+  "author_run_id": "author-2026-11-19",
+  "base_sha": "d5b380abd7aca2a730fbb99e5b0cbd5cf1b9275d",
+  "head_sha": "173505b5debb50991e7c3e743e83708d02c6cd19",
+  "tasks_hash": "c323218c1c4ea38514ea5acaca74ccda469baca0e119fbcaaeb32b3c938e8196",
+  "spec_hash": "a99200d1ea03420abb3e8c115af8a16351cccfdf3d6752632c4d6fe9ecff4a63",
+  "diff_hash": "7fe9bfcd534dd2cf3ea3caa2b442ce846962d08a8a92d1695ad65dfb45108555",
+  "report_hash": "a71dcf4bc07835c939fe90ba7e144b02b3ad2c3a3bc88afefb86048337d47f8c",
+  "report_path": "reviews/building-review.md"
+}

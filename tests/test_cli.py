@@ -38,7 +38,7 @@ def test_unknown_subcommand_is_a_loud_error(capsys):
 
 
 @pytest.mark.parametrize(
-    "command", ["init", "uninit", "guard", "check", "manifest"]
+    "command", ["init", "uninit", "guard", "check", "manifest", "review"]
 )
 def test_each_verb_is_routed_with_help(command, capsys):
     with pytest.raises(SystemExit) as exc:
@@ -48,10 +48,11 @@ def test_each_verb_is_routed_with_help(command, capsys):
 
 
 def test_the_verb_surface_stays_small():
-    """动词面刻意很小：3 个门禁动词 + `guard`（本地守卫）+ manifest build（证据产出）。"""
+    """动词面刻意很小：3 个门禁动词 + `guard`（本地守卫）+ manifest build（证据产出）+
+    review（多模型复审闭环，change review-loop）。"""
     parser = build_parser()
     sub = next(a for a in parser._actions if a.dest == "command")
-    assert set(sub.choices) == {"init", "uninit", "guard", "check", "manifest"}
+    assert set(sub.choices) == {"init", "uninit", "guard", "check", "manifest", "review"}
 
 
 def test_manifest_requires_a_subcommand(capsys):

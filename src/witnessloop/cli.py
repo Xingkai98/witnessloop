@@ -12,7 +12,14 @@ import argparse
 import sys
 
 from witnessloop import __version__
-from witnessloop.constants import ADOPTER_TESTS_PATH, DEFAULT_GATE_REF, EXIT_USAGE
+from witnessloop.constants import (
+    ADOPTER_TESTS_PATH,
+    DEFAULT_BUDGET_MAX_COST_USD,
+    DEFAULT_GATE_REF,
+    DEFAULT_PASS_RULE,
+    DEFAULT_STALL_ROUNDS,
+    EXIT_USAGE,
+)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -153,6 +160,66 @@ def build_parser() -> argparse.ArgumentParser:
         "GITHUB_BASE_REF / 主干）",
     )
 
+    # review loop（change review-loop / T-071）：多模型复审闭环。只在这里加，别动既有动词。
+    p_review = sub.add_parser("review", help="多模型复审闭环（review run / report）")
+    review_sub = p_review.add_subparsers(dest="review_command", metavar="<子命令>")
+
+    p_run = review_sub.add_parser(
+        "run",
+        help="跑一条复审闭环：两路 reviewer 并发审 → 合并去重 → fixer → 收敛/停滞/止损",
+    )
+    p_run.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
+    p_run.add_argument("--change", required=True, help="被审的 change id（单段目录名）")
+    p_run.add_argument(
+        "--mode",
+        default="auto",
+        choices=["auto", "git", "digest"],
+        help="revision 锚点：auto 有 .git 用 Git、否则用 Digest",
+    )
+    p_run.add_argument(
+        "--base",
+        default=None,
+        help="diff 的 base ref（缺省与 check 同一套解析：WITNESSLOOP_BASE_REF / "
+        "GITHUB_BASE_REF / 主干）",
+    )
+    p_run.add_argument("--pass-rule", default=DEFAULT_PASS_RULE, help="收敛判据（默认 medium_plus_zero）")
+    p_run.add_argument(
+        "--stall-rounds", type=int, default=DEFAULT_STALL_ROUNDS,
+        help="同一 finding 连续这么多轮重报 ⇒ 升级 judge 单点复核",
+    )
+    p_run.add_argument(
+        "--budget", dest="budget_max_cost_usd", type=float,
+        default=DEFAULT_BUDGET_MAX_COST_USD, help="成本止损上限（USD，近似）",
+    )
+    p_run.add_argument(
+        "--adapter",
+        default=None,
+        choices=["claude", "codex", "mock"],
+        help="覆盖所有角色的通路（如 --adapter mock 降级打通链路）",
+    )
+    p_run.add_argument("--max-rounds", type=int, default=20, help="最大轮数（超过仍未收敛 ⇒ BLOCKED）")
+    p_run.add_argument(
+        "--positive-control",
+        default=None,
+        help="正控：必须被报出的 finding 的 where；PASS 收口却没报出 ⇒ 负样本红",
+    )
+    p_run.add_argument(
+        "--mock-scenario",
+        default=None,
+        help='mock 适配器的种子（JSON 字符串）：{"1": [finding, ...], "2": []}',
+    )
+
+    p_report = review_sub.add_parser(
+        "report", help="读回 loop 产物，生成 Markdown 报告 + 四条负样本验证"
+    )
+    p_report.add_argument("--root", default=".", help="目标仓根（默认当前目录）")
+    p_report.add_argument(
+        "--md",
+        action="store_true",
+        help="输出 Markdown（报告本来就是 Markdown；保留此 flag 以兼容文档命令）",
+    )
+    p_report.add_argument("--out", default=None, help="报告写到文件（缺省 stdout）")
+
     return parser
 
 
@@ -188,6 +255,20 @@ def main(argv: list[str] | None = None) -> int:
             return manifestcmd.run_build(args)
         print(
             "witnessloop manifest：需要子命令。目前只有 `manifest build`。",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if args.command == "review":
+        if args.review_command == "run":
+            from witnessloop.review import orchestrator
+
+            return orchestrator.run(args)
+        if args.review_command == "report":
+            from witnessloop.review import report
+
+            return report.run(args)
+        print(
+            "witnessloop review：需要子命令。可用：`review run` / `review report`。",
             file=sys.stderr,
         )
         return EXIT_USAGE
