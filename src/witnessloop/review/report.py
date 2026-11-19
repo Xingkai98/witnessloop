@@ -96,18 +96,25 @@ def verify(root: Path) -> tuple[list[str], dict]:
                 f"manifest actors 类型非法：round {doc.get('round')}（应为对象数组）"
             )
             actors = []
-        by_role = {
-            str(actor.get("role")): actor
-            for actor in actors
-            if isinstance(actor, dict)
-        }
+        by_role: dict[str, dict] = {}
+        role_counts: dict[str, int] = {}
+        for actor in actors:
+            if not isinstance(actor, dict):
+                continue
+            role = str(actor.get("role"))
+            role_counts[role] = role_counts.get(role, 0) + 1
+            by_role[role] = actor
         missing_roles = [
-            role for role in ("reviewerA", "reviewerB") if role not in by_role
+            role for role in ("reviewerA", "reviewerB") if not role_counts.get(role)
         ]
-        if missing_roles:
+        duplicate_roles = [
+            role for role in ("reviewerA", "reviewerB") if role_counts.get(role, 0) > 1
+        ]
+        if missing_roles or duplicate_roles:
             findings.append(
-                f"证据缺件：round {doc.get('round')} 缺少 "
-                f"{', '.join(missing_roles)} 的 actor"
+                f"证据缺件：round {doc.get('round')} 的 reviewer 角色必须各恰好一个"
+                f"（缺：{', '.join(missing_roles) or '无'}；"
+                f"重复：{', '.join(duplicate_roles) or '无'}）"
             )
         else:
             run_ids = [by_role[role].get("run_id") for role in ("reviewerA", "reviewerB")]
@@ -136,12 +143,18 @@ def verify(root: Path) -> tuple[list[str], dict]:
             continue
         all_findings.extend(round_findings)
 
-    # 4. 正控漏报
+    # 4. 正控漏报 + config.roles 结构校验
     positive = None
     if isinstance(config, dict):
         pc = config.get("positive_control") or {}
         if isinstance(pc, dict) and pc.get("where"):
             positive = str(pc["where"])
+        roles = config.get("roles")
+        if roles is not None and (
+            not isinstance(roles, dict)
+            or any(not isinstance(role, dict) for role in roles.values())
+        ):
+            findings.append("config roles 类型非法：每个角色必须是 JSON 对象")
     final_verdict = None
     for doc in rounds:
         # summary.json 若在，取它的 final_verdict；否则取最后一轮的 verdict。
@@ -181,7 +194,9 @@ def _render_markdown(summary: dict) -> str:
         roles = {}
     lines.append("## 配置")
     for name in ("reviewerA", "reviewerB", "fixer", "judge"):
-        role = roles.get(name) or {}
+        role = roles.get(name)
+        if not isinstance(role, dict):
+            role = {}
         degraded = "（auth 未解析）" if not role.get("auth_resolved") else ""
         lines.append(
             f"- **{name}**：adapter={role.get('adapter')} model={role.get('model')} "

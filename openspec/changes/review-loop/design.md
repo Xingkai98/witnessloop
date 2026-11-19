@@ -152,6 +152,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
    真模型措辞不定，T-075 因此没有使用 `--positive-control`（见 D9.7）。
 
 任一命中 ⇒ 退出码 1；全部通过 ⇒ 0。报告本身只渲染事实，不改判定。
+额外的结构校验：每轮必须恰有 `reviewerA` / `reviewerB` 各一个且 `run_id` 非空不同；
+`config.roles` 的每个值必须是 JSON 对象。损坏的产物要受控判红，不能让渲染崩溃。
 
 ## D8 成本模型
 

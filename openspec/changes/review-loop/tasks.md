@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 50 条，合计 94 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 52 条，合计 96 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -101,6 +101,12 @@
 - [x] B40 `review report` 严格要求 reviewerA/reviewerB 各一个且 run_id 非空不同；
       测试 `test_wrong_reviewer_roles_is_red` / `test_missing_run_id_is_red`。
 - [x] B41 5xx/超时（`other`）也回落一次；测试 `test_runtime_other_error_falls_back`。
+- [x] B42 reviewer 角色必须**各恰好一个**（重复 role 不再被 dict 覆盖）；
+      测试 `test_wrong_reviewer_roles_is_red`。
+- [x] B43 mock scenario 校验每轮是 findings 数组、每项是对象且 severity 合法；
+      测试 `test_bad_mock_scenario_content_is_usage_error`。
+- [x] B44 config.roles 的每个角色必须是对象；渲染逐角色防御；
+      测试 `test_config_roles_non_object_is_red`。
 
 ## C. 真实模型验证（T-071 / T-075）
 

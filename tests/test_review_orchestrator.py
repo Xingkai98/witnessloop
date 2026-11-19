@@ -92,6 +92,18 @@ def test_bad_mock_scenario_is_usage_error(gated, cli):
     assert "mock-scenario" in err
 
 
+def test_bad_mock_scenario_content_is_usage_error(gated, cli):
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    for raw in ('{"1": null}', '{"1": ["bad"]}', '{"1": [{"severity": "bogus"}]}'):
+        code, _, err = cli(
+            "review", "run", "--root", str(gated), "--change", "add-x",
+            "--adapter", "mock", "--mock-scenario", raw,
+        )
+        assert code == C.EXIT_USAGE, raw
+        assert "mock-scenario" in err
+
+
 def test_invalid_base_fails_before_review(gated, cli):
     """diff 取不到时不能继续跑并产出绑定当前提交的 PASS 产物。"""
     write_change(gated, "add-x")

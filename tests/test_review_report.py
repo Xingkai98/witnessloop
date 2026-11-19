@@ -164,6 +164,20 @@ def test_wrong_reviewer_roles_is_red(gated, cli):
     assert "reviewerB" in err
 
 
+def test_config_roles_non_object_is_red(gated, cli):
+    """config.roles 里某个角色不是对象时受控判红，不能渲染崩溃。"""
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    assert _run_loop(cli, gated, mock_scenario=json.dumps({"1": []}))[0] == C.EXIT_PASS
+    config_path = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_CONFIG_FILENAME
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["roles"]["reviewerA"] = [1]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    code, _, err = _report(cli, gated)
+    assert code == C.EXIT_FAIL
+    assert "config roles 类型非法" in err
+
+
 def test_missing_run_id_is_red(gated, cli):
     write_change(gated, "add-x")
     commit_all(gated, "内容")
@@ -188,7 +202,7 @@ def test_missing_reviewer_actors_is_red(gated, cli):
     _write_round_manifest(gated, doc)
     code, _, err = _report(cli, gated)
     assert code == C.EXIT_FAIL
-    assert "缺少 reviewerA, reviewerB" in err
+    assert "缺：reviewerA, reviewerB" in err
 
 
 def test_non_integer_round_is_red(gated, cli):

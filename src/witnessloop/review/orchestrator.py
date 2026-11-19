@@ -112,12 +112,29 @@ def _parse_mock_scenario(raw: str | None) -> dict:
         raise ValueError(f"--mock-scenario 不是合法 JSON：{exc}") from exc
     if not isinstance(doc, dict):
         raise ValueError("--mock-scenario 必须是 JSON 对象")
+    allowed = {"blocker", "high", "medium", "low", "nit"}
     out: dict = {}
     for key, value in doc.items():
         try:
-            out[int(key)] = value
+            round_no = int(key)
         except (TypeError, ValueError):
             raise ValueError(f"--mock-scenario 的轮号必须是数字：{key!r}") from None
+        if not isinstance(value, list):
+            raise ValueError(f"--mock-scenario 的 round {key!r} 必须是 findings 数组")
+        clean: list[dict] = []
+        for index, finding in enumerate(value):
+            if not isinstance(finding, dict):
+                raise ValueError(
+                    f"--mock-scenario 的 round {key!r} findings[{index}] 必须是对象"
+                )
+            severity = str(finding.get("severity") or "").strip().lower()
+            if severity not in allowed:
+                raise ValueError(
+                    f"--mock-scenario 的 round {key!r} findings[{index}] "
+                    f"severity 非法：{finding.get('severity')!r}"
+                )
+            clean.append(dict(finding, severity=severity))
+        out[round_no] = clean
     return out
 
 
