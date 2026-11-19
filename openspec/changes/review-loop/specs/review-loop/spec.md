@@ -144,15 +144,23 @@ reviewer 的 auth 一开始未解析，或通路返回 `auth` / `balance` /
 ## Requirement: auth 解析 SHALL 只有一处实现
 
 预检「auth 是否解析」、回落判定与 `build_adapter` 实际取 token SHALL 共用
-`adapters.resolve_auth_token`，顺序为 `auth_token` → `auth_env` →
-`ANTHROPIC_AUTH_TOKEN` → `ANTHROPIC_API_KEY`。
+`adapters.resolve_auth_token`，顺序为 `auth_token` → `auth_env`；只有角色显式
+`allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
+`ANTHROPIC_API_KEY`。该开关 SHALL 原样进入 `config.resolved.json`。
 
-### Scenario: key 只住在 ANTHROPIC_AUTH_TOKEN
-- **Given** 角色只声明 `auth_env=WITNESSLOOP_MISSING_KEY`，该变量未设置
+### Scenario: key 只住在 ANTHROPIC_AUTH_TOKEN（显式 opt-in）
+- **Given** 角色声明 `auth_env=WITNESSLOOP_MISSING_KEY`（未设置）且
+  `allow_host_auth_fallback: true`
 - **And** 宿主设置了 `ANTHROPIC_AUTH_TOKEN`
 - **When** 构造适配器 / 预检 auth
 - **Then** 两处 SHALL 都拿到同一个非空 token
 - **And** SHALL NOT 出现「预检说有 key、适配器发空 key」的静默失败
+
+### Scenario: 未 opt-in 时不复用宿主 token
+- **Given** 角色未声明 `allow_host_auth_fallback`，其 `auth_env` 未设置
+- **And** 宿主设置了 `ANTHROPIC_AUTH_TOKEN`
+- **When** 构造适配器
+- **Then** 适配器 SHALL NOT 使用宿主 token（空 token）
 
 ## Requirement: 成本估算 SHALL 对已知模型生效
 

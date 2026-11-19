@@ -64,6 +64,8 @@ witnessloop review report [--out FILE]
   默认 `adapter` / `base_url` / `auth_env`。要改就写全。
 - `--adapter <name>` 覆盖**所有**角色的通路（`mock` 用于无网络打通链路）。
 - auth 只记录「已解析 / 未解析」；key 从不写进 `config.resolved.json`。
+- `allow_host_auth_fallback: true` 是可选的宿主兜底开关（`ANTHROPIC_*`）；默认关闭，
+  避免把宿主 token 发往角色声明的其它端点。该开关必须原样进 resolved config。
 - `config.resolved.json` 的 sha256 写入每轮 manifest 的 `config_hash`。
 
 ## D4 adapters（`review/adapters.py`）
@@ -80,17 +82,21 @@ witnessloop review report [--out FILE]
 解析不出 ⇒ `error_kind="parse"`，按通路失败处理（先回落；回落仍失败则本轮
 `BLOCKED`）。**绝不把空 findings 当成 PASS**。
 
-auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env` →
-`ANTHROPIC_AUTH_TOKEN` → `ANTHROPIC_API_KEY`），预检、回落判定与
-`build_adapter` 共用它。否则会出现「预检说 key 在、适配器拿到空串」的静默失败。
+auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `auth_env`；
+只有角色显式 `allow_host_auth_fallback: true` 时才继续尝试 `ANTHROPIC_AUTH_TOKEN` →
+`ANTHROPIC_API_KEY`），预检、回落判定与 `build_adapter` 共用它，且该开关会被复制进
+`config.resolved.json`。否则会出现「预检说 key 在、适配器拿到空串」的静默失败，
+或把宿主 token 发往别的端点。
 
 ## D5 编排器（`review/orchestrator.py`）
 
 一轮：
 
 1. 两路 reviewer **并发**（`ThreadPoolExecutor(max_workers=2)`），同一份
-   `prompt + context`；context = tasks/design/proposal（各截 8000 字符）+ diff
-   （截 20000 字符），或 digest 模式的说明。
+   `prompt + context`；context = tasks/design/proposal（各截 8000 字符）+
+   变更文件清单 + diff（**代码/测试路径优先**，上限 120000 字符，超出显式标注），
+   或 digest 模式的说明。早先的 `diff[:20000]` 会被 docs/change 文档吃满预算，
+   reviewer 看不到 `src/**`，会把「没看到代码」误报成「代码不存在」。
 2. 合并：`_merge_findings` **只按 `where` 去重**，保留 severity 更高的那条；
    没有 `where` 的 finding **不丢弃**——用合成 `where`（`<missing-where>:batch…`）
    保留，继续参与收敛判定并出现在报告里。否则模型漏写定位的真实 medium+ 会被
@@ -114,6 +120,8 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 - 通路返回 `auth` / `balance` / `model_not_found` / `parse` ⇒ 当场回落
   `deepseek-flash`。
 - 回落成功：`actors[].degraded_from = 原 model`，manifest / report 可见。
+- 回落 key 只认 `WITNESSLOOP_DEEPSEEK_KEY`；**不**默认复用宿主 `ANTHROPIC_*`
+  token（避免把宿主凭据发往 `api.deepseek.com`）。
 - 连 deepseek key 也没有 ⇒ **不再用 mock 冒充审阅**：该 reviewer 记
   `error_kind=auth`，整轮按 reviewer 失败 `BLOCKED`。显式 `--adapter mock` 的
   无网络烟测路径不受影响（那条路不会进入回落分支）。

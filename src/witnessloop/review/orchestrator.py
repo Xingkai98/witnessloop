@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -37,6 +38,12 @@ BLOCKING_SEVERITIES = ("blocker", "high", "medium")
 #: 回落目标：deepseek-flash（经 claude 通路）。
 FALLBACK_ADAPTER = "claude"
 FALLBACK_MODEL = C.REVIEW_FALLBACK_MODEL
+
+#: 审阅上下文里 diff 的字符上限。代码/测试路径优先；超出后截断并明确标注。
+#: 20k 太小：真实 change 的 diff 会先被 docs/change 文档吃掉，reviewer 看不到实现。
+DIFF_CONTEXT_LIMIT = 120_000
+#: diff 里优先展示的路径前缀（代码/测试/模板/插件/脚本）。
+_CODE_DIFF_PREFIXES = ("src/", "tests/", "templates/", "plugin/", "scripts/")
 
 
 REVIEWER_PROMPT = (
@@ -153,6 +160,41 @@ def _pass_rule_satisfied(findings: list[dict], pass_rule: str) -> bool:
     )
 
 
+def _prioritize_diff(diff: str, limit: int = DIFF_CONTEXT_LIMIT) -> str:
+    """把 diff 按「代码/测试优先」排序后截断。
+
+    直接 `diff[:20000]` 会让 docs / change 文档先吃掉预算，reviewer 根本看不到
+    `src/**`——实测因此把「没看到代码」误报成「代码不存在」。这里按 `diff --git`
+    分节，代码/测试节先出，超出 `limit` 才截断并显式标注。
+    """
+    if len(diff) <= limit:
+        return diff
+    sections = re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)
+
+    def _is_code(section: str) -> bool:
+        first = section.splitlines()[0] if section else ""
+        return any(f"a/{prefix}" in first for prefix in _CODE_DIFF_PREFIXES)
+
+    ordered = [s for s in sections if _is_code(s)] + [
+        s for s in sections if not _is_code(s)
+    ]
+    out: list[str] = []
+    used = 0
+    for section in ordered:
+        if used >= limit:
+            break
+        remaining = limit - used
+        if len(section) > remaining:
+            out.append(
+                section[:remaining]
+                + "\n…（diff 已截断；完整内容用 `git diff` 查看）\n"
+            )
+            break
+        out.append(section)
+        used += len(section)
+    return "".join(out)
+
+
 def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str:
     """审阅素材：change 的 tasks / design + 实际 diff（git 模式）或工作树说明（digest）。"""
     pieces: list[str] = []
@@ -165,11 +207,20 @@ def _build_context(root: Path, change: str, revision: R.Revision, policy) -> str
         base = gitutil.resolve_base(root, None)
         head = revision.value
         try:
+            names = gitutil.diff_names(root, base, head)
+        except gitutil.GitError:
+            names = []
+        if names:
+            pieces.append("== 变更文件 ==\n" + "\n".join(names))
+        try:
             diff = gitutil.diff_text(root, base, head)
         except gitutil.GitError as exc:
             pieces.append(f"== diff ==\n（无法取 diff：{exc}）")
         else:
-            pieces.append(f"== diff（{base}..{head}）==\n{diff[:20000]}")
+            pieces.append(
+                f"== diff（{base}..{head}；代码/测试优先，上限 {DIFF_CONTEXT_LIMIT} 字符）==\n"
+                + _prioritize_diff(diff)
+            )
     else:
         pieces.append("== 工作树 ==\n（digest 模式，无 git 历史；审阅以 change 目录内容为准）")
     return "\n\n".join(pieces)
@@ -187,7 +238,8 @@ def _resolve_auth_token(role: dict) -> str:
     历史教训：这里曾有一套带 ``ANTHROPIC_*`` 兜底的解析，而 ``build_adapter``
     只认 ``auth_token`` / ``auth_env``；当 key 只住在 ``ANTHROPIC_AUTH_TOKEN`` 时，
     预检说「有 key」、适配器却拿到空串，回落路径还会重复打一次空 key 的请求。
-    两处必须共用 ``adapters.resolve_auth_token``。
+    两处必须共用 ``adapters.resolve_auth_token``；``ANTHROPIC_*`` 兜底现在只有
+    角色显式 ``allow_host_auth_fallback: true`` 才生效。
     """
     return A.resolve_auth_token(role)
 
@@ -198,9 +250,9 @@ FALLBACK_ROLE = {
     "model": FALLBACK_MODEL,
     "base_url": "https://api.deepseek.com/anthropic",
     "auth_env": "WITNESSLOOP_DEEPSEEK_KEY",
-    # 回落目标显式允许宿主 Anthropic token 兜底（deepseek key 可能住在
-    # ANTHROPIC_AUTH_TOKEN 里）；普通 reviewer 角色默认**不**允许。
-    "allow_host_auth_fallback": True,
+    # **不**默认启用 allow_host_auth_fallback：宿主 ANTHROPIC_* token 不应被
+    # 默认发往 deepseek 端点。需要宿主兜底时显式设 WITNESSLOOP_DEEPSEEK_KEY
+    # （或以后加显式 opt-in），否则按「回落 key 缺失」判 BLOCKED。
 }
 
 #: 连 deepseek 回落 key 都没有时的错误——**不再用 mock 冒充审阅**。

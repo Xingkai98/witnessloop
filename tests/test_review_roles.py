@@ -62,6 +62,25 @@ def test_auth_resolved_matches_adapter_resolution(monkeypatch):
     assert roles_mod._auth_resolved(role) is True
 
 
+def test_resolved_role_keeps_host_fallback_flag(monkeypatch):
+    """展开后的角色必须保留 allow_host_auth_fallback，否则 auth_resolved 与
+    build_adapter 的实际取 token 会分叉。"""
+    monkeypatch.delenv("WITNESSLOOP_MISSING_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "host-token")
+    out = roles_mod._resolved_role(
+        {
+            "adapter": "codex",
+            "model": "m",
+            "base_url": "https://heyroute.ai/v1",
+            "auth_env": "WITNESSLOOP_MISSING_KEY",
+            "allow_host_auth_fallback": True,
+        },
+        None,
+    )
+    assert out["allow_host_auth_fallback"] is True
+    assert out["auth_resolved"] is True
+
+
 def test_resolve_config_adapter_override_forces_all_roles(tmp_path):
     resolved, _ = roles_mod.resolve_config(tmp_path, adapter="mock")
     for name in ("reviewerA", "reviewerB", "fixer", "judge"):

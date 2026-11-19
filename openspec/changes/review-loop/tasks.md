@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（新增 44 条 + 本轮 1 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 19 条，合计 63 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -47,6 +47,11 @@
       `--positive-control` 的逐字匹配限制写进 design D9.7。
 - [x] B17 收尾：坏 `--pass-rule` / `--mock-scenario` 走 `EXIT_USAGE`；清掉
       过期注释/死导入；双失败路径保留原始 `degraded_from`。
+- [x] B18 grill 第二轮发现：`allow_host_auth_fallback` 必须带进 resolved config；
+      `FALLBACK_ROLE` 不再默认复用宿主 token；design/spec 同步 opt-in 前提。
+- [x] B19 审阅上下文：变更文件清单 + diff 按代码/测试优先排序，上限 120000 字符；
+      修掉 `diff[:20000]` 让 reviewer 看不到 `src/**` 的误报（实测 building review
+      因此把「没看到代码」报成 blocker/high）。测试 `test_prioritize_diff_puts_code_before_docs`。
 
 ## C. 真实模型验证（T-071 / T-075）
 
@@ -108,6 +113,9 @@ grill / 对抗验证在本内容提交前发现并已修复：
 - **逐字 `--positive-control`**：保留机制但登记为真实模型限制（design D9.7）。
 - **L 系列**：坏用法走 `EXIT_USAGE`；过期注释/死导入清理；双失败路径保留原始
   `degraded_from`。
+- **grill 第二轮 H2/M5**：`allow_host_auth_fallback` 带进 resolved config；
+  回落通路不再默认复用宿主 `ANTHROPIC_*` token（缺 `WITNESSLOOP_DEEPSEEK_KEY`
+  时判 BLOCKED）。测试 `test_resolved_role_keeps_host_fallback_flag`。
 
 ## 流程偏差
 

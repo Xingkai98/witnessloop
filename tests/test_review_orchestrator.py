@@ -269,6 +269,21 @@ def test_rerun_clears_stale_rounds(gated, cli):
     assert sorted(p.name for p in rounds_dir.glob("round-*.json")) == ["round-0001.json"]
 
 
+def test_prioritize_diff_puts_code_before_docs():
+    """diff 截断时先保留代码/测试，不能让 docs 吃掉预算。"""
+    code = (
+        "diff --git a/src/x.py b/src/x.py\n--- a/src/x.py\n+++ b/src/x.py\n"
+        "@@ -1 +1 @@\n+code\n"
+    )
+    docs = (
+        "diff --git a/docs/x.md b/docs/x.md\n--- a/docs/x.md\n+++ b/docs/x.md\n"
+        "@@ -1 +1 @@\n+doc\n"
+    )
+    out = O._prioritize_diff(docs + code, limit=len(code) + 30)
+    assert out.index("src/x.py") < out.index("docs/x.md")
+    assert "已截断" in out
+
+
 def test_run_digest_mode_in_git_repo(gated, cli):
     """显式 --mode digest：即使有 .git 也走 digest 锚。"""
     write_change(gated, "add-x")

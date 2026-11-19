@@ -27,7 +27,9 @@ loop** on top of a change, orthogonal to the existing gate (`contract` / `eviden
 - `src/witnessloop/review/adapters.py` — `claude` / `codex` / `mock` adapters with one
   interface (prompt + context → structured findings JSON). Errors are normalized to
   `AdapterError` kinds so the orchestrator can degrade mechanically.
-- `src/witnessloop/review/orchestrator.py` — the loop.
+- `src/witnessloop/review/orchestrator.py` — the loop. Review context includes the
+  changed-file list and a **code-first** diff (up to 120k chars): the earlier
+  `diff[:20000]` let docs consume the budget and caused false "code missing" findings.
 - `src/witnessloop/review/report.py` — read-back + verification.
 - `reviewloop.roles.json` — this repo's review routing: `reviewerA = gpt-6.1-sol`
   (codex/heyroute), `reviewerB = glm-5.3` (claude/heyroute), `fixer = deepseek-flash`,
@@ -47,11 +49,13 @@ output is marked `error_kind="parse"`, gets one fallback attempt, and if it stil
 fails the round is `BLOCKED` — an empty finding list is never treated as `PASS`.
 If the deepseek fallback key is also unavailable, the round is likewise `BLOCKED`;
 mock is never used as a stand-in for a real review unless `--adapter mock` is
-explicitly requested (smoke-test path).
+explicitly requested (smoke-test path). Host `ANTHROPIC_*` credentials are **not**
+reused by default: a role must opt in with `allow_host_auth_fallback: true`, and the
+fallback role only reads `WITNESSLOOP_DEEPSEEK_KEY` (no cross-endpoint token reuse).
 
 ## Validation
 
-- `uv run pytest -q` → **849 passed** (788 existing + 61 review-loop tests).
+- `uv run pytest -q` → **851 passed** (788 existing + 63 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

@@ -114,6 +114,10 @@ def _resolved_role(role: dict, adapter: str | None) -> dict:
     if src.get("auth_token"):
         # 内联 token 只标「已提供」，不落值。
         out["auth_token_provided"] = True
+    if src.get("allow_host_auth_fallback") is True:
+        # 必须带进 resolved config：orchestrator 用的是展开后的角色，
+        # 少了这个开关会出现「auth_resolved=True，但 build_adapter 拿到空 token」。
+        out["allow_host_auth_fallback"] = True
     out["auth_resolved"] = _auth_resolved(src)
     return out
 
