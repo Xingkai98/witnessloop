@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -431,7 +432,14 @@ def run(args: argparse.Namespace) -> int:
         )
         return C.EXIT_FAIL
 
-    # 用法错误在落盘前判掉：坏 pass_rule / 坏 mock-scenario 不应以 traceback 收场。
+    # 用法错误在落盘前判掉：坏 pass_rule / budget / mock-scenario 不应以 traceback 收场。
+    budget = float(args.budget_max_cost_usd)
+    if not math.isfinite(budget) or budget < 0:
+        print(
+            "review run：--budget 必须是有限的非负数（nan/inf/负数会绕过止损）",
+            file=sys.stderr,
+        )
+        return C.EXIT_USAGE
     if args.pass_rule != C.DEFAULT_PASS_RULE:
         print(
             f"review run：不支持的 pass_rule={args.pass_rule!r}"
@@ -482,7 +490,6 @@ def run(args: argparse.Namespace) -> int:
     round_manifests: list[dict] = []
     merged_history: list[dict] = []  # 每轮的 merged findings（用于停滞判定）
     cumulative_cost = 0.0
-    budget = float(args.budget_max_cost_usd)
     final_verdict = "BLOCKED"
     final_note = None
 
@@ -551,17 +558,20 @@ def run(args: argparse.Namespace) -> int:
             verdict = "BLOCKED"
         elif blocked_roles:
             verdict = "BLOCKED"
-        elif verdict == "PASS" and changes_roles:
+        elif changes_roles:
             # reviewer 明确说「要改」但没给 medium+ findings：不能静默 PASS。
+            # 即使另一路已有 findings，也要保留这条异常意见（它可能被 judge 放行）。
             for role in changes_roles:
-                merged.append(
-                    {
-                        "where": f"<reviewer-verdict:{role}>",
-                        "severity": "medium",
-                        "what": "reviewer 返回 CHANGES_REQUESTED 但未给出 medium+ findings",
-                        "suggestion": "检查 reviewer 输出或重跑该通路",
-                    }
-                )
+                where = f"<reviewer-verdict:{role}>"
+                if not any(f.get("where") == where for f in merged):
+                    merged.append(
+                        {
+                            "where": where,
+                            "severity": "medium",
+                            "what": "reviewer 返回 CHANGES_REQUESTED 但未给出 medium+ findings",
+                            "suggestion": "检查 reviewer 输出或重跑该通路",
+                        }
+                    )
             verdict = "CHANGES_REQUESTED"
 
         # 停滞判定：同一 where 连续 stall_rounds 轮都在 merged 里。
@@ -590,6 +600,7 @@ def run(args: argparse.Namespace) -> int:
             # 预算检查在 judge / fixer 之前：超预算就不再发起额外付费调用。
             # （单次调用本身可能把累计值推过上限——预算是软止损，不做事前额度预留。）
             final_verdict = "BLOCKED"
+            verdict = "BLOCKED"
             note = f"成本止损（累计 ${cumulative_cost:.4f} > budget ${budget:.2f}）"
             stop = True
         elif stalled:
@@ -622,6 +633,7 @@ def run(args: argparse.Namespace) -> int:
                 )
             if judge_record.get("error"):
                 note = f"{note}；judge 失败：{judge_record['error']}"
+            verdict = final_verdict
             stop = True
         else:
             # 未收敛：跑 fixer（记录修复方案；不自动改代码，见 docs/merge-report）。
@@ -634,6 +646,7 @@ def run(args: argparse.Namespace) -> int:
                 # 明确 BLOCKED，不把下一轮的空 findings 当成收敛。
                 note = f"fixer 失败：{fixer_record['error']}"
                 final_verdict = "BLOCKED"
+                verdict = "BLOCKED"
                 stop = True
 
         record = RoundRecord(
@@ -718,15 +731,22 @@ def _run_fixer(merged, fixer_cfg, request, scenario, adapter_override, revision)
     result = adapter.run(fix_request, model=fixer_cfg.get("model") or FALLBACK_MODEL)
     doc = A.extract_single_json(result.raw) if result.raw else None
     fixes = (doc or {}).get("fixes") if isinstance(doc, dict) else None
-    record = {
-        "fixes": fixes if isinstance(fixes, list) else [],
-        "raw": result.raw,
-    }
+    valid_fixes = (
+        [
+            fix
+            for fix in fixes
+            if isinstance(fix, dict)
+            and str(fix.get("where") or "").strip()
+            and str(fix.get("action") or "").strip()
+        ]
+        if isinstance(fixes, list)
+        else []
+    )
+    record = {"fixes": valid_fixes, "raw": result.raw}
     # reviewer 解析器要求 findings 数组；fixer 的合法输出是 fixes，会被它误标
-    # parse 失败。只有 **fixes 也解析不出来** 时才算 fixer 失败——无论适配器
-    # 是否报了 error，都要在产物里留痕。
-    if not isinstance(fixes, list):
-        record["error"] = result.error or "fixer 输出缺少 fixes 数组"
+    # parse 失败。fixes 缺失/空/条目无效都算 fixer 失败——无论适配器是否报了 error。
+    if not valid_fixes:
+        record["error"] = result.error or "fixer 输出没有有效 fixes（缺数组/空/条目非法）"
         record["error_kind"] = result.error_kind or "parse"
     return record, A.cost_usd(result.model, result.usage)
 

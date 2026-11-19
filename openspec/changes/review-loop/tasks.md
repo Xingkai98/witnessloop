@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 72 条，合计 116 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 74 条，合计 118 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -146,6 +146,14 @@
       测试 `test_fixer_failure_blocks_run`。
 - [x] B62 显式非法 verdict（如 `FAIL`）判 parse 失败，不静默改写为 PASS；
       测试 `test_parse_review_output_rejects_illegal_explicit_verdict`。
+- [x] B63 `--budget` 必须是有限非负数；nan/inf/负数走 `EXIT_USAGE`。
+      测试 `test_non_finite_budget_is_usage_error`。
+- [x] B64 停止分支同步 round manifest 的 `verdict`（预算/fixer/judge），
+      summary 与 round 不再各说各话。
+- [x] B65 fixer 的 `fixes` 逐条校验（对象 + where + action）；空/非法条目算失败。
+      测试 `test_fixer_invalid_fix_items_are_recorded`。
+- [x] B66 reviewer 返回 CHANGES_REQUESTED 但无 findings 时，即使另一路有 findings
+      也保留合成 medium，不让其他 finding 掩盖。
 
 ## C. 真实模型验证（T-071 / T-075）
 

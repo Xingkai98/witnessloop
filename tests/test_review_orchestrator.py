@@ -92,6 +92,18 @@ def test_bad_mock_scenario_is_usage_error(gated, cli):
     assert "mock-scenario" in err
 
 
+def test_non_finite_budget_is_usage_error(gated, cli):
+    write_change(gated, "add-x")
+    commit_all(gated, "内容")
+    for raw in ("nan", "inf", "-1"):
+        code, _, err = cli(
+            "review", "run", "--root", str(gated), "--change", "add-x",
+            "--adapter", "mock", "--budget", raw,
+        )
+        assert code == C.EXIT_USAGE, raw
+        assert "budget" in err
+
+
 def test_bad_mock_scenario_content_is_usage_error(gated, cli):
     write_change(gated, "add-x")
     commit_all(gated, "内容")
@@ -168,6 +180,10 @@ def test_fixer_failure_blocks_run(gated, cli, monkeypatch):
     assert code == C.EXIT_FAIL
     rounds_dir = gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR
     assert len(list(rounds_dir.glob("round-*.json"))) == 1
+    last = json.loads(
+        (rounds_dir / "round-0001.json").read_text()
+    )
+    assert last["verdict"] == "BLOCKED"
     summary = json.loads((gated / C.REVIEW_OUTPUT_DIR / "summary.json").read_text())
     assert summary["final_verdict"] == "BLOCKED"
     assert "fixer 失败" in summary["final_note"]
@@ -191,22 +207,26 @@ def test_judge_pass_does_not_cover_unstalled_findings(gated, cli, monkeypatch):
     )
     last = json.loads(manifests[-1].read_text())
     assert "未复核" in last["note"]
+    assert last["verdict"] == "BLOCKED"
     summary = json.loads((gated / C.REVIEW_OUTPUT_DIR / "summary.json").read_text())
     assert summary["final_verdict"] == "BLOCKED"
 
 
-def test_cost_stop_hits_budget(gated, cli):
+def test_cost_stop_hits_budget(gated, cli, monkeypatch):
     """成本止损：累计成本超预算 ⇒ BLOCKED。"""
     write_change(gated, "add-x")
     commit_all(gated, "内容")
-    # mock 成本为 0，所以用 --adapter 覆盖成 mock 但把预算设成 -1，强制首轮超预算。
+    # mock 成本为 0；用 fake reviewer 给每路 10 USD，预算 5 强制首轮超支。
+    monkeypatch.setattr(O, "_call_reviewer", _fake_reviewer_with_cost(FINDING, 10.0))
     code, _, err = _mock_run(
-        cli, gated, mock_scenario=_scenario([FINDING], []), budget=-1
+        cli, gated, mock_scenario=_scenario([], []), budget=5
     )
     assert code == C.EXIT_FAIL
     manifests = sorted((gated / C.REVIEW_OUTPUT_DIR / C.REVIEW_ROUNDS_SUBDIR).glob("round-*.json"))
     assert len(manifests) == 1
-    assert "成本止损" in json.loads(manifests[-1].read_text())["note"]
+    last = json.loads(manifests[-1].read_text())
+    assert last["verdict"] == "BLOCKED"
+    assert "成本止损" in last["note"]
 
 
 def test_no_keys_blocks_instead_of_mock_pass(gated, cli, monkeypatch):
@@ -247,16 +267,17 @@ def test_budget_stops_before_next_round_after_fixer(gated, cli, monkeypatch):
     assert "成本止损" in summary["final_note"]
 
 
-def test_budget_stops_before_judge(gated, cli):
+def test_budget_stops_before_judge(gated, cli, monkeypatch):
     """已超预算时不再调用 judge（预算检查前移到停滞分支之前）。"""
     write_change(gated, "add-x")
     commit_all(gated, "内容")
+    monkeypatch.setattr(O, "_call_reviewer", _fake_reviewer_with_cost(FINDING, 10.0))
     code, _, _ = _mock_run(
         cli,
         gated,
-        mock_scenario=_scenario([FINDING], [FINDING]),
+        mock_scenario=_scenario([], []),
         stall_rounds=2,
-        budget=-1,
+        budget=5,
     )
     assert code == C.EXIT_FAIL
     manifests = sorted(
@@ -265,6 +286,7 @@ def test_budget_stops_before_judge(gated, cli):
     assert len(manifests) == 1
     last = json.loads(manifests[-1].read_text())
     assert last["judge"] is None
+    assert last["verdict"] == "BLOCKED"
     assert "成本止损" in last["note"]
 
 
@@ -294,6 +316,24 @@ def test_merge_dedups_across_two_reviewers(gated, cli):
     )
     findings = [f for f in manifest["findings"] if f["where"] == FINDING["where"]]
     assert len(findings) == 1
+
+
+def _fake_reviewer_with_cost(finding, cost):
+    from witnessloop.review import adapters as A
+
+    def fake(role_name, role_cfg, request, **kwargs):
+        actor = O.Actor(
+            role=role_name, adapter="mock", model="mock", run_id=f"{role_name}-mock"
+        )
+        return (
+            actor,
+            A.ReviewResult(
+                model="mock", findings=[dict(finding)], verdict="CHANGES_REQUESTED"
+            ),
+            cost,
+        )
+
+    return fake
 
 
 def _fake_reviewer_with_verdict(verdict):
@@ -446,6 +486,21 @@ def _fixer_cfg():
     return {"adapter": "claude", "model": "m", "base_url": "u", "auth_env": "X"}
 
 
+def test_fixer_invalid_fix_items_are_recorded(monkeypatch):
+    from witnessloop.review import adapters as A
+
+    monkeypatch.setattr(
+        O.A,
+        "build_adapter",
+        lambda *args, **kwargs: _RawOkAdapter('{"fixes": [null, "bad", {}]}'),
+    )
+    record, _ = O._run_fixer(
+        [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
+    )
+    assert record["fixes"] == []
+    assert record["error"]
+
+
 def test_fixer_missing_fixes_is_recorded(monkeypatch):
     from witnessloop.review import adapters as A
 
@@ -456,7 +511,7 @@ def test_fixer_missing_fixes_is_recorded(monkeypatch):
         [FINDING], _fixer_cfg(), A.ReviewRequest(prompt="", context=""), None, None, None
     )
     assert record["fixes"] == []
-    assert "缺少 fixes" in record["error"]
+    assert "没有有效 fixes" in record["error"]
 
 
 def test_judge_invalid_verdict_is_blocked(monkeypatch):

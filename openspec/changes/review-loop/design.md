@@ -115,7 +115,10 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
    否则 `CHANGES_REQUESTED`。**任一 reviewer 在回落之后仍有 `error`**（含
    `parse`）⇒ `BLOCKED`，本轮立即停止；空 findings 不会被判成收敛。
    reviewer 自己的 `verdict` 也参与判定：`BLOCKED` ⇒ 整轮 `BLOCKED`；
-   `CHANGES_REQUESTED` 但没给 medium+ findings ⇒ 合成 medium，不静默 `PASS`。
+   `CHANGES_REQUESTED` 但没给 medium+ findings ⇒ 合成 medium，不静默 `PASS`
+   （即使另一路已有 findings 也保留这条异常意见）。
+   停止分支（预算 / fixer 失败 / judge）必须同步 round manifest 的 `verdict`，
+   不能 summary 说 `BLOCKED`、round 仍写 `CHANGES_REQUESTED`。
 4. 分支：
    - `PASS` ⇒ 收口，`final_verdict=PASS`；
    - 停滞（同一 `where` 连续 `stall_rounds` 轮）⇒ 升级 judge，单点复核。
@@ -123,8 +126,9 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
      只拿到 `verdict` 字段不足以放行。同轮还有未送审的 medium+ 时，judge 的
      `PASS` 也不能覆盖它们（最终 `BLOCKED`）。
    - 累计成本 > budget ⇒ `BLOCKED`（成本止损）；
-   - 否则跑 fixer，记录修复方案，进入下一轮；**fixer 失败 ⇒ 本轮直接
-     `BLOCKED` 停止**，不进入下一轮让空 findings 收口。
+   - 否则跑 fixer，记录修复方案，进入下一轮；`fixes` 必须是对象数组且每条含
+     `where`/`action`。**fixer 失败（缺数组/空/条目非法）⇒ 本轮直接 `BLOCKED`
+     停止**，不进入下一轮让空 findings 收口。
 5. 每轮落一份 manifest：`revision` / `config_hash` / `actors[]` /
    `findings` / `verdict` / `cost_usd` / `fixer` / `judge` / `note`。
 6. `actors[]` 含 `{role, adapter, model, run_id, degraded_from?}`；run id 是
@@ -168,6 +172,7 @@ auth 解析只有**一处**：`resolve_auth_token(role)`（`auth_token` → `aut
 
 - `cost_usd(model, usage)`：`input_tokens/1e6 * in_price + output_tokens/1e6 * out_price`。
 - `APPROX_PRICE_PER_MTOK` 是**近似价**，只用于 `budget.max_cost_usd` 止损与报告。
+- `--budget` 必须是**有限非负数**；nan/inf/负数会让比较恒假，直接 `EXIT_USAGE`。
 - 默认预算 `$30`；未收敛时，在**发起 judge / fixer 之前**检查累计值，超出即停止；
   并在**每轮入口**再检查一次，fixer 推过预算后不再发起下一轮 reviewer 调用；
   reviewer 内部回落前也看剩余预算，首次请求已超预算时不再发 fallback 请求；
