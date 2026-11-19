@@ -53,6 +53,15 @@ def test_parse_review_output_rejects_missing_or_unknown_severity():
     assert err is not None
 
 
+def test_parse_review_output_rejects_multiple_json_objects():
+    text = (
+        '{"findings": []} '
+        '{"findings": [{"where": "x:1", "severity": "high"}]}'
+    )
+    _, _, err = A.parse_review_output(text)
+    assert err is not None
+
+
 def test_parse_review_output_reports_error_when_no_json():
     _, _, err = A.parse_review_output("没有 JSON")
     assert err is not None
@@ -212,14 +221,24 @@ def test_codex_adapter_tolerates_non_object_usage(monkeypatch):
     assert result.usage is None
 
 
+def test_redirect_is_refused():
+    """重定向不能把 Authorization / x-api-key 转发到其它主机。"""
+    import pytest
+
+    with pytest.raises(A.AdapterError, match="拒绝重定向"):
+        A._NoRedirect().redirect_request(
+            None, None, 302, "Found", {}, "https://evil.example"
+        )
+
+
 def test_http_timeout_is_adapter_error(monkeypatch):
     """socket timeout 必须归一成 AdapterError，而不是让 CLI 崩成内部错误。"""
-    import urllib.request
 
-    def fake_urlopen(*args, **kwargs):
-        raise TimeoutError("timed out")
+    class FakeOpener:
+        def open(self, *args, **kwargs):
+            raise TimeoutError("timed out")
 
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(A, "_OPENER", FakeOpener())
     result = A.ClaudeAdapter("https://example.invalid", "sk-x").run(
         A.ReviewRequest(prompt="", context=""), model="m"
     )

@@ -64,12 +64,14 @@ non-object `fixer` / `judge`), validates HTTP response shapes before `.get`, and
 role overrides field-level so a partial override cannot silently become `mock`.
 `review report --md` is accepted (the report is Markdown; the flag is kept for
 documented commands). A diff acquisition failure aborts the run instead of proceeding
-without code context; transient 5xx/timeouts fall back once; and the report requires
-exactly `reviewerA` + `reviewerB` with non-empty, distinct run ids.
+without code context; transient 5xx/timeouts fall back once; HTTP redirects are refused
+so credentials cannot cross hosts; the worktree digest length-prefixes path/content
+(no NUL-ambiguity); and the report requires exactly `reviewerA` + `reviewerB` with
+non-empty, distinct run ids.
 
 ## Validation
 
-- `uv run pytest -q` → **889 passed** (788 existing + 101 review-loop tests).
+- `uv run pytest -q` → **892 passed** (788 existing + 104 review-loop tests).
 - T-075 real-model run: `reviewerA = gpt-6.1-terra` (codex/heyroute),
   `reviewerB = glm-5.3` (claude/heyroute) with **no `degraded_from`**.
   Clean 3-round loop: `BLOCKED` (the demo code really had medium findings);

@@ -67,10 +67,14 @@ def worktree_digest(root: str | Path, *, excludes=DIGEST_EXCLUDED_TOP) -> str:
         rel = entry.relative_to(root_path).as_posix()
         if _excluded(rel, excludes):
             continue
-        h.update(rel.encode("utf-8"))
-        h.update(b"\0")
-        h.update(entry.read_bytes())
-        h.update(b"\0")
+        rel_bytes = rel.encode("utf-8")
+        content = entry.read_bytes()
+        # 长度前缀：内容本身允许含 NUL，用分隔符串接会让不同的 (path, content)
+        # 组合产生相同的哈希输入（新增文件/修改内容可能不改变 digest）。
+        h.update(len(rel_bytes).to_bytes(8, "big"))
+        h.update(rel_bytes)
+        h.update(len(content).to_bytes(8, "big"))
+        h.update(content)
     return h.hexdigest()
 
 

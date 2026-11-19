@@ -100,12 +100,24 @@ def _classify(status: int, body: str) -> str:
     return "other"
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """拒绝所有 HTTP 重定向：Authorization / x-api-key 不能跟着跨信任域走。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise AdapterError(
+            "other", f"拒绝重定向（防止凭据转发）：HTTP {code} -> {newurl}"
+        )
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _http_json(url: str, headers: dict, payload: dict, *, timeout: int = 300) -> dict:
     """POST JSON → 解析出的 JSON 对象；失败抛 ``AdapterError``。"""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _OPENER.open(req, timeout=timeout) as resp:
             data = resp.read()
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", "replace")
@@ -158,12 +170,42 @@ def _extract_json(text: str):
     return None
 
 
+def _top_level_object_count(text: str) -> int:
+    """数顶层 JSON 对象的个数（忽略字符串里的花括号）。"""
+    count = 0
+    depth = 0
+    in_string = False
+    escape = False
+    for ch in text:
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                count += 1
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+    return count
+
+
 def parse_review_output(text: str) -> tuple[list[dict], str, str | None]:
     """把模型输出解析成 ``(findings, verdict, error)``。
 
     接受 ``{"findings": [...], "verdict": "..."}`` 或 ``{"findings": [...]}``。
     解析不出 ⇒ error 非 None（orchestrator 按「通路失败」处理，走回落）。
+    **必须恰好一个顶层 JSON 对象**：多个对象是歧义输出，判失败而不是取第一个。
     """
+    if _top_level_object_count(text) != 1:
+        return [], "PASS", "输出必须恰好包含一个 JSON 对象"
     doc = _extract_json(text)
     if not isinstance(doc, dict):
         return [], "PASS", "输出里没有可解析的 JSON 对象"

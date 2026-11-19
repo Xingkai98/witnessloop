@@ -32,6 +32,18 @@ def test_resolve_digest_revision_without_git(tmp_path):
     assert len(rev.value) == 64
 
 
+def test_digest_disambiguates_nul_in_content(tmp_path):
+    """内容含 NUL 时，不同的 (path, content) 组合不能产生同一个 digest。"""
+    t1 = tmp_path / "t1"
+    t1.mkdir()
+    (t1 / "a").write_bytes(b"\x00b\x00x")
+    t2 = tmp_path / "t2"
+    t2.mkdir()
+    (t2 / "a").write_bytes(b"")
+    (t2 / "b").write_bytes(b"x")
+    assert R.worktree_digest(t1) != R.worktree_digest(t2)
+
+
 def test_resolve_explicit_git_in_git_repo(repo):
     rev = R.resolve_revision(repo, mode="git")
     assert rev.mode == "git"

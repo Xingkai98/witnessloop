@@ -17,7 +17,7 @@
 - [x] A5 `report.py`：`review report --md` 读回产物，跑四条负样本验证。
 - [x] A6 `cli.py` 加 `review` 子命令组（`run` / `report`）；动词面测试更新。
 
-## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 57 条，合计 101 条）
+## B. 测试（T-071 新增 44 条；2026-11-19 加固新增 60 条，合计 104 条）
 
 - [x] B1 `tests/test_review_revision.py`（10）：git/digest 锚、排除项、内容变则锚变。
 - [x] B2 `tests/test_review_roles.py`（6）：默认表、部分覆盖、auth 解析、hash。
@@ -117,6 +117,14 @@
       测试 `test_load_roles_rejects_non_object_role`。
 - [x] B49 adapter 名不在 claude/codex/mock ⇒ 展开配置时 ValueError；
       测试 `test_resolved_role_rejects_unknown_adapter`。
+- [x] B50 拒绝 HTTP 重定向（防止 Authorization/x-api-key 跨信任域转发）；
+      测试 `test_redirect_is_refused`。
+- [x] B51 模型输出必须**恰好一个**顶层 JSON 对象；多对象判 parse 失败；
+      测试 `test_parse_review_output_rejects_multiple_json_objects`。
+- [x] B52 worktree digest 用长度前缀编码，消除内容含 NUL 时的哈希碰撞；
+      测试 `test_digest_disambiguates_nul_in_content`。
+- [x] B53 并发 reviewer 的预算快照边界写进 design D8（两路各一次 fallback
+      可能合计越过上限一个调用，软止损已知限制）。
 
 ## C. 真实模型验证（T-071 / T-075）
 
